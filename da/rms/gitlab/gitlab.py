@@ -31,18 +31,22 @@ from itertools import count,cycle,product
 from copy import deepcopy
 from subprocess import check_output,run,PIPE
 
-# Fixing/improving multiline output of YAML dump
+# Fixing/improving multiline output and strings with '+' of YAML dump
 def str_presenter(dumper, data):
     """
-    Configures yaml for dumping multiline strings
+    Configures yaml for dumping strings.
     Ref: https://stackoverflow.com/questions/8640959/how-can-i-control-what-scalar-form-pyyaml-uses-for-my-data
     and https://github.com/yaml/pyyaml/issues/240
+    - Uses '|' for multiline strings.
+    - Uses single quotes for strings containing special characters like '+' or ':'.
+    - Uses default (plain) style for all other strings.
     """
-    if data.count('\n') > 0:  # check for multiline string
+    if data.count('\n') > 0:
         return dumper.represent_scalar('tag:yaml.org,2002:str', data, style='|')
+    elif '+' in data or ':' in data:
+        return dumper.represent_scalar('tag:yaml.org,2002:str', data, style="'")
     return dumper.represent_scalar('tag:yaml.org,2002:str', data)
-yaml.add_representer(str, str_presenter)
-yaml.representer.SafeRepresenter.add_representer(str, str_presenter) # to use with safe_dum
+yaml.SafeDumper.add_representer(str, str_presenter)
 
 def flatten_json(json_data):
   """
@@ -101,13 +105,13 @@ def gen_tab_config(empty=False,suffix="cb",folder="./"):
             'page': {
               'name': "Overview",
               'section': "cblist",
-              'default': False,
+              'default': True,
               'template': "/data/LLtemplates/CB",
               'context': "data/cb/cb_list.csv",
               # 'footer_graph_config': "/data/ll/footer_cblist.json",
               'ref': [ 'datatable' ],
               'data': {
-                'default_columns': [ 'Name', 'Timings', '#Runs' ]
+                'default_columns': [ 'Name', 'Timings', '#Points' ]
               }
             }
           },
@@ -117,7 +121,7 @@ def gen_tab_config(empty=False,suffix="cb",folder="./"):
     }]
 
   # Writing out YAML configuration file
-  yaml_string = yaml.dump(pages, default_flow_style=None)
+  yaml_string = yaml.safe_dump(pages, default_flow_style=None)
   # Adding the include line (LLview-specific, not YAML standard)
   yaml_string = yaml_string.replace("- {include_here: null}",'%include "./page_cb.yaml"')
   with open(filename, 'w') as file:
@@ -129,6 +133,32 @@ class BenchRepo:
   """
   Class that stores and processes information from Slurm output  
   """
+
+  # Default colormap to use on the footer
+  DEFAULT_COLORMAP = 'Paired'
+  # Different sorts of the colormaps
+  SORT_STRATEGIES = {
+      # A standard ascending sort
+      'standard': None,  # Using None as the key is the same as lambda i: i
+      # A standard descending sort
+      'reverse': lambda i: -i,   
+      # Sorts even numbers first, then odd numbers
+      'interleave_even_odd': lambda i: (1 - (i & 1), i),
+      # From center to the outside
+      'center_out': lambda i: abs(i - (list_length // 2))
+  }
+  # The default key used if none is specified in the config
+  DEFAULT_SORT_KEY = 'standard'
+  # Default style of the traces
+  DEFAULT_TRACE_STYLE = {
+    'type': 'scatter',
+    'mode': 'markers',
+    'marker': {
+      'opacity': 0.6,
+      'size': 5
+    }
+  }
+
   def __init__(self,name="",config="",lastts=0):
     self._raw = {}  # Dictionary with parsed raw information
     self._dict = {} # Dictionary with modified information (which is output to LML)
@@ -200,6 +230,19 @@ class BenchRepo:
         add_to[bk] = deepcopy(bv)
     return
 
+  def deep_update(self,target, override):
+    """
+    Recursively update a dictionary.
+    """
+    for key, value in override.items():
+      if isinstance(value, dict):
+        # Get the existing value or an empty dict, then recurse.
+        target[key] = self.deep_update(target.get(key, {}), value)
+      else:
+        # Overwrite the value if it's not a dictionary.
+        target[key] = value
+    return target
+
   def empty(self):
     """
     Check if internal dict is empty: Boolean function that returns True if _dict is empty
@@ -212,7 +255,10 @@ class BenchRepo:
     If not given, use current working directory
     (Env vars are expanded)
     """
-    self._config[self._name]['folder'] = os.path.expandvars(os.path.join(folder,self._name))
+    folder = os.path.expandvars(os.path.join(folder,self._name))
+    # Storing folder to use later when getting sources
+    self._config[self._name]['folder'] = folder
+
 
     if self._config[self._name]['username']:
       credentials = requests.utils.quote(self._config[self._name]['username']) + (f":{requests.utils.quote(self._config[self._name]['password'])}@" if self._config[self._name]['password'] else "@")
@@ -220,17 +266,17 @@ class BenchRepo:
 
     # If folder does not exist, git clone the repo
     # otherwise try to git pull in the folder
-    if not os.path.isdir(self._config[self._name]['folder']):
+    if not os.path.isdir(folder):
       # Folder does not exist and 'host' is not given, can't do anything
       if 'host' not in self._config[self._name]:
-        self.log.error(f"Repo does not exist in folder {self._config[self._name]['folder']} and 'host' not given! Skipping...\n")
+        self.log.error(f"Repo does not exist in folder {folder} and 'host' not given! Skipping...\n")
         return False
 
       # Cloning repo
-      self.log.info(f"Folder {self._config[self._name]['folder']} does not exist. Cloning...\n")
+      self.log.info(f"Folder {folder} does not exist. Cloning...\n")
 
       cmd = ['git', 'clone', '-q', self._config[self._name]['host']]
-      cmd.append(self._config[self._name]['folder'])
+      cmd.append(folder)
       self.log.debug("Cloning repo with command: {}\n".format(' '.join(cmd).replace(f":{self._config[self._name]['password']}@",":***@")))
       p = run(cmd, stdout=PIPE)
       if p.returncode:
@@ -238,7 +284,7 @@ class BenchRepo:
         return False
       
       if 'branch' in self._config[self._name]:
-        cmd = ['git', '-C', self._config[self._name]['folder'], 'switch', '-q', self._config[self._name]['branch']]
+        cmd = ['git', '-C', folder, 'switch', '-q', self._config[self._name]['branch']]
         self.log.debug("Changing branch with command: {}\n".format(' '.join(cmd)))
         p = run(cmd, stdout=PIPE)
         if p.returncode:
@@ -246,13 +292,13 @@ class BenchRepo:
           return False
     else:
       if ('update' in self._config[self._name]) and (not self._config[self._name]['update']):
-        self.log.info(f"Folder {self._config[self._name]['folder']} already exists, but update is skipped...\n")
+        self.log.info(f"Folder {folder} already exists, but update is skipped...\n")
         return True
       else:
-        self.log.info(f"Folder {self._config[self._name]['folder']} already exists. Updating it...\n")
+        self.log.info(f"Folder {folder} already exists. Updating it...\n")
 
-        # cmd = ['git', '-C', self._config[self._name]['folder'], 'pull', self._config[self._name]['host']]
-        cmd = ['git', '-C', self._config[self._name]['folder'], 'pull', '-q']
+        # cmd = ['git', '-C', folder, 'pull', self._config[self._name]['host']]
+        cmd = ['git', '-C', folder, 'pull', '-q']
         # self.log.debug("Running command: {}\n".format(' '.join(cmd).replace(f":{self._config[self._name]['password']}@",":***@")))
         self.log.debug("Running command: {}\n".format(' '.join(cmd)))
         p = run(cmd, stdout=PIPE)
@@ -326,7 +372,7 @@ class BenchRepo:
       # obtained from metric_name:'header' when present, otherwise the metric_name itself (no change in name)
       # The value of the dict is metric_name, which should be the new name to be used
       headers_current = {key if (not self._config[self._name][_][key]) or ('header' not in self._config[self._name][_][key]) else self._config[self._name][_][key]['header']:key for key in self._config[self._name][_].keys() if ((not self._config[self._name][_][key]) or ('from' not in self._config[self._name][_][key]) or ('from' in self._config[self._name][_][key] and self._config[self._name][_][key]['from'] == 'content'))}
-
+      
       # Getting the keys:'from' of the metrics to be obtained from calculations 
       # (i.e., when one math operator is present)
       calc_headers_current = {key:self._config[self._name][_][key]['from'] for key in self._config[self._name][_].keys() if ((self._config[self._name][_][key] and 'from' in self._config[self._name][_][key] and re.search('[\+\-\*\/]',self._config[self._name][_][key]['from'])))}
@@ -448,7 +494,13 @@ class BenchRepo:
           if 'include' in metric_config:
             to_exclude[metricname] = metric_config['include']
           if 'from' not in metric_config: continue
-          if ('name' in metric_config['from']):
+          if (metric_config['from']=='static') or (metric_config['from']=='value'):
+            if 'value' not in metric_config:
+              self.log.error(f"Metric '{metricname}' is selected to be obtained from static value, but no 'value' was given! Skipping...\n")
+              continue
+            common_data[metricname] = metric_config['value']
+            self._metrics[self._name][metricname] = metric_config.get('type','str')
+          elif ('name' in metric_config['from']):
             if 'regex' not in metric_config:
               self.log.error(f"Metric '{metricname}' is selected to be obtained from filename, but no 'regex' was given! Skipping...\n")
               continue
@@ -748,7 +800,7 @@ class BenchRepo:
 
     # Writing out YAML configuration file
     with open(filename, 'w') as file:
-      yaml.dump(tables, file, default_flow_style=None)
+      yaml.safe_dump(tables, file, default_flow_style=None)
 
     return True
 
@@ -768,13 +820,13 @@ class BenchRepo:
                         'context': f"data/cb/cb_{benchname}.csv",
                         'footer_graph_config': f"/data/ll/footer_cb_{benchname}.json",
                         'ref': [ 'datatable' ],
-                        'data': {'default_columns': [ 'Name', 'System', '#Runs', 'Timings', 'Parameters' ]}
+                        'data': {'default_columns': [ 'Name', 'System', '#Points', 'Timings', 'Parameters' ]}
                       }}
       pages.append(page)
 
     # Writing out YAML configuration file
     with open(filename, 'w') as file:
-      yaml.dump(pages, file)
+      yaml.safe_dump(pages, file)
 
     return True
 
@@ -786,11 +838,12 @@ class BenchRepo:
 
     datasets = []
     for benchname in self._metrics:
-      columns = [{
-        'field': "name",
-        'headerName': "Name",
-        'headerTooltip': "Benchmark name",
-      },
+      columns = [
+      # {
+      #   'field': "name",
+      #   'headerName': "Name",
+      #   'headerTooltip': "Benchmark name",
+      # },
       {
         'field': "systemname",
         'headerName': "System",
@@ -798,8 +851,8 @@ class BenchRepo:
       },
       {
         'field': "count",
-        'headerName': "#Runs",
-        'headerTooltip': 'Number of runs',
+        'headerName': "#Points",
+        'headerTooltip': 'Number of points',
       },
       {
         'headerName': "Timings",
@@ -820,13 +873,13 @@ class BenchRepo:
         ]
       },
       {
-          'headerName': "Parameters",
-          'groupId': "parameters",
-          'children': [{
-          'field': key,
-          'headerName': key,
-          'headerTooltip': self._parameters[benchname][key]}
-                      for key in self._parameters[benchname] if key != 'systemname']
+        'headerName': "Parameters",
+        'groupId': "parameters",
+        'children': [{
+        'field': key,
+        'headerName': key,
+        'headerTooltip': self._parameters[benchname][key]}
+                    for key in self._parameters[benchname] if key != 'systemname']
       }]
 
       dataset = {'dataset': {
@@ -844,7 +897,7 @@ class BenchRepo:
 
     # Writing out YAML configuration file
     with open(filename, 'w') as file:
-      yaml.dump(datasets, file)
+      yaml.safe_dump(datasets, file)
 
     return True
 
@@ -877,7 +930,7 @@ class BenchRepo:
 
     # Writing out YAML configuration file
     with open(filename, 'w') as file:
-      yaml.dump(datasets, file)
+      yaml.safe_dump(datasets, file)
 
     return True
 
@@ -903,7 +956,7 @@ class BenchRepo:
 
     # Writing out YAML configuration file
     with open(filename, 'w') as file:
-      yaml.dump(vars, file)
+      yaml.safe_dump(vars, file)
 
     return True
 
@@ -947,7 +1000,7 @@ class BenchRepo:
 
     # Writing out YAML configuration file
     with open(filename, 'w') as file:
-      yaml.dump(datasets, file)
+      yaml.safe_dump(datasets, file)
 
     return True
 
@@ -989,6 +1042,20 @@ class BenchRepo:
       valid_combinations.sort(key=lambda d: tuple(sorted(d.items())))
 
       tabs = ['Benchmarks'] # To get
+      # Getting configuration of the graphs:
+      # Get the top-level configuration for the benchmark
+      bench_config = self._config.get(benchname, {})
+      # Get the 'traces' dictionary, or an empty dict if it's not there
+      traces_config = bench_config.get('traces', {})
+      # Get the 'colors' dictionary from within 'traces'
+      colors_config = traces_config.get('colors', {})
+      # Get the final values using their specific defaults
+      colormap = colors_config.get('colormap', BenchRepo.DEFAULT_COLORMAP)
+      skip_colors = colors_config.get('skip', [])
+      sort_key_name = colors_config.get('sort_strategy', BenchRepo.DEFAULT_SORT_KEY)
+      sort_function = BenchRepo.SORT_STRATEGIES.get(sort_key_name, BenchRepo.SORT_STRATEGIES[BenchRepo.DEFAULT_SORT_KEY])
+      user_trace_styles = traces_config.get('styles', {})
+
       # Loop over tabs
       footersetelems = []
       for tab in tabs:
@@ -996,23 +1063,38 @@ class BenchRepo:
         graphs = []
         for graphelem in graph_metrics:
           # Restart colors for each graph 
-          colors = cycle([to_hex(colormaps['Paired'].colors[idx]) for idx in sorted(range(len(colormaps['Paired'].colors)), key=lambda i: (1 - (i & 1), i))])
+          color_list = colormaps[colormap].colors
+          indices_to_sort = range(len(color_list))
+          colors = cycle([
+              to_hex(color_list[idx]) for idx in sorted(
+                  indices_to_sort, 
+                  key=sort_function
+              )
+          ])
           # Loop over traces
           traces = []
           for traceelem in valid_combinations:
             color = next(colors)
-            trace = {
-              'trace': {  # Sorting keys of different types together (in reverse order to have str before int):
-                'name':   '<br>'.join(f"{key}: {traceelem[key]}" for mtype in sorted(self.default.keys(),reverse=True) for key in sorted(traceelem.keys()) if self._metrics[benchname][key] == mtype),
-                'ycol':   graphelem,
-                'yaxis':  "y",
-                'type':   "scatter",
-                'color':  color if color != '#ffff99' else next(colors), # Skipping yellow color
-                'line': { 'width': 2 },
-                'where': traceelem
-              }|({ 'onhover': [{key: {'name': key}} for key in self._annotations[benchname]]
-              } if self._annotations[benchname] else {})
-            }
+            while color in skip_colors:
+              color = next(colors)
+            plot_properties = deepcopy(BenchRepo.DEFAULT_TRACE_STYLE)
+            self.deep_update(plot_properties, user_trace_styles)
+            plot_properties.update({ # Sorting keys of different types together (in reverse order to have str before int):
+              'name': '<br>'.join(f"{key}: {traceelem[key]}" for mtype in sorted(self.default.keys(), reverse=True) for key in sorted(traceelem.keys()) if self._metrics[benchname][key] == mtype),
+              'ycol': graphelem,
+              'yaxis': "y",
+              'where': traceelem
+            })
+            # Setting the colors
+            if 'marker' in plot_properties:
+              plot_properties['marker']['color'] = color
+            if 'line' in plot_properties:
+              plot_properties['line']['color'] = color
+            # Adding on-hover/annotation data, if present
+            if self._annotations[benchname]:
+              onhover_data = {'onhover': [{key: {'name': key}} for key in self._annotations[benchname]]}
+              plot_properties |= onhover_data
+            trace = {'trace': plot_properties}
             traces.append(trace)          
           graph = {
             'graph': {
@@ -1058,7 +1140,7 @@ class BenchRepo:
 
     # Writing out YAML configuration file
     with open(filename, 'w') as file:
-      yaml.dump(footers, file)
+      yaml.safe_dump(footers, file)
 
     return True
 
@@ -1552,7 +1634,7 @@ def parse_config_yaml(filename):
 
   with open(filename, 'r') as configyml:
     configyml = yaml.safe_load(configyml)
-  return configyml
+  return {} if configyml == None else configyml
 
 class CustomFormatter(logging.Formatter):
   """
@@ -1688,47 +1770,47 @@ def main():
 
   all_empty = True
   if config:
-    for reponame,repo_config in config.items():
-      log.info(f"Processing Server '{reponame}'\n")
+    for group_name,group_config in config.items():
+      log.info(f"Processing '{group_name}'\n")
 
       # Checking if something is to be done on current repo
-      if  ('sources' not in repo_config) or (len(repo_config['sources']) == 0) or \
-          ('files' not in repo_config['sources'] and 'folders' not in repo_config['sources']) or \
-          ('files' not in repo_config['sources'] and 'folders' in repo_config['sources'] and (len(repo_config['sources']['folders']) == 0) ) or \
-          ('files' in repo_config['sources'] and (len(repo_config['sources']['files']) == 0) and 'folders' not in repo_config['sources']) or \
-          (('files' in repo_config['sources'] and len(repo_config['sources']['files']) == 0) and ('folders' in repo_config['sources'] and len(repo_config['sources']['folders']) == 0)):
+      if  ('sources' not in group_config) or (len(group_config['sources']) == 0) or \
+          ('files' not in group_config['sources'] and 'folders' not in group_config['sources']) or \
+          ('files' not in group_config['sources'] and 'folders' in group_config['sources'] and (len(group_config['sources']['folders']) == 0) ) or \
+          ('files' in group_config['sources'] and (len(group_config['sources']['files']) == 0) and 'folders' not in group_config['sources']) or \
+          (('files' in group_config['sources'] and len(group_config['sources']['files']) == 0) and ('folders' in group_config['sources'] and len(group_config['sources']['folders']) == 0)):
         log.warning("No 'sources' of metrics to process on this server. Skipping...\n")
         continue
-      if ('metrics' not in repo_config) or (len(repo_config['metrics']) == 0):
+      if ('metrics' not in group_config) or (len(group_config['metrics']) == 0):
         log.warning("No 'metrics' to collect on this server. Skipping...\n")
         continue
-      if ('ts' not in repo_config['metrics']):
+      if ('ts' not in group_config['metrics']):
         log.warning("No mandatory 'ts' metric given. Skipping...\n")
         continue
-      if ('parameters' not in repo_config) or (len(repo_config['parameters']) == 0):
+      if ('parameters' not in group_config) or (len(group_config['parameters']) == 0):
         log.warning("No 'parameters' to collect on this server. Skipping...\n")
         continue
-      if ('systemname' not in repo_config['parameters']):
+      if ('systemname' not in group_config['parameters']):
         log.warning("No mandatory 'systemname' parameter given. Skipping...\n")
         continue
 
       # Getting credentials for the current server
-      repo_config['username'], repo_config['password'] = get_credentials(reponame,repo_config)
+      group_config['username'], group_config['password'] = get_credentials(group_name,group_config)
 
       start_time = time.time()
 
-      log.info(f"Collecting '{reponame}' metrics...\n")
+      log.info(f"Collecting '{group_name}' metrics...\n")
 
       # Initializing new object of type given in config
       bench = BenchRepo(
-                        name=reponame,
-                        config=repo_config,
-                        lastts=lastts[reponame] if reponame in lastts else 0,
+                        name=group_name,
+                        config=group_config,
+                        lastts=lastts[group_name] if group_name in lastts else 0,
                         )
 
       success = bench.get_or_update_repo(folder=args.repofolder if args.repofolder else './')
       if not success:
-        log.error(f"Error cloning or updating repo '{reponame}'. Skipping...\n")
+        log.error(f"Error cloning or updating repo '{group_name}'. Skipping...\n")
         continue
 
       success = bench.get_metrics()
@@ -1737,13 +1819,13 @@ def main():
         continue
 
       end_time = time.time()
-      lastts[reponame] = bench.lastts
-      log.debug(f"Gathering '{reponame}' information took {end_time - start_time:.4f}s\n")
+      lastts[group_name] = bench.lastts
+      log.debug(f"Gathering '{group_name}' information took {end_time - start_time:.4f}s\n")
 
       # Add timing key
       # if not info.empty():
       timing = {}
-      name = f'get{reponame}'
+      name = f'get{group_name}'
       timing[name] = {}
       timing[name]['startts'] = start_time
       timing[name]['datats'] = start_time
@@ -1753,20 +1835,20 @@ def main():
       # The __nelems_{type} is used to indicate to DBupdate the number of elements - important when the file is empty
       timing[name][f"__nelems_benchmark"] = len(bench)
       timing[name]['__type'] = 'pstat'
-      timing[name]['__id'] = f'pstat_get{reponame}'
+      timing[name]['__id'] = f'pstat_get{group_name}'
       bench.add(timing)
 
       if (not args.singleLML):
         if bench.empty():
-          log.warning(f"Object for '{reponame}' is empty, nothing to output to LML! Skipping...\n")
+          log.warning(f"Object for '{group_name}' is empty, nothing to output to LML! Skipping...\n")
         else:
-          bench.to_LML(os.path.join(args.outfolder if args.outfolder else './',f"{reponame}_LML.xml"))
+          bench.to_LML(os.path.join(args.outfolder if args.outfolder else './',f"{group_name}_LML.xml"))
           all_empty = False
 
         # Creating configuration files
         success = bench.gen_configs(folder=(args.outconfigfolder if args.outconfigfolder else ''))
         if not success:
-          log.error(f"Error generating configuration files for '{reponame}'!\n")
+          log.error(f"Error generating configuration files for '{group_name}'!\n")
           continue
       else:
         # Accumulating for a single LML
@@ -1801,7 +1883,7 @@ def main():
   if args.tsfile:
     # Writing out YAML configuration file
     with open(args.tsfile, 'w') as file:
-      yaml.dump(lastts, file, default_flow_style=None)
+      yaml.safe_dump(lastts, file, default_flow_style=None)
 
   log.debug("FINISH\n")
   return

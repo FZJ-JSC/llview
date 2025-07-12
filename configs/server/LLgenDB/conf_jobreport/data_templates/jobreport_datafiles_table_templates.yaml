@@ -536,7 +536,15 @@
           field: "name",
           headerName: "Name",
           headerTooltip: "Benchmark name",
+          flex: 1,
           pinned: "left",
+          cellRenderer: "(params) => gen_benchmark_link(params)",
+      }
+      - {
+          field: "systemname",
+          headerName: "System",
+          flex: 1,
+          headerTooltip: "System where the Benchmark was run",
       }
       - {
           headerName: "Timings",
@@ -547,19 +555,22 @@
               headerName: "Date of First Run", 
               headerTooltip: "Minimum timestamp of the benchmark",
               cellDataType: "text",
+              flex: 1
             },
             {
               field: "max_ts",
               headerName: "Date of Last Run", 
               headerTooltip: "Maximum timestamp of the benchmark",
               cellDataType: "text",
+              flex: 1
             },
           ]
         }
       - {
           field: "count",
           headerName: "#Runs",
-          headerTooltip: "Number of runs of the benchmark"
+          headerTooltip: "Number of runs of the benchmark",
+          flex: 1
       }
 
 # %include "../../conf_cb/template_cb.yaml"
