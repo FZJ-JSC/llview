@@ -32,6 +32,7 @@ nav:
       - System Errors: jobreport/system_errors.md
     - List of metrics: jobreport/metrics_list.md
     - Examples: jobreport/examples.md
+  - Benchmarks: benchmarks/index.md
   - Known Issues: known_issues/index.md
   - Contact: contact/index.md
   - Access: access/index.md

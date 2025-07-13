@@ -465,7 +465,62 @@
     title: "O/C",
     data_format: "round_number_or_null",
     format: "text-right",
-    desc: "Total number of file open/close operations on all file systems during job run time (M)"
+    desc: "Total number of file open/close operations on all file systems during job run time (Million op.)"
+  }
+
+- {
+    name: fs_all_MbwR_avg,
+    sort: "N",  
+    group: "I/O (Ext)", 
+    title: "AvgWriteRate", 
+    data_format: "round_number_or_null", 
+    format: "text-right",
+    desc: "Average write rate for all file systems during job run time (MiB/s)"  
+  }
+- {
+    name: fs_all_MbwR_max, 
+    sort: "N",
+    group: "I/O", 
+    title: "MaxWriteRate", 
+    data_format: "round_number_or_null", 
+    format: "text-right",
+    desc: "Maximum write rate for all file systems during job run time (MiB/s)"  
+  }
+- {
+    name: fs_all_MbrR_avg,
+    sort: "N",
+    group: "I/O (Ext)",
+    title: "AvgReadRate",
+    data_format: "round_number_or_null",
+    format: "text-right",
+    desc: "Average read rate for all file systems during job run time (MiB/s)"
+  }
+- {
+    name: fs_all_MbrR_max,
+    sort: "N",
+    group: "I/O",
+    title: "MaxReadRate",
+    data_format: "round_number_or_null",
+    format: "text-right",
+    desc: "Maximum read rate for all file systems during job run time (MiB/s)"
+  }
+- {
+    name: fs_all_ocR_avg,
+    sort: "N",
+    group: "I/O (Ext)",
+    title: "AvgO/CRate",
+    data_format: "round_number_or_null",
+    format: "text-right",
+    desc: "Average open/close rate for all file systems during job run time (op/s)"
+  }
+- {
+    name: fs_all_ocR_max,
+    sort: "N",
+    group: "I/O",
+    title: "MaxO/CRate",
+    data_format: "round_number_or_null",
+    format: "text-right",
+    desc: "Maximum open/close rate for all file systems during job run time (op/s)"
   }
 
 # File system (by fs)

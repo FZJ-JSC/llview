@@ -15,6 +15,7 @@ scripts and plugins for a basic functioning. This version includes
 It still does not cover:
 
 - Client and live view (the schematic view of the jobs on the nodes)
+- JuFo (Jülich Forecast) (Queue Prediction)
 - Other plugins
 - Logger (module that collects LLview's access metrics)
 

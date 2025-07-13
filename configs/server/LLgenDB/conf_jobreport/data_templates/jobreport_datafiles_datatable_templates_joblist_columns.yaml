@@ -502,7 +502,61 @@
         headerName: "O/C",
         valueFormatter: "(params) => round_number_or_null(params)",
         cellClass: "text-right",
-        headerTooltip: "Total number of file open/close operations on all file systems during job run time (M)"
+        headerTooltip: "Total number of file open/close operations on all file systems during job run time (Million op.)"
+      },
+      {
+          name: "fs_all_MbwR_avg",
+          cellDataType: "number",
+          columnGroupShow: "open",
+          headerName: "AvgWriteRate", 
+          valueFormatter: "(params) => round_number_or_null(params)",
+          cellClass: "text-right",
+          headerTooltip: "Average write rate for all file systems during job run time (MiB/s)"  
+      },
+      {
+          name: "fs_all_MbwR_max",
+          cellDataType: "number",
+          columnGroupShow: "closed",
+          headerName: "MaxWriteRate", 
+          valueFormatter: "(params) => round_number_or_null(params)",
+          cellClass: "text-right",
+          headerTooltip: "Maximum write rate for all file systems during job run time (MiB/s)"  
+      },
+      {
+          name: "fs_all_MbrR_avg",
+          cellDataType: "number",
+          columnGroupShow: "open",
+          headerName: "AvgReadRate", 
+          valueFormatter: "(params) => round_number_or_null(params)",
+          cellClass: "text-right",
+          headerTooltip: "Average read rate for all file systems during job run time (MiB/s)"
+      },
+      {
+          name: "fs_all_MbrR_max",
+          cellDataType: "number",
+          columnGroupShow: "closed",
+          headerName: "MaxReadRate", 
+          valueFormatter: "(params) => round_number_or_null(params)",
+          cellClass: "text-right",
+          headerTooltip: "Maximum read rate for all file systems during job run time (MiB/s)"
+      },
+      {
+          name: "fs_all_ocR_avg",
+          cellDataType: "number",
+          columnGroupShow: "open",
+          headerName: "AvgO/CRate", 
+          valueFormatter: "(params) => round_number_or_null(params)",
+          cellClass: "text-right",
+          headerTooltip: "Average open/close rate for all file systems during job run time (op/s)"
+      },
+      {
+          name: "fs_all_ocR_max",
+          cellDataType: "number",
+          columnGroupShow: "closed",
+          headerName: "MaxO/CRate", 
+          valueFormatter: "(params) => round_number_or_null(params)",
+          cellClass: "text-right",
+          headerTooltip: "Maximum open/close rate for all file systems during job run time (op/s)"
       },
       {
         field: "fs_home_Mbw_sum",

@@ -9,6 +9,7 @@ var icons = {
     "Users/Projects": "user",
     "Internal": "database",
     "Help": "question",
+    "Benchmarks": "bar-chart",
     "Known Issues": "exclamation-triangle",
     "Contact": "envelope-o",
     "Access": "sign-in",

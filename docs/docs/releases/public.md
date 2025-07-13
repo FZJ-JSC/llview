@@ -14,7 +14,7 @@ New file-parser plugin and extensions to the Prometheus one (more generic for RE
 - Added new envvar variable `LLVIEW_DEMO_MODE` to activate demo mode
 - JuRepTool: possibility to add red lines to mark graphs (to be used with calibrate)
 - JuRepTool: added "Download Data" button for timeline
-- JURI: Added quck buttons to filter RUNNING, COMPLETED and FAILED jobs
+- JURI: Added quick buttons to filter RUNNING, COMPLETED and FAILED jobs
 - JURI: Added queue view using bar-plots (including calendar and fixed hoverinfo)
 - JURI: Added jquery-ui for calendar
 - JURI: Added quickfilter to URL to be able to restore it after refresh or link sharing
