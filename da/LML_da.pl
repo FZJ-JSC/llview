@@ -80,6 +80,14 @@ $globalvarref->{verbose} = $opt_verbose;
 $globalvarref->{do_stepfiles} = $opt_do_stepfiles;
 $globalvarref->{executehostpattern} = ".*";
 $globalvarref->{date} = $date_;
+
+# replace ENV vars 
+foreach my $k (keys(%ENV)) {
+    if($k=~/^LLVIEW_/) {
+	$globalvarref->{$k} = $ENV{$k};
+    }
+}
+
 # replacing default values with the ones read from configfile
 init_globalvar($vardefs,$globalvarref); 
 
