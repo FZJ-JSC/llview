@@ -156,7 +156,12 @@ sub parprocess {
         last;
       }
       $msg=$self->{VERBOSE} ? sprintf("[$PRIMARKER] Waiting 1 second for new steps to be ready\n") : ""; logmsg($msg);
-      usleep(1000000);
+      if(exists($globalvarref->{sleepusec})) {
+	  usleep($globalvarref->{sleepusec});
+      }
+      else {
+	  usleep(1000000);
+      }
       next STEPS;
     }
 
@@ -231,7 +236,7 @@ sub execute_step_par {
     $stepinfile=$self->{GLOBALVARS}->{tmpdir}."/datastep_$laststep.xml";
     $stepoutfile=$self->{GLOBALVARS}->{tmpdir}."/datastep_$step.xml";
   }
-  $msg=$self->{VERBOSE} ? sprintf("[$PRIMARKER] STEP: %-10s\n",$step) : ""; logmsg($msg);
+  $msg=$self->{VERBOSE} ? sprintf("[$PRIMARKER] STEP: %-10\n",$step) : ""; logmsg($msg);
   
   if($self->{DOSTEPFILES}) {
     $msg=$self->{VERBOSE} ? sprintf("[$PRIMARKER]   (%-30s->%-30s)\n",$stepinfile,$stepoutfile) : ""; logmsg($msg);

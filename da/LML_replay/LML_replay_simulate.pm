@@ -13,7 +13,15 @@ sub simulate {
     my $tmp_dir=$configdata->{"LML_replay"}->{"config"}->{"tmpdir"};
     my $log_dir=$configdata->{"LML_replay"}->{"config"}->{"logdir"};
     my $runworkflow=$p->{"runworkflow"};
+    my $stopallfile=$p->{"stopallfile"};
 
+    if(defined($stopallfile)) {
+	printf(" simulate: stopallfile defined, touch to stop simulation: %s\n",$stopallfile);
+	if(-f $stopallfile) {
+	    print "         STOPALLFILE EXISTS, PLEASE REMOVE BEFORE STARTING SIMULATION!!! EXITING ...\n";
+	    exit;
+	}
+    }
     
     # check lastts
     if(! exists($replay_status->{"LML_replay"}->{"sim_lastts"})) {
@@ -27,12 +35,12 @@ sub simulate {
     &write_timestamp_log($timeline,$configdata->{"LML_replay"}->{"config"}->{"logdir"});
 
 
-    my $rc=&simulate_timeline($timeline, $runworkflow, $local_dir, $tmp_dir, $log_dir, $nsteps);
+    my $rc=&simulate_timeline($timeline, $runworkflow, $local_dir, $tmp_dir, $log_dir, $stopallfile, $nsteps);
 
     if($rc>0) {
 	$replay_status->{"LML_replay"}->{"sim_lastts"}=$rc;
     }
-
+    
     return();
 }
 
@@ -89,10 +97,12 @@ sub read_timestamps {
 
 # read timestamps
 sub simulate_timeline {
-    my( $timeline, $runworkflow, $local_dir, $tmp_dir, $log_dir, $nsteps)=@_;
+    my( $timeline, $runworkflow, $local_dir, $tmp_dir, $log_dir, $stopallfile, $nsteps)=@_;
 
     my $numsteps=0;
     my $sim_endts=0;
+    my $starttime=time();
+    my $lastdate=undef;
     
     foreach $ts (sort {$a <=> $b} keys(%{$timeline})) {
 	foreach $event (@{$timeline->{$ts}}) {
@@ -105,14 +115,14 @@ sub simulate_timeline {
 	    }
 
 	    # extract data
-	    my $starttime=time();
+	    my $stepstarttime=time();
 	    my $cmd=sprintf("(cd %s; rm -f replay_LML.xml; tar xf %s/LML_data_%s.tar %06d.xml.gz; mv %06d.xml.gz replay_LML.xml.gz; gunzip replay_LML.xml.gz) 2>> %s/tar.log",
 			    $tmp_dir,$local_dir,$event->{filedate},$event->{fnr},
 			    $event->{fnr},
 			    $log_dir);
 #	    print "WF >$cmd<\n";
 	    &mysystem($cmd);
-	    my $tartime=time()-$starttime;
+	    my $tartime=time()-$stepstarttime;
  	    { my $asave=$|;$|=1;
 	      printf(" %6.3fs run: ",$tartime);
 	      $|=$asave;
@@ -120,21 +130,45 @@ sub simulate_timeline {
 	    
 
 	    # run workflow
-	    $starttime=time();
+	    $stepstarttime=time();
 	    $cmd=sprintf("%s >> %s/replay_%s_stdout.log 2>> %s/replay_%s_stderr.log",
 			    $runworkflow,
 			    $log_dir,$event->{filedate},
 			    $log_dir,$event->{filedate});
 #	    print "WF >$cmd<\n";
 	    &mysystem($cmd);
-	    my $runtime=time()-$starttime;
+	    my $runtime=time()-$stepstarttime;
 
-	    
+	    my $duration=1;
+	    my $daysimtime=0;
+	    my $dayspeedup=0;
+	    if(defined($lastdate)) {
+		$duration=&date_to_sec($event->{date})-&date_to_sec($lastdate);
+		$duration=1 if($duration<=0);
+		$daysimtime=($tartime+$runtime)*24.0/$duration;
+		$dayspeedup=24.0/$daysimtime;
+
+		
+	    }
+	    $lastdate=$event->{date};
+	    	    
  	    { my $asave=$|;$|=1;
-	      printf(" %6.3fs ready\n",$runtime);
+	      printf(" %6.3fs ready [total: % 4d/% 4d updates in %8.2fs] est. %5.2f hour/day (speedup: %4.1f)\n",
+		     $runtime,$numsteps,$nsteps,time()-$starttime,$daysimtime,$dayspeedup);
 	      $|=$asave;
 	    }
-    
+
+	    
+	    # check HALT file
+	    if(defined($stopallfile)) {
+		if(-f $stopallfile) {
+		    print "Finishing replay, because signal file $stopallfile found\n";
+		    exit;
+		}
+	    }
+
+	    
+	    
 	    $sim_endts=&date_to_sec($event->{date});
 	}
     }
