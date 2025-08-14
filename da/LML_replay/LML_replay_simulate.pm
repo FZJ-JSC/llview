@@ -157,19 +157,17 @@ sub simulate_timeline {
 		     $runtime,$numsteps,$nsteps,time()-$starttime,$daysimtime,$dayspeedup);
 	      $|=$asave;
 	    }
-
-	    
+	
+	    $sim_endts=&date_to_sec($event->{date});
+    
 	    # check HALT file
 	    if(defined($stopallfile)) {
 		if(-f $stopallfile) {
 		    print "Finishing replay, because signal file $stopallfile found\n";
-		    exit;
+		    return($sim_endts);
 		}
 	    }
-
-	    
-	    
-	    $sim_endts=&date_to_sec($event->{date});
+   
 	}
     }
     return($sim_endts);
