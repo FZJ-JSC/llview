@@ -100,7 +100,9 @@ sub init_convert_functions {
                                 "hhmm_short" => \&hhmm_short,
                                 "hhmmss_short" => \&hhmmss_short,
                                 "hhmmss"     => \&hhmmss,
+                                "dayfrac" => \&dayfrac,
                                 "hourfrac" => \&hourfrac,
+                                "minutefrac" => \&minutefrac,
                                 "MiBtoGiB" => \&mib_to_gib,
                                 "KiBtoGiB" => \&kib_to_gib,
                                 "MiBtoB"   => \&mib_to_b,
@@ -216,7 +218,7 @@ sub sec_to_date_std_hhmmss_jufo {
 
 sub sec_to_date_std_hhmm {
   my ($arg)=@_;
-  return("-") if(!$arg || $arg eq "-");
+  return("-") if(!$arg || $arg eq "-" || $arg eq "Unknown");
   # print STDERR "TMPDEB: error no arg\n",caller(),"\n" if(!$arg);
   my $lsec; 
   if($arg=~/:/) { 
@@ -415,6 +417,15 @@ sub jobdays_sincenow {
   }
 }
 
+sub dayfrac {
+  my ($ts,$self)=@_;
+  return(0) if(!$ts);
+  if($ts!~/^[0-9\.]+$/) {
+    return($ts); 
+  }
+  return(&cut3digits(($ts)/3600.0/24.0));
+}
+
 sub hourfrac {
   my ($ts,$self)=@_;
   return(0) if(!$ts);
@@ -422,6 +433,15 @@ sub hourfrac {
     return($ts); 
   }
   return(&cut3digits(($ts)/3600.0));
+}
+
+sub minutefrac {
+  my ($ts,$self)=@_;
+  return(0) if(!$ts);
+  if($ts!~/^[0-9\.]+$/) {
+    return($ts); 
+  }
+  return(&cut3digits(($ts)/60.0));
 }
 
 sub wrapword10 {

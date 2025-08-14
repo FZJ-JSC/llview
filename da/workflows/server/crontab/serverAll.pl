@@ -50,6 +50,13 @@ my $startMonitor = "cd $logs; $searchCmdMonitor 1>> $logfile 2>> $errfile &";
 # Checking if llview monitor is running
 restartProg($searchCmdMonitor, $startMonitor);
 
+if(0) {
+    for my $cnt ("00") {
+       my $startmmpmon = "cd $LLVIEW_DATA/$LLVIEW_SYSTEMNAME/mmpmon; $LLVIEW_CONF/server/workflows/start_select_jedi_mmpmon${cnt}.sh";
+       my $searchCmdmmpmon = "/usr/bin/perl -w /home/llstat/llview/da/rms/GPFS/select_mmpmon_tail.pl -name jedi${cnt} ";
+       restartProg($searchCmdmmpmon, $startmmpmon);
+    }
+}
 
 # (JuRepTool was moved to an action in actions.inp, but this part 
 # was kept here commented out in case it is preferred to be used)

@@ -17,4 +17,16 @@ use constant  {
     FACTION_REMOVE => 3
 };
 
+sub get_status_desc {
+    my($stat)=@_;
+    return("FSTATUS_UNKNOWN") if($stat==FSTATUS_UNKNOWN);
+    return("FSTATUS_NOT_EXISTS") if($stat==FSTATUS_NOT_EXISTS);
+    return("FSTATUS_EXISTS") if($stat==FSTATUS_EXISTS);
+    return("FSTATUS_COMPRESSED") if($stat==FSTATUS_COMPRESSED);
+    return("FSTATUS_TOBEDELETED") if($stat==FSTATUS_TOBEDELETED);
+    return("FSTATUS_DELETED") if($stat==FSTATUS_DELETED);
+    return("FSTATUS_TOBECOMPRESSED") if($stat==FSTATUS_TOBECOMPRESSED);
+    return("UNKNOWN");
+}
+
 1;

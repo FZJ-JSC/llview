@@ -81,6 +81,7 @@ sub mngt_datasets {
     }
     $self->mngt_datasets_check($DB, $action_ref, $varsetref) if($action_def->{type} eq "archive");
     $self->mngt_datasets_check($DB, $action_ref, $varsetref) if($action_def->{type} eq "remove");
+    $self->mngt_datasets_check_gz_gz($DB, $action_ref, $varsetref) if($action_def->{type} eq "compress");
     
     if(exists($action_ref->{datasets})) {
       $self->mngt_datasets_execute($DB, $action_ref, $varsetref, FACTION_COMPRESS) if($action_def->{type} eq "compress");
@@ -305,6 +306,69 @@ sub mngt_datasets_check {
   printf("%s check dataset for files: %d file changed\n", $self->{INSTNAME}, $total_count_fixed);
 }
 
+
+sub mngt_datasets_check_gz_gz {
+  my $self = shift;
+  my ($DB,$action_ref,$varsetref)=@_;
+  my $action_def=$action_ref->{definition};
+  my $parallel_level=1; # serial
+  my $compress_tool="gzip";
+  my $limit_sec=0;
+  my $limit_ts=$self->{CURRENTTS};
+  my $files_to_process;
+  my $tmptardir="/tmp/jobreport/dir";
+  my $tarfileprefix="job_";
+  
+  # get status of datasets from DB
+  my $stat_tables;
+  my $num_stat_tables=0;
+  my $num_files_found=0;
+  my $starttime=time();
+  
+  my $total_count_fixed=0;
+  foreach my $dataset (@{$action_ref->{datasets}}) {
+    next if($dataset->{format} eq "registerfile");
+    # printf("%s check_file_state_with_file_system: check dataset $dataset->{name}\n",$self->{INSTNAME});
+    
+    my $where="(lastts_saved <= $limit_ts) and (name = \"$dataset->{name}\")";
+
+    # read info about files into memory
+    if(!exists($self->{DATASETSTAT}->{$dataset->{stat_database}}->{$dataset->{stat_table}})) {
+      $self->get_datasetstat_from_DB($dataset->{stat_database},$dataset->{stat_table},$where);
+    }
+    my @removed_files;
+    my $count_fixed=0;
+    while ( my ($file, $ref) = each(%{$self->{DATASETSTAT}->{$dataset->{stat_database}}->{$dataset->{stat_table}}}) ) {
+      next if($ref->{name} ne $dataset->{name});	
+      my $realfile=sprintf("%s/%s",$self->{OUTDIR},$ref->{dataset});
+
+      if($file=~/\.gz\.gz$/) {
+	  printf(STDERR "LLmonDB:    WARNING: compress file found with .gz.gz end %-20s (%-20s) ... deleting\n",
+		 get_status_desc($ref->{status}),$file);
+	  $ref->{status}=FSTATUS_TOBEDELETED;
+	  push(@removed_files,$file);
+	  $count_fixed++;
+	  last if($count_fixed>=10000);
+      }
+    }
+    foreach my $file (@removed_files) {
+      delete($self->{DATASETSTAT}->{$dataset->{stat_database}}->{$dataset->{stat_table}}->{$file});
+    }
+
+    $total_count_fixed+=$count_fixed;
+    
+    if($count_fixed>0) {
+      my $tstarttime=time();
+      $self->save_datasetstat_in_DB($dataset->{stat_database},$dataset->{stat_table},$where);
+      printf("%-40s check dataset for files .gz.gz: saved datasetstat for #%d files deleted, status adapted\n",
+	     $dataset->{name},$count_fixed);
+    }
+    delete($self->{DATASETSTAT}->{$dataset->{stat_database}}->{$dataset->{stat_table}});
+  }
+
+  printf("%s check dataset for files .gz.gz: %d file changed\n", $self->{INSTNAME}, $total_count_fixed);
+}
+
 sub scan_for_files_by_name_limit {
   my $self = shift;
   my ($st,$files_found,$name,$limit_ts,$limit_pattern_ts,$action_type)=@_;
@@ -314,7 +378,7 @@ sub scan_for_files_by_name_limit {
     next if($ref->{name} ne $name);	
     next if($ref->{status} == FSTATUS_NOT_EXISTS); # file not created
     next if($ref->{status} == FSTATUS_TOBEDELETED); # file already marked to be deleted from DB
-    if($action_type==1) {
+    if($action_type == FACTION_COMPRESS) {
       next if($ref->{status} == FSTATUS_COMPRESSED); # already compressed
       next if($ref->{status} == FSTATUS_TOBECOMPRESSED); # already marked to be compressed
     }
@@ -329,6 +393,19 @@ sub scan_for_files_by_name_limit {
         }
       }
     }
+    
+    if($action_type == FACTION_COMPRESS) {
+	if($file=~/\.gz\.gz$/) {
+	    printf(STDERR "LLmonDB:    WARNING: compress action planed for filename with .gz.gz ending %-20s (%-20s) ... skipping\n",
+		   get_status_desc($ref->{status}),$file);
+	    $found=0;
+	} elsif($file=~/.gz$/) {
+	    printf(STDERR "LLmonDB:    WARNING: compress action planed for filename with .gz ending %-20s (%-20s) ... skipping\n",
+		   get_status_desc($ref->{status}),$file);
+	    $found=0;
+	}
+    }
+
     next if(!$found);
     
     # file found
@@ -336,7 +413,7 @@ sub scan_for_files_by_name_limit {
     if(!exists($files_found->{$ref->{ukey}})) {
       $files_found->{$ref->{ukey}}->{ts}=0;
     }
-    
+
     push(@{$files_found->{ $ref->{ukey} }->{files}},$ref);
     
     if( $ref->{lastts_saved} > $files_found->{$ref->{ukey}}->{ts} ) {
@@ -388,13 +465,14 @@ sub compress_files {
     foreach my $dsentry (@{$ref->{files}}) {
       my $realfile=sprintf("%s/%s",$self->{OUTDIR},$dsentry->{dataset});
       if(-f $realfile) {
-        push(@files,$realfile);
+	  push(@files,$realfile);
         $dsentry->{dataset}.=".$compress_suffix";
         $dsentry->{status}=FSTATUS_TOBECOMPRESSED;
         $count++;
         # printf("compress_files: %s -> %s\n",$ukey,$dsentry->{dataset});
       } else {
-        $dsentry->{status}=FSTATUS_NOT_EXISTS;
+	  printf("compress_files: %s -> %s (set state to FSTATUS_NOT_EXISTS) (.gz)\n",$ukey,$dsentry->{dataset});
+	  $dsentry->{status}=FSTATUS_NOT_EXISTS;
       }
     }
     if(scalar @files > 0) {
@@ -656,7 +734,6 @@ sub mngt_scan_datasets {
     foreach my $ds_tab (sort(keys(%{$ds->{$ds_db}}))) {
       my $subconfig_ref=$ds->{$ds_db}->{$ds_tab};
       my $count_ds_changed=0;
-      # printf("mngt_scan_datasets: %s:\n",$subconfig_ref->{name});
       
       # remove old in memory if available (maybe different where)
       if(exists($self->{DATASETSTAT}->{$ds_db}->{$ds_tab})) {
@@ -667,7 +744,8 @@ sub mngt_scan_datasets {
       $self->get_datasetstat_from_DB($ds_db,$ds_tab,$where);
       
       while ( my ($file, $ref) = each(%{$self->{DATASETSTAT}->{$ds_db}->{$ds_tab}}) ) {
-        $stat->{$ref->{status}}++;
+	$stat->{$ref->{status}}++;
+	  
 
         if($ref->{status}==FSTATUS_EXISTS) {
           # updated of regular files

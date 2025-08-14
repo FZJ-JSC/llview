@@ -21,6 +21,7 @@ use Time::Local;
 use Time::HiRes qw ( time );
 use DBI;
 use DBD::SQLite;
+use DBD::SQLite::BundledExtensions;
 
 sub new {
   my $self    = {};
@@ -124,6 +125,7 @@ sub init_db {
   my $eots=time();
   $self->{EOTS}=$eots;
   $self->mycommit();
+  DBD::SQLite::BundledExtensions->_load_extension($dbh,"series");
   $self->LOGREPORT($self->{DBNAME},"open",caller(),"");
 }
 
