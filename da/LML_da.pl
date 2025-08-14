@@ -38,12 +38,14 @@ my $opt_dump=0;
 my $opt_parallel=0;
 my $opt_maxproc=8;
 my $opt_do_stepfiles=1;
+my $opt_sleepusec=1000000;
 usage($0) if( ! GetOptions( 
               'verbose'          => \$opt_verbose,
               'configfile=s'     => \$opt_configfile,
               'stepfiles!'       => \$opt_do_stepfiles,
               'parallel!'        => \$opt_parallel,
               'maxprocesses=i'   => \$opt_maxproc,
+              'sleepusec=i'      => \$opt_sleepusec,
               'dump'             => \$opt_dump
               ) );
 my $date=`date`;
@@ -80,6 +82,15 @@ $globalvarref->{verbose} = $opt_verbose;
 $globalvarref->{do_stepfiles} = $opt_do_stepfiles;
 $globalvarref->{executehostpattern} = ".*";
 $globalvarref->{date} = $date_;
+$globalvarref->{sleepusec} = $opt_sleepusec;
+
+# replace ENV vars 
+foreach my $k (keys(%ENV)) {
+    if($k=~/^LLVIEW_/) {
+	$globalvarref->{$k} = $ENV{$k};
+    }
+}
+
 # replacing default values with the ones read from configfile
 init_globalvar($vardefs,$globalvarref); 
 

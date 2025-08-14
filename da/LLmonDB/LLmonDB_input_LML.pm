@@ -11,7 +11,7 @@
 package LLmonDB;
 
 my $VERSION='$Revision: 1.00 $';
-my $debug=1;
+my $debug=0;
 
 use strict;
 use warnings::unused;
@@ -70,9 +70,9 @@ sub process_LMLdata {
     }
   }
 
-  printf("$self->{INSTNAME} LLmonDB: start with job-DB:  %s\n",defined($self->{DBcontains_map_data})?$self->{DBcontains_map_data}:"-none-") if($self->{VERBOSE});
-  printf("$self->{INSTNAME} LLmonDB: found other DBs:    %s\n",join(", ",@DBs)) if($self->{VERBOSE});
-  printf("$self->{INSTNAME} LLmonDB: available cap.:     %s\n",join(", ",sort(keys(%{$cap})))) if($self->{VERBOSE});
+  printf("%-29s LLmonDB: start with job-DB:  %s\n",$self->{INSTNAME},defined($self->{DBcontains_map_data})?$self->{DBcontains_map_data}:"-none-") if($self->{VERBOSE});
+  printf("%-29s LLmonDB: found other DBs:    %s\n",$self->{INSTNAME},join(", ",@DBs)) if($self->{VERBOSE});
+  printf("%-29s LLmonDB: available cap.:     %s\n",$self->{INSTNAME},join(", ",sort(keys(%{$cap})))) if($self->{VERBOSE});
 
   my $stepnr=1;
   
@@ -118,11 +118,11 @@ sub process_LMLdata {
     $self->process_LMLdata_DB($db,$LMLdata,2,$stepnr);
     $pm->finish; # Terminates the child process
   }
-  printf("%s LLmonDB: wait for childs (%d) t=%6.3fs\n",$self->{INSTNAME},scalar $pm->running_procs(),time()-$starttime);
+  printf("%-29s LLmonDB: wait for childs (%d) t=%6.3fs\n",$self->{INSTNAME},scalar $pm->running_procs(),time()-$starttime);
   $pm->wait_all_children;
-  printf("%s LLmonDB: wait for childs ready (%d) t=%6.3fs\n",$self->{INSTNAME},scalar $pm->running_procs(),time()-$starttime);
+  printf("%-29s LLmonDB: wait for childs ready (%d) t=%6.3fs\n",$self->{INSTNAME},scalar $pm->running_procs(),time()-$starttime);
 
-  printf("$self->{INSTNAME} LLmonDB: end process_LMLdata \n") if($debug>=3);
+  printf("%-29s LLmonDB: end process_LMLdata \n",$self->{INSTNAME}) if($debug>=3);
   return();
 }
 
@@ -131,9 +131,9 @@ sub process_LMLdata_DB {
   my($db,$LMLdata,$grpnr,$stepnr)=@_;
   
   my($table,$options,$columns);
-  printf("$self->{INSTNAME} LLmonDB: start process_LMLdata_DB ($db) \n") if($debug>=3);
+  printf("%-29s LLmonDB: start process_LMLdata_DB ($db) \n",$self->{INSTNAME}) if($debug>=3);
   my $starttime=time();
-  printf("\n$self->{INSTNAME} LLmonDB: DB $db\n") if($self->{VERBOSE});
+  printf("\n%-29s LLmonDB: DB $db\n",$self->{INSTNAME}) if($self->{VERBOSE});
   # check tables from config
   foreach my $t (@{$self->{CONFIGDATA}->{databases}->{$db}->{tables}}) {
     my $tableref=$t->{table};
@@ -144,12 +144,12 @@ sub process_LMLdata_DB {
       
       if( exists($options->{update}) ) {
         if(exists($options->{update}->{LML})) {
-          printf("$self->{INSTNAME} LLmonDB:  -> check TABLE $db/$table (LML)\n") if($self->{VERBOSE});
+          printf("%-29s LLmonDB:  -> check TABLE $db/$table (LML)\n",$self->{INSTNAME}) if($self->{VERBOSE});
           $self->process_LMLdata_from_LML($db,$table,$columns,$options,$LMLdata);
         }
           
         if(exists($options->{update}->{LLgenDB})) {
-          printf("$self->{INSTNAME} LLmonDB:  -> check TABLE $db/$table (LLgenDB)\n") if($self->{VERBOSE});
+          printf("%-29s LLmonDB:  -> check TABLE $db/$table (LLgenDB)\n",$self->{INSTNAME}) if($self->{VERBOSE});
           $self->process_LMLdata_LLgenDB($db,$table,$options,$LMLdata);
         }
       }
@@ -158,7 +158,8 @@ sub process_LMLdata_DB {
   # close db (if opened)
   $self->close_db($db);
   my $endtime=time();
-  printf("$self->{INSTNAME} LLmonDB: DB %20s ready in                 %8.5fs (ts=%.5f,%.5f,l=%d,nr=%d)\n",$db,$endtime-$starttime,$starttime,$endtime,$grpnr,$stepnr); # if($self->{VERBOSE});
+#  printf("$self->{INSTNAME} LLmonDB: DB %20s ready in                 %8.5fs (ts=%.5f,%.5f,l=%d,nr=%d)\n",$db,$endtime-$starttime,$starttime,$endtime,$grpnr,$stepnr); # if($self->{VERBOSE});
+  printf("%-29s LLmonDB: DB %20s ready in                 %8.5fs (ts=%.5f,%.5f,l=%d,nr=%d)\n",$self->{INSTNAME},$db,$endtime-$starttime,$starttime,$endtime,$grpnr,$stepnr); # if($self->{VERBOSE});
   
   printf("$self->{INSTNAME} LLmonDB: end process_LMLdata_DB ($db) \n") if($debug>=3);
 }
@@ -181,23 +182,23 @@ sub process_LMLdata_from_LML {
 
   #  check if file contains input data for that table
   if((!exists($cap->{$what})) && (!$forceupdate) ) {
-    printf("$self->{INSTNAME} LLmonDB:     Input has no data for %s for table %s, skipping table ...\n",$what, $table) if($self->{VERBOSE});
+    printf("%-29s LLmonDB:     Input has no data for %s for table %s, skipping table ...\n",$self->{INSTNAME}, $what, $table) if($self->{VERBOSE});
     return($changed);
   }
 
   if(exists($LMLdata->{ENTRIES_BY_CAP}->{$what})) {
     $listref=$LMLdata->{ENTRIES_BY_CAP}->{$what};
-    printf("$self->{INSTNAME} LLmonDB:     found capability '%s' in input data, processing table\n",$what); # if($self->{VERBOSE});
+    printf("%-29s LLmonDB:     found capability '%s' in input data, processing table\n",$self->{INSTNAME}, $what); # if($self->{VERBOSE});
   } elsif($forceupdate) {
     $listref=[];
-    printf("$self->{INSTNAME} LLmonDB: force update category %s for table %s \n",$what, $table) if($self->{VERBOSE});
+    printf("%-29s LLmonDB: force update category %s for table %s \n",$self->{INSTNAME},$what, $table) if($self->{VERBOSE});
   } else {
-    printf(STDERR "$self->{INSTNAME} LLmonDB: ERROR: unknown LML update category %s for table %s \n",$what, $table);
+    printf(STDERR "%-29s LLmonDB: ERROR: unknown LML update category %s for table %s \n",$self->{INSTNAME}, $what, $table);
     return($changed);
   }
 
   if ( ( $#{$listref} < 0)  && (!$forceupdate) )  { # no entries 
-    printf("$self->{INSTNAME} LLmonDB: WARNING no entries found for %s in table %s \n",$what, $table);
+    printf("%-29s LLmonDB: WARNING no entries found for %s in table %s \n",$self->{INSTNAME},$what, $table);
     return($changed);
   }
   
@@ -208,7 +209,7 @@ sub process_LMLdata_from_LML {
       $starttime=time();
       my $cnt=$dbobj->remove_contents($table);
       $changed=($cnt>0);
-      printf("$self->{INSTNAME} LLmonDB: removed contents (%d rows) of table %s \n",$cnt,$table) if($self->{VERBOSE});
+      printf("%-29s LLmonDB: removed contents (%d rows) of table %s \n",$self->{INSTNAME},$cnt,$table) if($self->{VERBOSE});
     }
   }
 
@@ -217,7 +218,7 @@ sub process_LMLdata_from_LML {
     $starttime=time();
     ($cnt,$LMLminlastinsert,$LMLmaxlastinsert)=$self->add_to_table($dbobj,$table,$columns,$listref);
     $changed=1;
-    printf("$self->{INSTNAME} LLmonDB:     add.     %6d entries to table %15s/%-30s in %8.5fs\n",$cnt,$db,$table,time()-$starttime);
+    printf("%-29s LLmonDB:     add.     %6d entries to table %15s/%-35s in %8.5fs\n",$self->{INSTNAME},$cnt,$db,$table,time()-$starttime);
   }
 
   #  check for LLgenDB some update which have to be performed before update of trigerred tables
@@ -230,7 +231,7 @@ sub process_LMLdata_from_LML {
   
   if( exists($options->{update_trigger}) ) {
     if( ref $options->{update_trigger} eq 'ARRAY' ) {
-      printf("$self->{INSTNAME} LLmonDB:     trigger update of %s\n",join(", ",@{$options->{update_trigger}})) if($self->{VERBOSE});
+      printf("%-29s LLmonDB:     trigger update of %s\n",$self->{INSTNAME},join(", ",@{$options->{update_trigger}})) if($self->{VERBOSE});
       foreach my $up_table (@{$options->{update_trigger}}) {
         $self->update_table($dbobj,$db,$up_table,$LMLminlastinsert,$LMLmaxlastinsert);
       }
@@ -253,16 +254,16 @@ sub process_LMLdata_LLgenDB {
       ( ($what =~ "get_jobnodemap") || ($what =~ "get_jobtsmap") )
       && (!exists($cap->{'jobs'}))
       ) {
-    printf("$self->{INSTNAME} LLmonDB:     Input has no data for %s, skipping mapping tables ...\n",'jobs') if($self->{VERBOSE});
+    printf("%-29s LLmonDB:     Input has no data for %s, skipping mapping tables ...\n",$self->{INSTNAME},'jobs') if($self->{VERBOSE});
     return(undef);
   } else {
     if( ($what =~ "get_jobnodemap") && ( $#{$LMLdata->{JOBS_RUNNING_ENTRIES}} >= 0 ) ) {
       $self->get_jobnodemap_from_LML($LMLdata->{JOBS_RUNNING_ENTRIES}, $LMLdata->{NODES_BY_NODEID});
-      printf("$self->{INSTNAME} LLmonDB:     got jobnodemap from %s/%s (LML)\n",$db,$table) if($self->{VERBOSE});
+      printf("%-29s LLmonDB:     got jobnodemap from %s/%s (LML)\n",$self->{INSTNAME},$db,$table) if($self->{VERBOSE});
     }
     if( ($what =~ "get_jobtsmap") && ( $#{$LMLdata->{JOBS_RUNNING_ENTRIES}} >= 0 ) ) {
       $self->get_jobtsmap_from_LML($LMLdata->{JOBS_RUNNING_ENTRIES}, $LMLdata->{NODES_BY_NODEID});
-      printf("$self->{INSTNAME} LLmonDB:     got jobtsmap from %s/%s (LML)\n",$db,$table) if($self->{VERBOSE});
+      printf("%-29s LLmonDB:     got jobtsmap from %s/%s (LML)\n",$self->{INSTNAME},$db,$table) if($self->{VERBOSE});
     }
   }
   
@@ -271,13 +272,13 @@ sub process_LMLdata_LLgenDB {
     my $dbobj=$self->get_db_handle($db);
     $starttime=time();
     my $cnt=$self->add_to_jobtsmap($dbobj,$table);
-    printf("$self->{INSTNAME} LLmonDB:     upd.     %6d entries in table %15s/%-35s in %8.5fs\n",$cnt,$db,$table,time()-$starttime);
+    printf("%-29s LLmonDB:     upd.     %6d entries in table %15s/%-35s in %8.5fs\n",$self->{INSTNAME},$cnt,$db,$table,time()-$starttime);
   }
   if( ($what =~ "add_jobnodemap") ) {
     my $dbobj=$self->get_db_handle($db);
     $starttime=time();
     my $cnt=$self->add_to_jobnodemap($dbobj,$table);
-    printf("$self->{INSTNAME} LLmonDB:     upd.     %6d entries in table %15s/%-35s in %8.5fs\n",$cnt,$db,$table,time()-$starttime);
+    printf("%-29s LLmonDB:     upd.     %6d entries in table %15s/%-35s in %8.5fs\n",$self->{INSTNAME},$cnt,$db,$table,time()-$starttime);
   }
   
   return();
@@ -367,7 +368,7 @@ sub add_to_table {
           }
           if($data->[$c]<$LML_minlastinsert_vals->{$LMLminlastinsert->[$c]}) {
             $LML_minlastinsert_vals->{$LMLminlastinsert->[$c]}=$data->[$c];
-            printf("$self->{INSTNAME} LLmonDB: new value for %s: '%s'\n",$LMLminlastinsert->[$c],$data->[$c]) if($debug>=1);
+            printf("%-29s LLmonDB:     new value for %s: '%s'\n",$self->{INSTNAME},$LMLminlastinsert->[$c],$data->[$c]) if($debug>=1);
           }
         }
         if(defined($LMLmaxlastinsert->[$c])) {
@@ -434,7 +435,7 @@ sub update_table {
             my $rc=$dbobj->execute_sql($subsql);
             $cnt=$rc; # count only last operation
             if($sqldebug) {
-              printf("$self->{INSTNAME} LLmonDB:     call sql_update_contents on %s: lines changed=%4d %4.2fs SQL: %s\n",$table,$rc,time()-$stime,$subsql);
+              printf("%-29s LLmonDB:     call sql_update_contents on %s: lines changed=%4d %4.2fs SQL: %s\n",$self->{INSTNAME},$table,$rc,time()-$stime,$subsql);
             }
           }
           if(exists($options->{update}->{sql_update_contents}->{aggr_by_time_resolutions})) {
@@ -447,7 +448,7 @@ sub update_table {
             push(@trig_tables,$up_table);
           }
         }
-        printf("$self->{INSTNAME} LLmonDB:     trg_upd. %6d entries in table %15s/%-35s in %8.5fs\n",$cnt,$db,$table,time()-$starttime);
+        printf("%-29s LLmonDB:     trg_upd. %6d entries in table %15s/%-35s in %8.5fs\n",$self->{INSTNAME},$cnt,$db,$table,time()-$starttime);
       }
     }
   }
