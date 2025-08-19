@@ -1,0 +1,23 @@
+#!/usr/bin/bash
+# Copyright (c) 2023 Forschungszentrum Juelich GmbH.
+# This file is part of LLview. 
+#
+# This is an open source software distributed under the GPLv3 license. More information see the LICENSE file at the top level.
+#
+# Contributions must follow the Contributor License Agreement. More information see the CONTRIBUTING.md file at the top level.
+#
+# Contributors:
+#    Filipe Guimarães (Forschungszentrum Juelich GmbH) 
+
+usage () {
+cat << EOM
+Script to dump config files 
+Usage: $(basename "$0") 
+EOM
+}
+
+
+# Note: file .llview_server_rc must be sourced, e.g.:
+# $ source ~/.llview_server_rc
+
+$LLVIEW_HOME/da/LLmonDB/LLmonDB_mngt.pl -dbdir=$LLVIEW_DATA/$LLVIEW_SYSTEMNAME/perm/db -config=$LLVIEW_CONF/server/LLgenDB/LLgenDB.yaml dumpconfig

@@ -171,54 +171,60 @@ sub checkDB {
     if($index_in_DB_ref) {
       %index_in_db = map { $_ => 1 } @{$index_in_DB_ref};
     }
-
+        
     foreach my $t (@{$self->{CONFIGDATA}->{databases}->{$db}->{tables}}) {
       my $tableref=$t->{table};
       $table=$tableref->{name};
 
       # check index from config
-      my $indexcoldefs=$self->{CONFIG}->get_index_columns($db,$table);
-      if($#{$indexcoldefs}>=0) {
-        $indextable=sprintf("%s_idx",$table);
-        $indextables_in_config{$indextable}=1;
-
-        printf("  LLmonDB:  -> check $db indextable $indextable\n") if($debug>=3);
-
-        # check if index table exists
-        if(exists($index_in_db{$indextable})) {
-          # check index columns
-          my $dbcoldefs=$dbobj->query_index_columns($indextable);
-          my $diff=0;
-          if($#{$indexcoldefs}!=$#{$dbcoldefs->{collist}}) {
-            $diff=1;
-          } else {
-            for(my $c=0;$c<=$#{$indexcoldefs};$c++) {
-              if($indexcoldefs->[$c] ne $dbcoldefs->{collist}->[$c]) {
-                $diff=1;
-              }
-            }
-          }
-          
-          if($diff) {
-            printf("  LLmonDB:     CHECK: indextable for table $table hast different columns  (DB:@{$indexcoldefs}) != (Config:@{$dbcoldefs->{collist}}), recreate index table\n");
-            if(!$dryrun) {
-              $dbobj->remove_index($indextable);
-              $dbobj->create_index($table,$indextable,$indexcoldefs);
-            } else {
-              $found++;
-              printf("  LLmonDB:     [DRY: re-create database index ($db,$indextable)]\n");
-            }
-          }
-          
-        } else {
-          printf("  LLmonDB:     CHECK: indextable for table $table does not exists in DB, create indextable\n");
-          if(!$dryrun) {
-            $dbobj->create_index($table,$indextable,$indexcoldefs);
-          } else {
-            $found++;
-            printf("  LLmonDB:     [DRY: create database index ($db,$indextable)]\n");
-          }
-        }
+      my $indexdefs=$self->{CONFIG}->get_index_columns($db,$table);
+      my $icount=0;
+      foreach my $indexcoldefs (@{$indexdefs}) {
+	  if($#{$indexcoldefs}>=0) {
+	      $icount++;
+	      $indextable=sprintf("%s_idx",$table) if($icount==1);
+	      $indextable=sprintf("%s_%d_idx",$table,$icount) if($icount>1);
+	      $indextables_in_config{$indextable}=1;
+	      
+	      print "WF: $db,$table,$indextable\n" if($db eq "gpustate");
+	      printf("  LLmonDB:  -> check $db indextable $indextable\n") if($debug>=3);
+	      
+	      # check if index table exists
+	      if(exists($index_in_db{$indextable})) {
+		  # check index columns
+		  my $dbcoldefs=$dbobj->query_index_columns($indextable);
+		  my $diff=0;
+		  if($#{$indexcoldefs}!=$#{$dbcoldefs->{collist}}) {
+		      $diff=1;
+		  } else {
+		      for(my $c=0;$c<=$#{$indexcoldefs};$c++) {
+			  if($indexcoldefs->[$c] ne $dbcoldefs->{collist}->[$c]) {
+			      $diff=1;
+			  }
+		      }
+		  }
+		  
+		  if($diff) {
+		      printf("  LLmonDB:     CHECK: indextable for table $table hast different columns  (DB:@{$indexcoldefs}) != (Config:@{$dbcoldefs->{collist}}), recreate index table\n");
+		      if(!$dryrun) {
+			  $dbobj->remove_index($indextable);
+			  $dbobj->create_index($table,$indextable,$indexcoldefs);
+		      } else {
+			  $found++;
+			  printf("  LLmonDB:     [DRY: re-create database index ($db,$indextable)]\n");
+		      }
+		  }
+		  
+	      } else {
+		  printf("  LLmonDB:     CHECK: indextable for table $table does not exists in DB, create indextable\n");
+		  if(!$dryrun) {
+		      $dbobj->create_index($table,$indextable,$indexcoldefs);
+		  } else {
+		      $found++;
+		      printf("  LLmonDB:     [DRY: create database index ($db,$indextable)]\n");
+		  }
+	      }
+	  }
       }
     }
     

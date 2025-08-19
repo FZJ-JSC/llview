@@ -178,18 +178,14 @@ sub archive_data_by_limit {
   my($self) = shift;
   my($db,$table,$tableref,$expressions,$expressions_save,$archopts)=@_;
 
-  my $etime=time();
   # scan expressions
   my $rc_save=0;
   my $rc=0;
   my $maxval_cache={};
   my $lastts_save_cache=$self->archive_data_get_lastts_save_cache($db,$table,$archopts);
-  printf("%-35s WF: etime1=%10.4fs\n",$self->{INSTNAME},time()-$etime);
 
   my $where_save=$self->archive_data_by_limit_eval_expression($db,$table,$expressions_save,$maxval_cache,$lastts_save_cache);
-  printf("%-35s WF: etime2=%10.4fs\n",$self->{INSTNAME},time()-$etime);
   my $where=$self->archive_data_by_limit_eval_expression($db,$table,$expressions,$maxval_cache);
-  printf("%-35s WF: etime3=%10.4fs\n",$self->{INSTNAME},time()-$etime);
 
   if(defined($where_save) && !defined($where)) {
     $rc_save=$self->archive_process_data($db,$table,$tableref,$where_save,$archopts,"save");
@@ -199,9 +195,7 @@ sub archive_data_by_limit {
     $rc_save=$self->archive_process_data($db,$table,$tableref,$where_save,$archopts,"save");
     $rc+=$self->archive_process_data($db,$table,$tableref,$where,$archopts,"delete");
   }
-  printf("%-35s WF: etime4=%10.4fs\n",$self->{INSTNAME},time()-$etime);
   $self->archive_data_put_lastts_save_cache($db,$table,$archopts,$lastts_save_cache) if($rc_save>0);
-  printf("%-35s WF: etime5=%10.4fs\n",$self->{INSTNAME},time()-$etime);
   return($rc+$rc_save);
 }
 
@@ -225,7 +219,7 @@ sub archive_data_by_limit_eval_expression {
                                             });
 	  printf("%-35s LLmonDB:        -> query max                 %25s/%-40s in %8.5fs $col\n",
 		 $self->{INSTNAME},$db,$table,time()-$mtime);
-
+	  $maxval_cache->{$col}=0 if(!defined($maxval_cache->{$col}));
         }
         my $val=$self->timeexpr_to_sec($subvalue);
         if($val >= 0 ) {
