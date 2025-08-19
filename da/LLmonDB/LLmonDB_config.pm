@@ -332,6 +332,9 @@ sub get_columns_defs {
   return($retdata);
 }
 
+
+# returns for a givrn table a list of index lists
+# (data structure of result is a list of list)
 sub get_index_columns {
   my($self) = shift;
   my($db,$table)=@_;
@@ -346,7 +349,17 @@ sub get_index_columns {
   return($result) if(!exists($tableref->{options}));
   return($result) if(!exists($tableref->{options}->{index}));
 
-  $result=[split(/\s*,\s*/,$tableref->{options}->{index})];
+  if(ref($tableref->{options}->{index})) {
+      if(ref($tableref->{options}->{index}) eq "ARRAY") {
+	  foreach my $il (@{$tableref->{options}->{index}}) {
+	      push(@{$result},[split(/\s*,\s*/,$il)]);
+  	  }
+      } else {
+	  print STDERR "LLmonDB_config: WARNING: unknown index data structure for table $db, $table\n";
+      }
+  } else {
+      push(@{$result},[split(/\s*,\s*/,$tableref->{options}->{index})]);
+  }
   return($result);
 }
 
