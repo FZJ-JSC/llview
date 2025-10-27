@@ -222,6 +222,7 @@ sub update_structure {
 
         if(exists($nodeinfo->{percore})) {
           my @pairs=(split(",",$nodeinfo->{percore}));
+	  # my $numphyscore=( scalar @pairs ) ;
           my $numphyscore=( scalar @pairs ) / 2;
           my $pcores;
           foreach my $pair (@pairs) {
