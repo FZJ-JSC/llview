@@ -20,9 +20,8 @@ import sys
 import traceback
 import math
 import csv
-import ast
 import getpass
-import requests
+from urllib.parse import quote
 import yaml
 import json
 from matplotlib import colormaps   # To loop over colors in footers
@@ -30,6 +29,11 @@ from matplotlib.colors import to_hex # Convert RGB to HEX
 from itertools import count,cycle,product
 from copy import deepcopy
 from subprocess import check_output,run,PIPE
+# Optional: keyring
+try:
+    import keyring  # pyright: ignore [reportMissingImports]
+except ImportError:
+    keyring = None  # Set to None if not available
 
 # Fixing/improving multiline output and strings with '+' of YAML dump
 def str_presenter(dumper, data):
@@ -87,7 +91,7 @@ def flatten_json(json_data):
 def gen_tab_config(empty=False,suffix="cb",folder="./"):
   """
   This function generates the main tab configuration for LLview.
-  When all benchmarks are empty, it generates an empty LML
+  When all benchmarks are empty, it generates an empty YAML
   """
   filename = os.path.join(folder,f'tab_{suffix}.yaml')
   log = logging.getLogger('logger')
@@ -105,7 +109,7 @@ def gen_tab_config(empty=False,suffix="cb",folder="./"):
             'page': {
               'name': "Overview",
               'section': "cblist",
-              'default': True,
+              'default': False,
               'template': "/data/LLtemplates/CB",
               'context': "data/cb/cb_list.csv",
               # 'footer_graph_config': "/data/ll/footer_cblist.json",
@@ -144,8 +148,6 @@ class BenchRepo:
       'reverse': lambda i: -i,   
       # Sorts even numbers first, then odd numbers
       'interleave_even_odd': lambda i: (1 - (i & 1), i),
-      # From center to the outside
-      'center_out': lambda i: abs(i - (list_length // 2))
   }
   # The default key used if none is specified in the config
   DEFAULT_SORT_KEY = 'standard'
@@ -261,7 +263,7 @@ class BenchRepo:
 
 
     if self._config[self._name]['username']:
-      credentials = requests.utils.quote(self._config[self._name]['username']) + (f":{requests.utils.quote(self._config[self._name]['password'])}@" if self._config[self._name]['password'] else "@")
+      credentials = quote(self._config[self._name]['username']) + (f":{quote(self._config[self._name]['password'])}@" if self._config[self._name]['password'] else "@")
       self._config[self._name]['host'] = self._config[self._name]['host'].replace("://",f"://{credentials}")
 
     # If folder does not exist, git clone the repo
@@ -375,7 +377,7 @@ class BenchRepo:
       
       # Getting the keys:'from' of the metrics to be obtained from calculations 
       # (i.e., when one math operator is present)
-      calc_headers_current = {key:self._config[self._name][_][key]['from'] for key in self._config[self._name][_].keys() if ((self._config[self._name][_][key] and 'from' in self._config[self._name][_][key] and re.search('[\+\-\*\/]',self._config[self._name][_][key]['from'])))}
+      calc_headers_current = {key:self._config[self._name][_][key]['from'] for key in self._config[self._name][_].keys() if ((self._config[self._name][_][key] and 'from' in self._config[self._name][_][key] and re.search(r'[\+\-\*\/]',self._config[self._name][_][key]['from'])))}
 
       # Getting metric {names:types} for configuration file, from parameters/metrics/annotations
       # that are in csv headers and the ones that are calculated from others
@@ -438,7 +440,7 @@ class BenchRepo:
           for _ in [key for key in ['parameters', 'metrics', 'annotations'] if key in self._config[self._name]]:
             for key in calc_headers[_]:
               calc = calc_headers[_][key]
-              for head in re.split("[\+\-\*\/]+", calc_headers[_][key]):
+              for head in re.split(r"[\+\-\*\/]+", calc_headers[_][key]):
                 calc = calc.replace(head,line[re.sub("^'|'$|^\"|\"$", '', head)])
               try:
                 current_line[key] = self.safe_math_eval(calc)
@@ -620,12 +622,18 @@ class BenchRepo:
     Converts 'value' to type 'vtype' and multiply by 'factor', if present
     """
     if vtype == 'ts':
-      if value.replace('.','',1).isdigit():
+      if isinstance(value, str) and value.replace('.', '', 1).isdigit():
         value = float(value)
       else:
-        value = time.mktime(dateutil.parser.parse(value).timetuple())
+        try:
+          value = dateutil.parser.parse(value).timestamp()
+        except (dateutil.parser.ParserError, TypeError):
+          self.log.error(f"Warning: Could not parse timestamp from value: {value}. Skipping conversion...\n")
     elif ('date' in vtype):
-      value = time.mktime(dateutil.parser.parse(value).strftime('%Y-%m-%d %H:%M:%S'))
+      try:
+        value = dateutil.parser.parse(value).timestamp()
+      except (dateutil.parser.ParserError, TypeError):
+        self.log.error(f"Warning: Could not parse timestamp from value: {value}. Skipping conversion...\n")
     elif vtype == 'int':
       value = int(value)*factor if factor else int(value)
     elif vtype == 'float':
@@ -813,7 +821,7 @@ class BenchRepo:
     pages = []
     for benchname in self._metrics:
       page = {'page': {
-                        'name': benchname.upper(),
+                        'name': benchname,
                         'section': f'cb_{benchname}',
                         'default': False,
                         'template': f'/data/LLtemplates/CB_{benchname}',
@@ -1063,7 +1071,12 @@ class BenchRepo:
         graphs = []
         for graphelem in graph_metrics:
           # Restart colors for each graph 
-          color_list = colormaps[colormap].colors
+          cmap = colormaps[colormap]
+          if hasattr(cmap, 'colors'):
+            color_list = cmap.colors # type: ignore
+          else:
+            self.log.error(f"Colormap {colormap} does not have 'colors' property (not discrete colormap?). Using '{BenchRepo.DEFAULT_COLORMAP}' instead...\n")
+            color_list = colormaps[BenchRepo.DEFAULT_COLORMAP].colors # type: ignore
           indices_to_sort = range(len(color_list))
           colors = cycle([
               to_hex(color_list[idx]) for idx in sorted(
@@ -1129,7 +1142,7 @@ class BenchRepo:
 
       footer = { 
         'footer': {
-          'name': f'{benchname.upper()}',
+          'name': benchname,
           'filepath': f"$outputdir/ll/footer_cb_{benchname}.json",
           'stat_database': 'jobreport_json_stat',
           'stat_table': 'datasetstat_footer',
@@ -1143,76 +1156,6 @@ class BenchRepo:
       yaml.safe_dump(footers, file)
 
     return True
-
-  def query(self, metrics, prefix="", stype=""):
-    """
-    This function will loop through the metrics given in the list 'metrics'
-    and perform them in the server defined in self.
-    The values are put in the dict self._raw
-    """
-
-    # Looping over all metrics that should be put into the file
-    for name,metric in metrics.items():
-      if 'query' not in metric:
-        self.log.debug(f"No query to be done for {name}\n")
-        continue
-
-      if not self._host:
-        self.log.error(f"No hostname defined for current server. Query {name} cannot be done! Skipping...\n")
-        continue
-
-      self.log.debug(f"Performing query: {metric['query']}\n")
-      url = f"https://{self._host}/api/v1/query?query={requests.utils.quote(metric['query'])}"
-      self.log.debug(f"{url}\n")
-
-      # Querying Prometheus server
-      credentials = None
-      if self._user and self._pass:
-        credentials = (self._user, self._pass)
-      r = requests.get(url, auth=credentials, timeout=(5,10))
-
-      # If current query does not succeed, log error and continue to next query
-      if not r.ok:
-        self.log.error(f"Status <{r.status_code}> with query {url}\n")
-        continue
-
-      # Getting data from returned result of query
-      data = r.json()['data']['result']
-
-      # Looping over all instances (nodes/gpus) in current queried result
-      for instance in data:
-        # Getting name of the node
-        pid = instance['metric']['instance']
-        gpu = None
-        if 'device' in instance['metric']:
-          # If 'device' key is present, this is a gpu
-          gpu = int(instance['metric']['device'].replace('nvidia',''))
-        id = f"{pid}" + ( f"_{gpu:02d}" if isinstance(gpu,int) else "" )
-        self._raw.setdefault(id,{})
-        self._raw[id][name] = ast.literal_eval(instance['value'][1])
-        if 'factor' in metric:
-          self._raw[id][name] *= metric['factor']
-        # Adding extra keys 
-        self._raw[id]['ts'] = instance['value'][0]
-        self._raw[id]['pid'] = pid
-        self._raw[id]['id'] = id
-        if gpu:
-          self._raw[id]['feature'] = f"GPU{gpu}"
-
-    for instance in self._raw:
-      # Adding prefix and type of the unit, when given in the input
-      if prefix:
-          self._raw[instance]["__prefix"] = prefix
-      if stype:
-        self._raw[instance]["__type"] = stype
-      # Adding default values for missing metrics
-      for name,metric in metrics.items():
-        if name not in self._raw[instance] and 'default' in metric:
-          self._raw[instance][name] = metric['default']
-
-    self._dict |= self._raw
-    return
-
 
   def parse(self, cmd, timestamp="", prefix="", stype=""):
     """
@@ -1230,9 +1173,9 @@ class BenchRepo:
         self.log.warning(rawoutput.split("\n")[0]+"\n")
         return
       # Getting unit to be parsed from first keyword
-      unitname = re.match("(\w+)",rawoutput).group(1)
+      unitname = (m.group(1) if (m := re.match(r"(\w+)", rawoutput)) else None)
       self.log.debug(f"Parsing units of {unitname}...\n")
-      units = re.findall(f"({unitname}[\s\S]+?)\n\n",rawoutput)
+      units = re.findall(fr"({unitname}[\s\S]+?)\n\n",rawoutput)
       for unit in units:
         self.parse_unit_block(unit, unitname, prefix, stype)
     else:
@@ -1241,7 +1184,7 @@ class BenchRepo:
         self.log.warning(f"No output units from command {cmd}\n")
         return
       # Getting unit to be parsed from first keyword
-      unitname = re.match("(\w+)",rawoutput).group(1)
+      unitname = (m.group(1) if (m := re.match(r"(\w+)", rawoutput)) else None)
       self.log.debug(f"Parsing units of {unitname}...\n")
       for unit in units:
         current_unit = unit[unitname]
@@ -1272,20 +1215,25 @@ class BenchRepo:
     # self.log.debug(f"Unit: \n{unit}\n")
     lines = unit.split("\n")
     # first line treated differently to get the 'unit' name and avoid unnecessary comparisons
+    current_unit = None
     for pair in lines[0].strip().split(' '):
       key, value = pair.split('=',1)
       if key == unitname:
         current_unit = value
         self._raw[current_unit] = {}
         # Adding prefix and type of the unit, when given in the input
-        if stype:
+        if prefix:
           self._raw[current_unit]["__prefix"] = prefix
         if stype:
           self._raw[current_unit]["__type"] = stype
       # JobName must be treated separately, as it does not occupy the full line
       # and it may contain '=' and ' '
       elif key == "JobName":
-        value = re.search(".*JobName=(.*)$",lines[0].strip()).group(1)
+        if not current_unit:
+          # This should not happen, as the current_unit always show up before JobName
+          self.log.error("Encountered JobName before any unit definition\n")
+          return
+        value = (m.group(1) if (m := re.search(".*JobName=(.*)$",lines[0].strip())) else None)
         self._raw[current_unit][key] = value
         break
       self.add_value(key,value,self._raw[current_unit])
@@ -1317,7 +1265,7 @@ class BenchRepo:
         self.add_value(key,value,self._raw[current_unit])
     return
 
-  def apply_pattern(self,elements,exclude="",include=""):
+  def apply_pattern(self,elements,exclude={},include={}):
     """
     Loops over all units in elements to:
     - remove items that match 'exclude'
@@ -1609,16 +1557,15 @@ def get_credentials(name,config):
       return None,None
   # If username was not obtained in config or module, ask now
   if not password:
-    try:
-      # Trying keychain first
-      import keyring
+    if keyring:
+      log.info("Keyring module found, attempting to retrieve password.\n")
       password = keyring.get_password('llview_prometheus', username)
       if password is None:
-        getpass.getpass(f"Enter password for {username} on '{name}':")
-        password = getpass.getpass(username,'llview_prometheus')
-        keyring.set_password(name, username, password)
-    except ImportError:
-      log.error("Keyring module cannot be imported, password will not be saved.\n")
+        password_input = getpass.getpass(f"Enter password for {username} on '{name}' (will be stored in keychain):")
+        keyring.set_password(name, username, password_input)
+        password = password_input
+    else:
+      log.warning("Keyring module cannot be imported, password will not be saved.\n")
       password = getpass.getpass(f"Enter password for {username}:")
   return username,password
 
@@ -1765,8 +1712,7 @@ def main():
     else:
       log.warning(f"'ts' file {args.tsfile} does not exist! Getting all results...\n")
 
-  if (args.singleLML):
-    unique = BenchRepo()
+  unique = BenchRepo()
 
   all_empty = True
   if config:

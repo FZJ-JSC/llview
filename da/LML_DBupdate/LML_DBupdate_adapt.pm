@@ -282,11 +282,13 @@ sub adapt_data {
     }
     $jobref->{waittime}=0.0;
     if(exists($jobref->{queuedate})) {
-      my $endwaitts=$currentts;
-      if(exists($jobref->{starttime})) {
-        if($jobref->{starttime} && $jobref->{starttime} ne "Unknown") {
-          $endwaitts=LML_da_util::date_to_secj($jobref->{starttime});
-        }
+      my $endwaitts; 
+      if(($jobref->{state} ne "Pending") && exists($jobref->{starttime}) && ($jobref->{starttime}) && ($jobref->{starttime} ne "Unknown")) {
+        # If job has already started, and is not pending anymore (so, it has a start time)
+        $endwaitts=LML_da_util::date_to_secj($jobref->{starttime});
+      } else {
+        # If the job is still in the queue endwaitts is the current ts
+        $endwaitts=$currentts;
       }
       if($jobref->{queuedate}) {
         $jobref->{waittime}=($endwaitts-LML_da_util::date_to_secj($jobref->{queuedate}));

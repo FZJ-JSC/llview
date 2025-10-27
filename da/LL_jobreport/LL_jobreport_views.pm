@@ -124,7 +124,7 @@ sub process_view_page {
   my ($pageref,$varsetref)=@_;
   my ($ds);
 
-  foreach my $name ("name", "section", "icon", "context", "href", "default", "description",
+  foreach my $name ("name", "section", "icon", "context", "href", "default", "description", "tabs",
                     "template", "footer_template", "footer_graph_config", "graph_page_config"
                     ) {
     $ds->{$name}=$self->apply_varset($pageref->{$name},$varsetref) if(exists($pageref->{$name}));

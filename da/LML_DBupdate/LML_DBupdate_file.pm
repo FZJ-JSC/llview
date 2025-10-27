@@ -417,7 +417,8 @@ sub check_capabilities {
   foreach my $e (keys(%{$data})) {
     if($e=~/^(.*)_ENTRIES$/) {
       if(scalar @{$data->{$e}} > 0) {
-        my $c=lc($1);
+        my $c = $1;
+        $c = ($c =~ /^cb_/) ? $c : lc($c); # Temporary fix for CB to keep capitalisation
         $cap->{$c}=1;
         $self->{DATA}->{ENTRIES_BY_CAP}->{$c}=$data->{$e};
       }
@@ -425,7 +426,8 @@ sub check_capabilities {
   }
   if(defined($updatealways)) {
     foreach my $type (split(/\s*,\s*/,$updatealways)) {
-      my $ltype=lc($type);
+      my $ltype=$type;
+      $ltype = ($ltype =~ /^cb_/) ? $ltype : lc($ltype); # Temporary fix for CB to keep capitalisation
       if(!exists($self->{DATA}->{ENTRIES_BY_CAP}->{$ltype})) {
         $self->{DATA}->{ENTRIES_BY_CAP_FORCED}->{$ltype}=[];
         $capf->{$ltype}=1;

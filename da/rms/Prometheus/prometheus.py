@@ -12,18 +12,21 @@
 import argparse
 import logging
 import time
-from datetime import datetime
 import re
 import os
 import sys
 import math
 import csv
-import ast
 import getpass
 import requests
+from urllib.parse import quote
 from copy import deepcopy
 from subprocess import check_output
-
+# Optional: keyring
+try:
+    import keyring  # pyright: ignore [reportMissingImports]
+except ImportError:
+    keyring = None  # Set to None if not available
 
 def cores(options: dict, cores_info) -> dict:
   """
@@ -109,7 +112,7 @@ def gpu(options: dict, gpus_info) -> dict:
 
   log.debug(f"Performing query to check if node is up: 'sum by(instance) (up{{job=~\"mg-computes-region[0-9]+-external-node-exporter\"}})' \n")
   query = 'sum by(instance) (up{job=~"mg-computes-region[0-9]+-external-node-exporter"})'
-  url = f"https://{gpus_info._host}/api/v1/query?query={requests.utils.quote(query)}"
+  url = f"https://{gpus_info._host}/api/v1/query?query={quote(query)}"
   log.debug(f"{url}\n")
 
   # Querying server
@@ -127,7 +130,7 @@ def gpu(options: dict, gpus_info) -> dict:
   # If current query does not succeed, log error and skip next steps
   if not r.ok:
     log.error(f"Status <{r.status_code}> with query {url}")
-    return
+    return {}
 
   # Parsing imporant part of the query:
   data = {}
@@ -170,11 +173,11 @@ class Info:
   def __len__(self):
     return len(self._dict)
 
-  def items(self):
-    return self._dict.items()
-
   def __delitem__(self,key):
     del self._dict[key]
+
+  def items(self):
+    return self._dict.items()
 
   def add(self, to_add: dict, add_to=None):
     """
@@ -211,12 +214,13 @@ class Info:
         self.log.info(f"Query {name} is cached, recovering data without querying again...\n")
         data = cached_queries[name]
       else:
+        # Cache not present, doing the query
         if not self._host:
           self.log.error(f"No hostname defined for current server. Query {name} cannot be done! Skipping...\n")
           continue
         if 'query' in metric:
           self.log.debug(f"Performing query: {metric['query']}\n")
-          url = f"{'' if self._host.startswith('https://') else 'https://'}{self._host}/api/v1/query?query={requests.utils.quote(metric['query'])}"
+          url = f"{'' if self._host.startswith('https://') else 'https://'}{self._host}/api/v1/query?query={quote(metric['query'])}"
         elif 'endpoint' in metric:
           self.log.debug(f"Performing query at endpoint: {metric['endpoint']}\n")
           url = f"{'' if self._host.startswith('https://') else 'https://'}{self._host}{metric['endpoint']}"
@@ -226,29 +230,33 @@ class Info:
 
         # Adding parameters given in options
         if 'parameters' in metric:
-          url = f"{url}?{'&'.join([f'{key}={requests.utils.quote(value)}' for key,value in metric['parameters'].items()])}" 
+          url = f"{url}?{'&'.join([f'{key}={quote(value)}' for key,value in metric['parameters'].items()])}" 
 
         self.log.debug(f"{url}\n")
 
         # Querying server
-        if self._token:
-          # with token
-          headers = {'accept': 'application/json', 'Authorization': self._token}
-          r = requests.get(url, headers=headers, timeout=(10,20), verify=self._verify)
-        else:
-          # with credentials
-          credentials = None
-          if self._user and self._pass:
-            credentials = (self._user, self._pass)
-          r = requests.get(url, auth=credentials, timeout=(10,20), verify=self._verify)
+        try:
+          if self._token:
+            # with token
+            headers = {'accept': 'application/json', 'Authorization': self._token}
+            resp = requests.get(url, headers=headers, timeout=(10,20), verify=self._verify)
+          else:
+            # with credentials
+            credentials = None
+            if self._user and self._pass:
+              credentials = (self._user, self._pass)
+            resp = requests.get(url, auth=credentials, timeout=(10,20), verify=self._verify)
 
-        # If current query does not succeed, log error and continue to next query
-        if not r.ok:
-          self.log.error(f"Status <{r.status_code}> with query {url}\n")
+          # If current query does not succeed, log error and continue to next query
+          if not resp.ok:
+            self.log.error(f"Status <{resp.status_code}> with query {url}\n")
+            continue
+        except Exception as e:
+          self.log.error(f"Problem with request/json error: {e}")
           continue
 
         # Getting data from returned result of query
-        r = r.json()
+        r = resp.json()
         self.log.debug(f"Raw response received\n")
         # self.log.debug(f"Raw response received: {r}\n")
 
@@ -264,7 +272,9 @@ class Info:
 
         if ('cache' in metric) and metric['cache']:
           cached_queries[name] = data
+      #==== END GETTING DATA ====
 
+      # After recovered cache values or queried data:
       # If data is empty, there's nothing to do.
       if not data:
         self.log.debug(f"Data is empty, skipping loop processing for metric {metric}.\n")
@@ -274,7 +284,7 @@ class Info:
 
       # Determine the structure of the data from the first element.
       # This avoids redundant 'if' checks inside the loop.
-      first_instance = data[0]
+      first_instance = data[0] # TODO: check how SEMS response looks like here
       has_metric_key = 'metric' in first_instance
 
       # If instance contain the key 'metric' (e.g., Prometheus)
@@ -392,7 +402,7 @@ class Info:
         # `data` is a dictionary where keys are the IDs.
         ts_key = f'{prefix}_ts' if prefix else 'ts'
         name_ts_key = f'{name}_ts' if prefix else 'ts'
-        internal_ts = r['out']['index'][0]
+        internal_ts = data[0] # TODO: check how SEMS response looks like here
         
         for id, value in data.items():
           id_data = self._raw.setdefault(id, {})
@@ -454,7 +464,7 @@ class Info:
         self.log.warning(rawoutput.split("\n")[0]+"\n")
         return
       # Getting unit to be parsed from first keyword
-      unitname = re.match(r"(\w+)",rawoutput).group(1)
+      unitname = (m.group(1) if (m := re.match(r"(\w+)", rawoutput)) else None)
       self.log.debug(f"Parsing units of {unitname}...\n")
       units = re.findall(fr"({unitname}[\s\S]+?)\n\n",rawoutput)
       for unit in units:
@@ -465,7 +475,7 @@ class Info:
         self.log.warning(f"No output units from command {cmd}\n")
         return
       # Getting unit to be parsed from first keyword
-      unitname = re.match(r"(\w+)",rawoutput).group(1)
+      unitname = (m.group(1) if (m := re.match(r"(\w+)", rawoutput)) else None)
       self.log.debug(f"Parsing units of {unitname}...\n")
       for unit in units:
         current_unit = unit[unitname]
@@ -496,20 +506,25 @@ class Info:
     # self.log.debug(f"Unit: \n{unit}\n")
     lines = unit.split("\n")
     # first line treated differently to get the 'unit' name and avoid unnecessary comparisons
+    current_unit = None
     for pair in lines[0].strip().split(' '):
       key, value = pair.split('=',1)
       if key == unitname:
         current_unit = value
         self._raw[current_unit] = {}
         # Adding prefix and type of the unit, when given in the input
-        if stype:
+        if prefix:
           self._raw[current_unit]["__prefix"] = prefix
         if stype:
           self._raw[current_unit]["__type"] = stype
       # JobName must be treated separately, as it does not occupy the full line
       # and it may contain '=' and ' '
       elif key == "JobName":
-        value = re.search(".*JobName=(.*)$",lines[0].strip()).group(1)
+        if not current_unit:
+          # This should not happen, as the current_unit always show up before JobName
+          self.log.error("Encountered JobName before any unit definition\n")
+          return
+        value = (m.group(1) if (m := re.search(".*JobName=(.*)$",lines[0].strip())) else None)
         self._raw[current_unit][key] = value
         break
       self.add_value(key,value,self._raw[current_unit])
@@ -806,16 +821,15 @@ def get_credentials(name,config):
       return None,None
   # If username was not obtained in config or module, ask now
   if not password:
-    try:
-      # Trying keychain first
-      import keyring
+    if keyring:
+      log.info("Keyring module found, attempting to retrieve password.\n")
       password = keyring.get_password('llview_prometheus', username)
       if password is None:
-        getpass.getpass(f"Enter password for {username} on '{name}':")
-        password = getpass.getpass(username,'llview_prometheus')
-        keyring.set_password(name, username, password)
-    except ImportError:
-      log.error("Keyring module cannot be imported, password will not be saved.\n")
+        password_input = getpass.getpass(f"Enter password for {username} on '{name}' (will be stored in keychain):")
+        keyring.set_password(name, username, password_input)
+        password = password_input
+    else:
+      log.warning("Keyring module cannot be imported, password will not be saved.\n")
       password = getpass.getpass(f"Enter password for {username}:")
   return username,password
 
@@ -934,8 +948,7 @@ def main():
     parser.print_help()
     exit(1)
 
-  if (args.singleLML):
-    unique = Info()
+  unique = Info()
 
   for servername,server_config in config.items():
     log.debug(f"Processing Server '{servername}'\n")

@@ -10,6 +10,7 @@
 
 package LML_da_util;
 use Time::Local;
+use Time::Piece; # For the timezone
 my $debug=0;
 use Data::Dumper;
 use File::Spec;
@@ -183,16 +184,26 @@ sub sec_to_date {
   return($date);
 }
 
+# Transform from seconds (timestamp) to date format ISO 8601 format
 sub sec_to_date_yymmdd {
-  my ($lsec)=@_;
-  my($date);
-  my ($sec,$min,$hours,$mday,$mon,$year,$rest)=localtime($lsec);
-  $year=sprintf("%02d",$year % 100);
-  $mon++;
-  $date=sprintf("%02d/%02d/%02d-%02d:%02d:%02d",$year,$mon,$mday,$hours,$min,$sec);
-  # $msg=sprintf("[sec_to_date_yymmdd] TMPDEB: $lsec -> sec=$sec,min=$min,hours=$hours,mday=$mday,mon=$mon,year=$year -> $date\n"); logmsg($msg,\*STDERR);
-  return($date);
+  my ($lsec) = @_;
+
+  # Create a Time::Piece object from the epoch seconds.
+  # This object correctly understands the server's local time and DST.
+  my $time = Time::Piece->new($lsec);
+
+  # Get the timezone offset string (e.g., "+0100" or "+0200").
+  # The '%z' specifier does this automatically.
+  my $offset = $time->strftime('%z');
+  
+  # Add the required colon for the ISO 8601 standard (e.g., "+01:00").
+  $offset =~ s/(\d{2})$/:$1/;
+
+  # Format the date and time, and append the corrected offset.
+  # The object-oriented style is very clear.
+  return $time->strftime('%Y-%m-%dT%H:%M:%S') . $offset;
 }
+
 
 sub sec_to_date_ger {
   my ($lsec)=@_;
