@@ -165,6 +165,17 @@ sub adapt_data {
       $ref->{used_cores_phys}=$data->{CINODES_BY_NODEID}->{$nodeid}->{physcoresused};
       $ref->{used_cores_logic}=(defined($data->{CINODES_BY_NODEID}->{$nodeid}->{logiccoresused})? $data->{CINODES_BY_NODEID}->{$nodeid}->{logiccoresused}: 0);
     }
+    # check for loadmemnode info, overwrite SLURM info
+    if(exists($data->{LMNODES_BY_NODEID}->{$nodeid})) {
+      my $r=$data->{LMNODES_BY_NODEID}->{$nodeid};
+      $ref->{cpuload} = $ref->{memtotal} = $ref->{memavail} = $ref->{memfree} = $ref->{pp_size} = 0;
+      $ref->{cpuload}  = $r->{cpuload}   if(exists($r->{cpuload}));
+      $ref->{memtotal} = $r->{memtotal}  if(exists($r->{memtotal}));
+      $ref->{memavail} = $r->{memavail}  if(exists($r->{memavail}));
+      $ref->{memfree}  = $r->{memfree}   if(exists($r->{memfree}));
+      $ref->{memused}  = $r->{memused}   if(exists($r->{memused}));
+      $ref->{pp_size}  = $r->{pp_size}   if(exists($r->{pp_size}));
+    }
   }
 
   # init new attributes in IONODE ENTRIES

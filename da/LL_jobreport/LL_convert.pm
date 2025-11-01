@@ -129,7 +129,8 @@ sub init_convert_functions {
                                 "tolower"     => \&tolower,
                                 "toupper"     => \&toupper,
                                 "toupperfirst" => \&toupperfirst,
-                                "null_if_empty" => \&null_if_empty
+                                "null_if_empty" => \&null_if_empty,
+                                "mask_comma" => \&maskcomma,
                               };
   return();
 }
@@ -649,6 +650,18 @@ sub tolower {
     return("");
   } else {
     return(lc($text));
+  }
+}
+
+sub maskcomma {
+  my ($text)=@_;
+  if(!defined($text)) {
+    return("");
+  } else {
+    if($text=~/,/) {
+      $text=~s/,/\\\\,/gs;
+    }
+    return($text);
   }
 }
 
