@@ -157,10 +157,10 @@ sub parprocess {
       }
       $msg=$self->{VERBOSE} ? sprintf("[$PRIMARKER] Waiting 1 second for new steps to be ready\n") : ""; logmsg($msg);
       if(exists($globalvarref->{sleepusec})) {
-	  usleep($globalvarref->{sleepusec});
+        usleep($globalvarref->{sleepusec});
       }
       else {
-	  usleep(1000000);
+        usleep(1000000);
       }
       next STEPS;
     }

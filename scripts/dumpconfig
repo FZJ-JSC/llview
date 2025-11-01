@@ -16,7 +16,6 @@ Usage: $(basename "$0")
 EOM
 }
 
-
 # Note: file .llview_server_rc must be sourced, e.g.:
 # $ source ~/.llview_server_rc
 

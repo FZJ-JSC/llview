@@ -351,11 +351,11 @@ sub get_index_columns {
 
   if(ref($tableref->{options}->{index})) {
       if(ref($tableref->{options}->{index}) eq "ARRAY") {
-	  foreach my $il (@{$tableref->{options}->{index}}) {
-	      push(@{$result},[split(/\s*,\s*/,$il)]);
-  	  }
+        foreach my $il (@{$tableref->{options}->{index}}) {
+          push(@{$result},[split(/\s*,\s*/,$il)]);
+        }
       } else {
-	  print STDERR "LLmonDB_config: WARNING: unknown index data structure for table $db, $table\n";
+        print STDERR "LLmonDB_config: WARNING: unknown index data structure for table $db, $table\n";
       }
   } else {
       push(@{$result},[split(/\s*,\s*/,$tableref->{options}->{index})]);

@@ -79,7 +79,7 @@ while(my $line=<IN>) {
   }
   if($line=~/\[LML_DBupdate.pl\]\[PRIMARY\s*\]\s+$patwrd\s+in \s*$patfp[s] \(ts=$patfp,$patfp,l=$patint,nr=$patint\)/) {
     my($a,$b,$c,$d,$e,$f)=($1,$2,$3,$4,$5,$6);
-#    print "TMPDEB1: ($a,$b,$c,$d,$e,$f)\n";
+    # print "TMPDEB1: ($a,$b,$c,$d,$e,$f)\n";
     my $name=sprintf("%s",$a);
     $stat->{$name}->{start}=$c;
     $stat->{$name}->{end}=$d;
@@ -94,10 +94,10 @@ while(my $line=<IN>) {
     $stat->{$name}->{end}=$e;
     $stat->{$name}->{startgroupnum}=$f;
     $stat->{$name}->{nr}=$g;
-#    print "TMPDEB2: ($a,$b,$c,$d,$e,$f,$g)\n";
+    # print "TMPDEB2: ($a,$b,$c,$d,$e,$f,$g)\n";
     foreach my $k (keys(%{$dblist->{$a}})) {
-	$dblist->{$a}->{$k}->{start}+=$d;
-	$dblist->{$a}->{$k}->{end}+=$d;
+      $dblist->{$a}->{$k}->{start}+=$d;
+      $dblist->{$a}->{$k}->{end}+=$d;
     }
     
   }
@@ -105,9 +105,9 @@ while(my $line=<IN>) {
     my($a,$b,$c,$d,$e,$f,$g)=($1,$2,$3,$4,$5,$6,$7);
     my $name=sprintf("_%s_%s",lc($a),lc($f));
     if(exists($dbts->{$a})) {
-	$stat->{$name}->{start}=$dbts->{$a};
+      $stat->{$name}->{start}=$dbts->{$a};
     } else {
-	$stat->{$name}->{start}=0;
+      $stat->{$name}->{start}=0;
     }
     $stat->{$name}->{end}=$stat->{$name}->{start}+$g;
     $dbts->{$b}=$stat->{$name}->{end};
@@ -116,7 +116,7 @@ while(my $line=<IN>) {
     $stat->{$name}->{cmplx}=$c;
 
     $dblist->{$a}->{$name}=$stat->{$name};
-#    print "TMPDEB3: ($a,$b,$c,$d,$e,$f,$g) -> $stat->{$name}->{start}, $stat->{$name}->{end} $stat->{$name}->{startgroupnum} $stat->{$name}->{nr}\n";
+    # print "TMPDEB3: ($a,$b,$c,$d,$e,$f,$g) -> $stat->{$name}->{start}, $stat->{$name}->{end} $stat->{$name}->{startgroupnum} $stat->{$name}->{nr}\n";
   }
   if($line=~/\[LML_DBupdate.pl\]\[$patwrd\s*\]\s+LLmonDB:\s+$patwrd\.\s*$patint entries.*in\s+$patfp[s]/) {
     my($a,$b,$c,$d)=($1,$2,$3,$4);

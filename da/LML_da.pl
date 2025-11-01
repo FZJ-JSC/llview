@@ -86,9 +86,9 @@ $globalvarref->{sleepusec} = $opt_sleepusec;
 
 # replace ENV vars 
 foreach my $k (keys(%ENV)) {
-    if($k=~/^LLVIEW_/) {
-	$globalvarref->{$k} = $ENV{$k};
-    }
+  if($k=~/^LLVIEW_/) {
+    $globalvarref->{$k} = $ENV{$k};
+  }
 }
 
 # replacing default values with the ones read from configfile

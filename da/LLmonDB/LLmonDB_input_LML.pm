@@ -158,7 +158,7 @@ sub process_LMLdata_DB {
   # close db (if opened)
   $self->close_db($db);
   my $endtime=time();
-#  printf("$self->{INSTNAME} LLmonDB: DB %20s ready in                 %8.5fs (ts=%.5f,%.5f,l=%d,nr=%d)\n",$db,$endtime-$starttime,$starttime,$endtime,$grpnr,$stepnr); # if($self->{VERBOSE});
+  #  printf("$self->{INSTNAME} LLmonDB: DB %20s ready in                 %8.5fs (ts=%.5f,%.5f,l=%d,nr=%d)\n",$db,$endtime-$starttime,$starttime,$endtime,$grpnr,$stepnr); # if($self->{VERBOSE});
   printf("%-29s LLmonDB: DB %20s ready in                 %8.5fs (ts=%.5f,%.5f,l=%d,nr=%d)\n",$self->{INSTNAME},$db,$endtime-$starttime,$starttime,$endtime,$grpnr,$stepnr); # if($self->{VERBOSE});
   
   printf("$self->{INSTNAME} LLmonDB: end process_LMLdata_DB ($db) \n") if($debug>=3);

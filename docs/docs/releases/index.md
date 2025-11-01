@@ -3,7 +3,37 @@
 A simplified package of LLview is also available Open Source on GitHub. [See more](public.md)
 
 Developments on the internal releases of LLview are not following the new implementations as the public one. New fixes and improvements done on the internal releases are brought periodically to the public release, but not vice-versa. The versions of the internal "releases" are kept in place for simplicity.
-A single version of JURI is used for both internal and public versions of LLview.
+A single version of JURI is used for both internal and public versions of LLview. [See here the changelog for JURI](juri.md).
+
+### 2.4.1 (November 1, 2025)
+
+<h4> Added </h4>
+
+- Added IO rates to tables;
+- Added ENV vars to `$globalvarref`;
+- Added "replay" module (documentation still to be added);
+- Added `PRAGMA optimize`
+- Added utility script `dumpconfig` to dump YAML config file
+- Added envvar expansions also for `pre_rows` and `rows`
+- Added archiver scripts to compress, tar and move local archived files to remote arch-dirs (documentation still to be added);
+- Added 'tabs' key for views
+- Added missing `loadmemnode` to `LML_DBupdate_file.pm` (Should fix GitHub #6)
+- Added `maskcomma` convert function
+
+<h4> Changed </h4>
+
+- Improvements on Continuous Benchmark: Added links on names for each benchmark, removed the name column on the benchmark page, made color and style of traces configurable
+- Improved documentation, including continuous benchmarks information
+- Extended YAML input to allow multiple indices per table
+- Extended YAML input to allow multiple indices per table
+- Improved `waittime` after a job has started or is in the queue
+- Changed date format of `DATE_NOW` (`info_str` on JURI) to ISO including timezone
+
+<h4> Fixed </h4>
+
+- Fixed data collection on Prometheus plugin
+- Avoid warnings in db-arch if table is empty
+- Fix capitalization for Continuous Benchmark titles
 
 ### 2.3.2 (December 16, 2024)
 
@@ -13,22 +43,11 @@ A single version of JURI is used for both internal and public versions of LLview
 - Automatic archiving (in tests, not yet ported to the public release)
 - Possibility to give system status information to be shown on the webportal
 - JuRepTool: Added 'link failure' error recognition
-- JURI: Added possibility for links to status page (and current status) on all headers (file containing status should be updated externally, e.g. via cronjob)
-- JURI: Added possibility to link to user profile (e.g.: JuDoor)
-- JURI: Added possibility to open login page in another window/tab when using middle mouse or ctrl+click on "home" button
-- JURI: Add a check if user of 'loginasuser' exists or not
-- JURI: Added 'jump to project' field on login
-- JURI: Added graph for slider (used at the moment for 'Queue Analysis')
 
 <h4> Changed </h4>
 
 - Internal improvements
 - JuRepTool: Activated Core metrics by default for JuRepTool reports (must be deactivated if those metrics are not available)
-- JURI: Compressed external js libraries and added js.gz to `.htaccess`
-- JURI: Removed deflate from `.htaccess`
-- JURI: Turned off cache on `.htaccess` to avoid large memory consumption
-- JURI: Improved style when viewwidth is reduced
-- JURI: Made username in project page clickable
 
 
 <h4> Fixed </h4>
@@ -36,9 +55,6 @@ A single version of JURI is used for both internal and public versions of LLview
 - Fixed filter for admin jobs on `plotlists.dat` (files were not created, but jobs were being added for JuRepTool)
 - JuRepTool: Fixed 'CPU Usage' in Overview graph
 - JuRepTool: Removed rows containing 'inf' values
-- JURI: Fixed link of 'jump to jobid' field
-- JURI: Fixed buttons when loginasuser is used
-- JURI: Fixed column show/hide
 
 
 ### 2.2.4 (April 3, 2024)
@@ -46,25 +62,12 @@ A single version of JURI is used for both internal and public versions of LLview
 <h4> Added </h4>
 
 - Added generation of DBgraphs to automatically create dependency graphs (shown as mermaid graphs on the "Dependency Graphs" of Support View)
-- JURI: Added CorePattern fonts and style
-- JURI: Added system selector (Support View)
-- JURI: Added buttons on fields in `login.php`
-- JURI: Added home button
-
-<h4> Changed </h4>
-
-- JURI: Changed how versions of external libraries are modified (now via links, such that future versions always work with old reports)
-- JURI: Updated plotly.js and removed old one
-- JURI: Changed login.php to use REMOTE_USER (compatible with OIDC too)
-- JURI: Improved favicon SVG
 
 <h4> Fixed </h4>
 
 - JuRepTool: Fixed favicon 
 - JuRepTool: Fixed timeline zoom sync
-- JuRepTool/JURI: Removed external js libraries versions
-- JURI: Fix graph_footer_plotly.handlebar to have a common root (to avoid xml error)
-- JURI: Fix .pdf.gz extension on .htaccess
+- JuRepTool: Removed external js libraries versions
 
 
 ### 2.2.2 (January 16, 2024)
@@ -74,14 +77,10 @@ A single version of JURI is used for both internal and public versions of LLview
 - Added new queue on JuRepTool
 - Possibility to use more than one helper function via `data_pre` (from right to left)
 - Core pattern usage (Support only)
-- Added info button on the top right when a page has a 'description' attribute (JURI)
 
 <h4> Changed </h4>
 
 - Changed images on Web Portal to svg
-- Improve footer resize (JURI)
-- Implemented suggestions from Lighthouse for better accessibility (JURI)
-- Colorscales improved, and changed default to RdYlGr (JURI)
 
 
 ### 2.2.0 (November 13, 2023)

@@ -15,6 +15,7 @@ nav:
     - Intro: index.md
     - Internal Releases: releases/index.md
     - Public Releases: releases/public.md
+    - JURI Releases: releases/juri.md
   - Live: 
     - Live View: live/index.md
     - LLview Client: live/client.md

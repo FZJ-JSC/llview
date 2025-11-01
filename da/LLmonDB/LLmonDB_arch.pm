@@ -131,11 +131,11 @@ sub archive_data {
             my $stime=time();
             $rc=$self->archive_data_by_limit($db,$table,$tableref,$expressions,$expressions_save,$archopts);
             printf("%-35s LLmonDB:     archive %6d entries of table %25s/%-40s in %8.5fs (by limit %s, %s)\n",
-		   $self->{INSTNAME},
-		   $rc,$db,$table,time()-$stime,
-		   defined($expressions)?$expressions:"",
-		   defined($expressions_save)?"save: $expressions_save":""
-		);
+                    $self->{INSTNAME},
+                    $rc,$db,$table,time()-$stime,
+                    defined($expressions)?$expressions:"",
+                    defined($expressions_save)?"save: $expressions_save":""
+                  );
           }
 
           # limit_aggr_time: [ 1440, 4320, 17280, 32560, 129600, 525600 ]     # in minutes
@@ -211,15 +211,15 @@ sub archive_data_by_limit_eval_expression {
         my($col,$subvalue)=($1,$2);
         my $maxvalue;
         if(!exists($maxval_cache->{$col})) {
-	  my $mtime=time();  
+          my $mtime=time();  
           $maxval_cache->{$col}=$self->query($db,$table,
                                             {
                                           type => 'get_max',
                                           hash_key => $col
                                             });
-	  printf("%-35s LLmonDB:        -> query max                 %25s/%-40s in %8.5fs $col\n",
-		 $self->{INSTNAME},$db,$table,time()-$mtime);
-	  $maxval_cache->{$col}=0 if(!defined($maxval_cache->{$col}));
+          printf("%-35s LLmonDB:        -> query max                 %25s/%-40s in %8.5fs $col\n",
+                  $self->{INSTNAME},$db,$table,time()-$mtime);
+          $maxval_cache->{$col}=0 if(!defined($maxval_cache->{$col}));
         }
         my $val=$self->timeexpr_to_sec($subvalue);
         if($val >= 0 ) {
@@ -300,7 +300,7 @@ sub archive_process_data {
             });
 
   printf("%-35s LLmonDB:        -> query count               %25s/%-40s in %8.5fs (%7d entries) $where\n",
-	 $self->{INSTNAME},$db,$table,time()-$ctime,$count);
+          $self->{INSTNAME},$db,$table,time()-$ctime,$count);
   
   if($count==0) {
     printf("-35s LLmonDB:        -> no data to archive for $db/$table\n",$self->{INSTNAME}) if($self->{VERBOSE});
@@ -340,7 +340,7 @@ sub archive_process_data {
         $fh->close();
       }
       printf("%-35s LLmonDB:        -> archive                   %25s/%-40s in %8.5fs (%7d entries) %s \n",
-	     $self->{INSTNAME},$db,$table,time()-$stime,$count,$filename);
+              $self->{INSTNAME},$db,$table,time()-$stime,$count,$filename);
 
       printf("-35s LLmonDB:    -> archived data to $filename ($count entries)\n") if($self->{VERBOSE});
     }
@@ -357,7 +357,7 @@ sub archive_process_data {
                               });
 
       printf("%-35s LLmonDB:        -> remove entries            %25s/%-40s in %8.5fs (%7d entries) \n",
-	     $self->{INSTNAME},$db,$table,time()-$rtime,$rcount);
+              $self->{INSTNAME},$db,$table,time()-$rtime,$rcount);
 
       printf("-35s LLmonDB:    -> removed $rcount entries\n",$self->{INSTNAME}) if($self->{VERBOSE});
     }
