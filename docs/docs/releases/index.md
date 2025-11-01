@@ -10,30 +10,13 @@ A single version of JURI is used for both internal and public versions of LLview
 <h4> Added </h4>
 
 - Added IO rates to tables;
-- Added ENV vars to `$globalvarref`;
-- Added "replay" module (documentation still to be added);
-- Added `PRAGMA optimize`
-- Added utility script `dumpconfig` to dump YAML config file
-- Added envvar expansions also for `pre_rows` and `rows`
-- Added archiver scripts to compress, tar and move local archived files to remote arch-dirs (documentation still to be added);
-- Added 'tabs' key for views
-- Added missing `loadmemnode` to `LML_DBupdate_file.pm` (Should fix GitHub #6)
-- Added `maskcomma` convert function
+- Added PagePool metrics (only for JUSUF for now)
+- Added missing `loadmemnode` to `LML_DBupdate_file.pm`
 
 <h4> Changed </h4>
 
-- Improvements on Continuous Benchmark: Added links on names for each benchmark, removed the name column on the benchmark page, made color and style of traces configurable
-- Improved documentation, including continuous benchmarks information
-- Extended YAML input to allow multiple indices per table
-- Extended YAML input to allow multiple indices per table
 - Improved `waittime` after a job has started or is in the queue
 - Changed date format of `DATE_NOW` (`info_str` on JURI) to ISO including timezone
-
-<h4> Fixed </h4>
-
-- Fixed data collection on Prometheus plugin
-- Avoid warnings in db-arch if table is empty
-- Fix capitalization for Continuous Benchmark titles
 
 ### 2.3.2 (December 16, 2024)
 

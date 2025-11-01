@@ -22,7 +22,6 @@ Possibility to have tabs on pages (now used for History on production systems, a
 - Improvements on Continuous Benchmark: Added links on names for each benchmark, removed the name column on the benchmark page, made color and style of traces configurable
 - Improved documentation, including continuous benchmarks information
 - Extended YAML input to allow multiple indices per table
-- Extended YAML input to allow multiple indices per table
 - Improved `waittime` after a job has started or is in the queue
 - Changed date format of `DATE_NOW` (`info_str` on JURI) to ISO including timezone
 
