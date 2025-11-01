@@ -53,17 +53,17 @@ my $opt_steps="sync,simulate";
 my $opt_nsteps=1;
 
 usage($0) if( ! GetOptions( 
-            'verbose'          => \$opt_verbose,
-            'timings'          => \$opt_timings,
-            'config=s'         => \$opt_config,
-            'systemname=s'     => \$opt_systemname,
-            'steps=s'          => \$opt_steps,
-            'nsteps=i'         => \$opt_nsteps,
-            'currentts=i'      => \$opt_currentts,
-            'currenttsfile=s'  => \$opt_currenttsfile,
-            'dump'             => \$opt_dump,
-            'demo'             => \$opt_demo
-            ) );
+                    'verbose'          => \$opt_verbose,
+                    'timings'          => \$opt_timings,
+                    'config=s'         => \$opt_config,
+                    'systemname=s'     => \$opt_systemname,
+                    'steps=s'          => \$opt_steps,
+                    'nsteps=i'         => \$opt_nsteps,
+                    'currentts=i'      => \$opt_currentts,
+                    'currenttsfile=s'  => \$opt_currenttsfile,
+                    'dump'             => \$opt_dump,
+                    'demo'             => \$opt_demo
+                    ) );
 
 printf("$0: options:\n");
 printf("  verbose:   %d\n",$opt_verbose);
@@ -87,19 +87,19 @@ if((!defined $opt_config)||(! -f $opt_config)) {
 
 my $steps;
 foreach my $step (split(/\s?,\s?/,$opt_steps))  {
-    if($step !~ /(sync|initdb|updatedb|sim|simulate)/) {
-	$msg=sprintf("$instname unknown step $step, exiting...\n"); logmsg($msg,\*STDERR);
-	usage($0);
-	exit;
-    }
-    $steps->{$step}=1;
+  if($step !~ /(sync|initdb|updatedb|sim|simulate)/) {
+    $msg=sprintf("$instname unknown step $step, exiting...\n"); logmsg($msg,\*STDERR);
+    usage($0);
+    exit;
+  }
+  $steps->{$step}=1;
 }
 
 my $config_obj=&read_config($opt_config, $opt_verbose);
 if(!defined $config_obj) {
-    $msg=sprintf("$instname Config file '$opt_config' could not be read, exiting...\n"); logmsg($msg,\*STDERR);
-    usage($0);
-    exit;
+  $msg=sprintf("$instname Config file '$opt_config' could not be read, exiting...\n"); logmsg($msg,\*STDERR);
+  usage($0);
+  exit;
 }
 
 my $configdata=$config_obj->get_contents();
@@ -107,11 +107,10 @@ my $configdata=$config_obj->get_contents();
 # apply env vars to config 
 my $subvars;
 for my $v ( qw ( LLVIEW_HOME LLVIEW_DATA LLVIEW_SYSTEMNAME LLVIEW_CONF ) ) {
-    $subvars->{$v}=$ENV{$v};
+  $subvars->{$v}=$ENV{$v};
 }
 
 &substitute_recursive($configdata,$subvars);
-
 
 my $okay=&check_update_config($configdata, $opt_verbose);
 exit if (!$okay);
@@ -125,43 +124,40 @@ my $replay_status=&read_or_init_replay_status($configdata,$opt_verbose);
 
 
 if(exists $steps->{"sync"}) {
-    printf("\n");
-    printf("STEP: sync\n");
-    &sync_LML_files($configdata,$replay_status,$opt_verbose);
+  printf("\n");
+  printf("STEP: sync\n");
+  &sync_LML_files($configdata,$replay_status,$opt_verbose);
 }
 
 if(exists $steps->{"initdb"}) {
-    printf("\n");
-    printf("STEP: initdb\n");
-    &init_db($configdata,$replay_status,$opt_verbose);
+  printf("\n");
+  printf("STEP: initdb\n");
+  &init_db($configdata,$replay_status,$opt_verbose);
 }
 if(exists $steps->{"updatedb"}) {
-    printf("\n");
-    printf("STEP: updatedb\n");
-    &update_db($configdata,$replay_status,$opt_verbose);
+  printf("\n");
+  printf("STEP: updatedb\n");
+  &update_db($configdata,$replay_status,$opt_verbose);
 }
-
 
 if((exists $steps->{"sim"}) || ((exists $steps->{"simulate"}))) {
-    printf("\n");
-    printf("STEP: simulate\n");
-    &simulate($configdata,$replay_status,$opt_nsteps,$opt_verbose);
+  printf("\n");
+  printf("STEP: simulate\n");
+  &simulate($configdata,$replay_status,$opt_nsteps,$opt_verbose);
 }
-
 
 my $status_file=$configdata->{"LML_replay"}->{"config"}->{"status_file"};
 YAML::DumpFile($status_file,$replay_status);
 
-
 sub usage {
   die "Usage: . llview_server_rc; $_[0] <options>
-                --config <file>                  : YAML config file
-		--steps <step1, step2, ...>      : execution of one or more steps, valid steps are
-                                                   sync, initdb, updatedb, sim[ulate]
-		--nsteps <n>  			 : run simulation with <i> update steps, default 1	   
-                --currentts <ts>                 : current timestamp (if running in replay mode) 
-                --currenttsfile <file>           : file containng current timestamp (if running in replay mode) 
-                --timings                        : print additional timing info
-                --verbose                        : verbose
+    --config <file>                  : YAML config file
+    --steps <step1, step2, ...>      : execution of one or more steps, valid steps are
+                                        sync, initdb, updatedb, sim[ulate]
+    --nsteps <n>  			             : run simulation with <i> update steps, default 1	   
+    --currentts <ts>                 : current timestamp (if running in replay mode) 
+    --currenttsfile <file>           : file containng current timestamp (if running in replay mode) 
+    --timings                        : print additional timing info
+    --verbose                        : verbose
 ";
 }
