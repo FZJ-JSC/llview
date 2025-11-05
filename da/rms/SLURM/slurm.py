@@ -298,7 +298,13 @@ def nodeinfo(options: dict, nodes_info) -> dict:
   # Adding Used Memory information
   systemname = ""
   for nodename,nodeinfo in nodes_info.items():
-    if (re.match(r'^\d+$',nodeinfo['RealMemory'])) and (re.match(r'^\d+$',nodeinfo['FreeMem'])): 
+    UsedMem = None
+
+    if not (re.match(r'^\d+$',nodeinfo['FreeMem'])): #.e.g FreeMem=N/A
+      log.warning(f"FreeMem might be N/A, falling back to AllocMem \n")
+
+    elif (re.match(r'^\d+$',nodeinfo['RealMemory'])) and (re.match(r'^\d+$',nodeinfo['FreeMem'])):
+
       # Getting reserved memory:
       if ('mem_reserved' in options):
         if isinstance(options['mem_reserved'],float) or isinstance(options['mem_reserved'],int):
@@ -309,8 +315,18 @@ def nodeinfo(options: dict, nodes_info) -> dict:
       else:
         memreserved = 0
       UsedMem = float(nodeinfo['RealMemory']) - float(nodeinfo['FreeMem']) - (memreserved)
-      if (UsedMem) < 0: 
+      if (UsedMem) < 0:
         log.warning(f"Negative UsedMem in node {nodename}: {UsedMem}\n")
+        UsedMem = None
+
+    # Falling back to AllocMem if there is an issue with RealMemory and FreeMem
+    # .e.g FreeMem = N/A or FreeMem > RealMemory
+    if UsedMem is None :
+      if re.match(r'^\d+$',nodeinfo['AllocMem']):
+        UsedMem = float(nodeinfo['AllocMem'])
+        log.info(f"Using AllocMem as fallback for node {nodename}: {UsedMem}\n")
+      else:
+        log.warning(f"Could not determine memory usage for node {nodename}\n")
         continue
       nodeinfo['UsedMem'] = UsedMem
 
