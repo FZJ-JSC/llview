@@ -9,6 +9,7 @@
 # Contributors:
 #    Filipe Guimarães (Forschungszentrum Juelich GmbH)
 #    Yannik Müller (Forschungszentrum Juelich GmbH)
+#    Matthias Lapu (CEA)
 
 import argparse
 import logging
