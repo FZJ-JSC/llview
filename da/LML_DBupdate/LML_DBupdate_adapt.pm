@@ -7,6 +7,7 @@
 #
 # Contributors:
 #    Wolfgang Frings (Forschungszentrum Juelich GmbH) 
+#    Matthias Lapu (CEA)
 
 package LML_DBupdate_file;
 
