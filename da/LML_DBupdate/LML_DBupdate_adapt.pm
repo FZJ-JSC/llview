@@ -157,14 +157,38 @@ sub adapt_data {
       $ref->{feat}="ARM" if($ref->{features}=~/arm/);
       $ref->{feat}="IPU" if($ref->{features}=~/ipu/);
     }
+
     # check for core info
-    my $nodeid=$ref->{id};
-    if(exists($data->{CINODES_BY_NODEID}->{$nodeid})) {
-      $ref->{usage}=$data->{CINODES_BY_NODEID}->{$nodeid}->{usage};
-      $ref->{used_cores}=$data->{CINODES_BY_NODEID}->{$nodeid}->{physcoresused}+(defined($data->{CINODES_BY_NODEID}->{$nodeid}->{logiccoresused})? $data->{CINODES_BY_NODEID}->{$nodeid}->{logiccoresused}: 0);
-      $ref->{used_cores_phys}=$data->{CINODES_BY_NODEID}->{$nodeid}->{physcoresused};
-      $ref->{used_cores_logic}=(defined($data->{CINODES_BY_NODEID}->{$nodeid}->{logiccoresused})? $data->{CINODES_BY_NODEID}->{$nodeid}->{logiccoresused}: 0);
+    my $match;
+    my $nodeid = $ref->{id};
+    # exact match, .e.g: c1
+    if (exists $data->{CINODES_BY_NODEID}->{$nodeid}) {
+        $match = $nodeid;
     }
+    # match for nodeid:port, e.g: c1:9100, if the port is still in CINODES_BY_NODEID
+    else {
+        for my $key (keys %{$data->{CINODES_BY_NODEID}}) {
+            if ($key =~ /^$nodeid(:\d+)?$/) {
+                $match = $key;
+                last; # exit
+            }
+        }
+    }
+    if ($match) {
+        # this is supposed to be a dictionnary of value related to the cpu
+        # usage, logiccoreused, etc.
+        my $dict= $data->{CINODES_BY_NODEID}->{$match};
+        my $phys  = $dict->{physcoresused}  // 0; # physical core value or 0
+        my $logic = $dict->{logiccoresused} // 0; # logical core value or 0
+        $ref->{usage}            = $dict->{usage};
+        $ref->{used_cores_phys}  = $phys;
+        $ref->{used_cores_logic} = $logic;
+        $ref->{used_cores}       = $phys + $logic;
+    }
+    else {
+        print (STDERR "No node found for nodeid => $nodeid\n");
+    }
+
     # check for loadmemnode info, overwrite SLURM info
     if(exists($data->{LMNODES_BY_NODEID}->{$nodeid})) {
       my $r=$data->{LMNODES_BY_NODEID}->{$nodeid};
