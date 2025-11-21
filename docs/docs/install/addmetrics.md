@@ -21,4 +21,7 @@ When a new source of metrics become available, there are a few steps that must b
     * The filenames themselves need to be put into a database, which is defined in the table `jobfiles` in the configuration file `${LLVIEW_CONF}/server/LLgenDB/conf_jobreport/jobreport_databases.yaml`; 
     * Then the filenames (together with aggregated metrics) are passed to JuRepTool via a (per-job) json file defined in `${LLVIEW_CONF}/server/LLgenDB/conf_jobreport/data_json/jobreport_datafiles_json_jureptool.yaml`;
     * Finally, when the information is available to JuRepTool for each job, the metrics can be added on the job reports via their configuration in `${LLVIEW_CONF}/jureptool/plots.yml`
-   
+
+
+
+> See example : [here](./add_metrics_example.md)
