@@ -10,7 +10,7 @@ scripts and plugins for a basic functioning. This version includes
     - Slurm
     - Prometheus and other REST-API
     - Flat files (via regex)
-    - GitLab repos
+    - Git repos
 
 It still does not cover:
 

@@ -1,5 +1,36 @@
 # LLview Public Releases
 
+### 2.4.2-base (December 19, 2025)
+
+Extensions on Continuous Benchmark, many improvements on plugins, more documentation!
+
+<h4> Added </h4>
+
+- Prometheus plugin: Added 'regex' option, to be applied on the keys (ids) of the dictionary
+- Prometheus plugin: Added option 'usage_threshold' for a core to be considered as used
+- Prometheus plugin: Added 'topology' for how the sockets/smts are distributed
+- Prometheus plugin: Added possibility to get additional data related to the query (PR#13 by @Matth-L on GitHub)
+- Git plugin (CB): Added page and graph tabs on CB configuration ([See examples](../benchmarks/examples.md))
+- Git plugin (CB): Added status column (for overview and benchmarks) showing the status of the last run
+- Git plugin (CB): Added #Runs (Total and Valid) columns
+- Added documentation page on [Adding new metrics - Example](../install/addmetrics_example.md) (PR#13 by @Matth-L on GitHub)
+- CB: Added [User](../benchmarks/configuration.md) and [Installation](../install/benchmarks.md) documentation pages
+
+<h4> Changed </h4>
+
+- Slurm plugin: Improved memory setting (Fall back to `AllocMem` when `UsedMemory<0` or `FreeMem==N/A`) (PR#9 by @Matth-L on GitHub)
+- Git plugin (CB): Improved how metrics are given
+- Improved how LLview internally handles column and table names with proper quoting
+- Changed plugin name to git.py
+
+<h4> Fixed </h4>
+
+- Prometheus plugin: Fixed division by 0 (PR#8 by @Matth-L on GitHub)
+- Prometheus plugin: Fixing mapping of CPUs
+- Fixed updatedb script to account for all changes in final message
+- More bugfixes
+
+
 ### 2.4.1-base (November 1, 2025)
 
 Possibility to have tabs on pages (now used for History on production systems, and to be used for Continuous Benchmarks), plus many other internal improvements and fixes.

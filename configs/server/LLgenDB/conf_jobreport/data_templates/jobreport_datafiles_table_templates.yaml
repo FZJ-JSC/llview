@@ -541,12 +541,6 @@
           cellRenderer: "(params) => gen_benchmark_link(params)",
       }
       - {
-          field: "systemname",
-          headerName: "System",
-          flex: 1,
-          headerTooltip: "System where the Benchmark was run",
-      }
-      - {
           headerName: "Timings",
           groupId: "Timings",
           children: [
@@ -567,10 +561,29 @@
           ]
         }
       - {
-          field: "count",
-          headerName: "#Runs",
-          headerTooltip: "Number of runs of the benchmark",
-          flex: 1
+        headerName: "#Runs",
+        groupId: "#Runs",
+        children: [
+          {
+            field: "count",
+            headerName: "Total", 
+            headerTooltip: "Total number of runs",
+            flex: 1
+          },
+          {
+            field: "valid_count",
+            headerName: "Valid", 
+            headerTooltip: "Number of valid runs",
+            flex: 1
+          },
+        ]
+      }
+      - {
+          field: "_status",
+          headerName: "Status",
+          flex: 1,
+          headerTooltip: "Status of the last run",
+          cellStyle: "(params) => cell_color(params)",
       }
 
 # %include "../../conf_cb/template_cb.yaml"
