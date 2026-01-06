@@ -2,7 +2,7 @@
 
 When a new source of metrics become available, there are a few steps that must be done to start collecting them and make it available on the front-end.
 
-1. The first step is to create a plugin that will read the metrics from its source and generate an LML file with the desired quantities. One of the existing plugins in the folder `${LLVIEW_HOME}/da/rms/` (e.g., SLURM, Prometheus or Gitlab) can be used as examples or as a starting point.
+1. The first step is to create a plugin that will read the metrics from its source and generate an LML file with the desired quantities. One of the existing plugins in the folder `${LLVIEW_HOME}/da/rms/` (e.g., SLURM, Prometheus or Git) can be used as examples or as a starting point.
 2. Add a step to run the plugin on every loop of LLview. If the plugin must be run on the system to be monitored (as, for example, the Slurm plugin that needs access to the `scontrol` and `sacct` commands), then this step should be added in the [Remote configuration](remote_install.md#configuration). Otherwise (which is generally the case), it should be added to the [`dbupdate` action of the Server configuration](server_install.md#dbupdate-action). Once again, the steps to run existing plugins can be used as examples.
 
     2.1. If the plugin is not supposed to run on every update, the script `${LLVIEW_HOME}/da/utils/exec_every_n_step_or_empty.pl` may be useful.

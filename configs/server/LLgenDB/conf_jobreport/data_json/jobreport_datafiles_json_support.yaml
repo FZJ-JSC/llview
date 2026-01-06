@@ -210,19 +210,19 @@
     order: "account ASC"
     
 - dataset:
-    name: support_cb_csv
-    set:        csv_cb
-    filepath:   '$outputdir/cb/cb_list.csv.gz'
+    name:            support_cb_csv
+    set:             csv_cb
+    filepath:       '$outputdir/cb/cb_list.csv.gz'
     data_database:   CB
-    column_ts:   'max_ts'
-    csv_delimiter: ';'
-    renew:       'always'
+    column_ts:      'max_ts'
+    csv_delimiter:  ';'
+    renew:          'always'
     data_table:      cb_benchmarks
     stat_table:      datasetstat_support
     stat_database:   jobreport_json_stat
-    sqldebug:    'yes'
+    sqldebug:       'yes'
     format:         'csv'
-    columns:        'name,min_ts,max_ts,count'
+    columns:        'name,min_ts,max_ts,count,valid_count,_status'
     column_convert: 'min_ts->todate_std_hhmm,max_ts->todate_std_hhmm'
 
 # %include "../../conf_cb/tablecsv_cb.yaml"

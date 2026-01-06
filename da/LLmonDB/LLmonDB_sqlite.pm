@@ -152,19 +152,36 @@ sub create_table {
   my($table,$sqlcoldefs)=@_;
   my ($col);
 
-  my $sql = "CREATE TABLE $table (";
+  # Make the TABLE name safe (Strip quotes -> Re-quote safely)
+  my $safe_table = $table;
+  $safe_table =~ s/^"|"$//g;
+  $safe_table = $self->{DBH}->quote_identifier($safe_table);
+
+  my $sql = "CREATE TABLE $safe_table (";
   my @help;
-  # print "TMPDEB: ",Dumper($sqlcoldefs);
-  
+
   foreach $col (@{$sqlcoldefs->{collist}}) {
+    # Get the column name
+    my $col_name = $sqlcoldefs->{coldata}->{$col}->{name};
+    
+    # Strip existing quotes (in case it came in as "colname")
+    $col_name =~ s/^"|"$//g;
+    
+    # Re-quote safely using DBI
+    my $safe_col_name = $self->{DBH}->quote_identifier($col_name);
+
+    # Combine the Quoted Name with the Unquoted Type (e.g., INTEGER)
     push(@help, sprintf("%s %s",
-                  $sqlcoldefs->{coldata}->{$col}->{name},
+                  $safe_col_name,
                   $sqlcoldefs->{coldata}->{$col}->{sql}));
   }
-  $sql .= join(",",@help);
+
+  $sql .= join(",", @help);
   $sql .= ")";
-  
-  $self->{DBH}->do($sql);
+
+  $self->{DBH}->do($sql) 
+      or die "CREATE TABLE FAILED via DBI!\nSQL: $sql\nError: " . $self->{DBH}->errstr;
+
   $self->mycommit();
 
   print "\t   LLmonDB_sqlite: created table $table for $self->{FNAME} ($sql)\n";
@@ -175,58 +192,89 @@ sub create_table {
 # create a new table
 sub recreate_table {
   my($self) = shift;
-  my($table,$sqlcoldefs)=@_;
-  my ($col,$newtable);
-  $newtable=sprintf("_new_%s",$table);
+  my($table, $sqlcoldefs) = @_;
 
-  # 1. create new table
-  my $sql = "CREATE TABLE $newtable (";
-  my (@help,$rc);
+  #  Clean the original table name (remove external quotes)
+  my $clean_table = $table;
+  $clean_table =~ s/^"|"$//g;
+  
+  # Create the Clean "New" name
+  my $clean_newtable = sprintf("_new_%s", $clean_table);
 
-  foreach $col (@{$sqlcoldefs->{collist}}) {
+  # Create "Safe" (DBI Quoted) versions for SQL injection
+  my $safe_table    = $self->{DBH}->quote_identifier($clean_table);
+  my $safe_newtable = $self->{DBH}->quote_identifier($clean_newtable);
+
+  # Create new table
+  my $sql = "CREATE TABLE $safe_newtable (";
+  my (@help, $rc, @safe_select_cols);
+
+  foreach my $col (@{$sqlcoldefs->{collist}}) {
+    # Get the raw name from definitions
+    my $raw_col_name = $sqlcoldefs->{coldata}->{$col}->{name};
+    
+    # Strip existing quotes
+    $raw_col_name =~ s/^"|"$//g;
+    
+    # Re-quote safely
+    my $safe_col_name = $self->{DBH}->quote_identifier($raw_col_name);
+    
+    # Store this safe name for the SELECT query later
+    push(@safe_select_cols, $safe_col_name);
+
+    # Build the definition line (e.g. "my-col" INTEGER)
     push(@help, sprintf("%s %s",
-                  $sqlcoldefs->{coldata}->{$col}->{name},
+                  $safe_col_name,
                   $sqlcoldefs->{coldata}->{$col}->{sql}));
   }
-  $sql .= join(",",@help);
+  
+  $sql .= join(",", @help);
   $sql .= ")";
-  $rc=$self->{DBH}->do($sql);
+  
+  $rc = $self->{DBH}->do($sql);
+  
   if(!defined($rc)) {
-    print STDERR "[recreate_table] \t   LLmonDB_sqlite: ERROR on last command, skip rest operation (created table $newtable, $sql)\n";
+    print STDERR "[recreate_table] \t   LLmonDB_sqlite: ERROR creating table.\nSQL: $sql\nError: " . $self->{DBH}->errstr . "\n";
     return(-1);
   }
-  print "\t   LLmonDB_sqlite: created table $newtable for ($sql) RC=$rc\n";
+  print "\t   LLmonDB_sqlite: created table $safe_newtable RC=$rc\n";
 
-  # 2. copy data to new table
-  $sql = "INSERT INTO $newtable SELECT ";
-  $sql .= join(",",@{$sqlcoldefs->{collist}});
-  $sql .= " from $table";
-  $rc=$self->{DBH}->do($sql);
+  # Copy data
+  # Use the list of safe columns we built in the previous loop
+  my $cols_str = join(",", @safe_select_cols);
+  
+  $sql = "INSERT INTO $safe_newtable SELECT $cols_str FROM $safe_table";
+  
+  $rc = $self->{DBH}->do($sql);
+  
   if(!defined($rc)) {
-    print STDERR "[recreate_table] \t   LLmonDB_sqlite: ERROR on last command, skip rest operation (copy data from $table to $newtable, $sql)\n";
+    print STDERR "[recreate_table] \t   LLmonDB_sqlite: ERROR copying data.\nSQL: $sql\nError: " . $self->{DBH}->errstr . "\n";
     return(-1);
   }
-  print "\t   LLmonDB_sqlite: copied data from $table to $newtable ($sql) RC=$rc\n";
+  print "\t   LLmonDB_sqlite: copied data from $safe_table to $safe_newtable RC=$rc\n";
 
   if(1) {
-    # 3. drop old table
-    $sql = "DROP TABLE $table";
-    $rc=$self->{DBH}->do($sql);
+    # Drop old table
+    $sql = "DROP TABLE $safe_table";
+    $rc = $self->{DBH}->do($sql);
+    
     if(!defined($rc)) {
-      print STDERR "[recreate_table] \t   LLmonDB_sqlite: ERROR on last command, skip rest operation (drop old table $table, $sql)\n";
+      print STDERR "[recreate_table] \t   LLmonDB_sqlite: ERROR dropping old table.\nSQL: $sql\nError: " . $self->{DBH}->errstr . "\n";
       return(-1);
     }
-    print "\t   LLmonDB_sqlite: drop old table $table ($sql) RC=$rc\n";
+    print "\t   LLmonDB_sqlite: dropped old table $safe_table RC=$rc\n";
 
-    # 4. rename new table
-    $sql = "ALTER TABLE $newtable RENAME TO $table";
-    $rc=$self->{DBH}->do($sql);
+    # Rename new table
+    $sql = "ALTER TABLE $safe_newtable RENAME TO $safe_table";
+    $rc = $self->{DBH}->do($sql);
+    
     if(!defined($rc)) {
-      print STDERR "[recreate_table] \t   LLmonDB_sqlite: ERROR on last command, skip rest operation (rename $newtable to $table, $sql)\n";
+      print STDERR "[recreate_table] \t   LLmonDB_sqlite: ERROR renaming table.\nSQL: $sql\nError: " . $self->{DBH}->errstr . "\n";
       return(-1);
     }
-    print "\t   LLmonDB_sqlite: drop old table ($sql) RC=$rc\n";
+    print "\t   LLmonDB_sqlite: renamed table ($sql) RC=$rc\n";
   }
+  
   $self->mycommit();
 
   return();
@@ -236,15 +284,37 @@ sub recreate_table {
 # add column to a table
 sub add_column {
   my($self) = shift;
-  my($table,$col,$sqldef)=@_;
+  my($table, $col, $sqldef) = @_;
 
-  my $sql = "ALTER TABLE $table ADD COLUMN $col $sqldef;";
+  # Clean and Quote Table Name
+  my $clean_table = $table;
+  $clean_table =~ s/^"|"$//g;
+  my $safe_table = $self->{DBH}->quote_identifier($clean_table);
 
-  $self->{DBH}->do($sql);
+  # Clean and Quote Column Name
+  my $clean_col = $col;
+  $clean_col =~ s/^"|"$//g;
+  my $safe_col = $self->{DBH}->quote_identifier($clean_col);
+
+  # Build SQL 
+  my $sql = "ALTER TABLE $safe_table ADD COLUMN $safe_col $sqldef";
+
+  # Execute SQL command
+  my $rc = $self->{DBH}->do($sql);
+
+  # Check the result
+  if (!defined($rc)) {
+    # If the error is just that the column exists, ignore it
+    if (! $self->{DBH}->errstr =~ /duplicate column name/i) {
+      # Otherwise, this is a real error (like syntax), die
+      die "ADD COLUMN FAILED!\nSQL: $sql\nError: " . $self->{DBH}->errstr;
+    }
+  } else {
+    # Only print this if it actually succeeded
+    print "\t   LLmonDB_sqlite: add column $safe_col to table $safe_table for $self->{FNAME} ($sql)\n";
+  }
+
   $self->mycommit();
-
-  print "\t   LLmonDB_sqlite: add column $col to table $table for $self->{FNAME} ($sql)\n";
-
   return();
 }
 
@@ -269,13 +339,24 @@ sub remove_column {
 # remove a new table
 sub remove_table {
   my($self) = shift;
-  my($table)=@_;
+  my($table) = @_;
 
-  my $sql = "DROP TABLE $table";
-  $self->{DBH}->do($sql);
+  # Clean the table name (strip existing quotes)
+  my $clean_table = $table;
+  $clean_table =~ s/^"|"$//g;
+
+  # Quote safely using DBI
+  my $safe_table = $self->{DBH}->quote_identifier($clean_table);
+
+  # Build SQL
+  my $sql = "DROP TABLE $safe_table";
+
+  $self->{DBH}->do($sql)
+    or die "DROP TABLE FAILED!\nSQL: $sql\nError: " . $self->{DBH}->errstr;
+
   $self->mycommit();
 
-  print "\t   LLmonDB_sqlite: removed table $table for $self->{FNAME} ($sql)\n";
+  print "\t   LLmonDB_sqlite: removed table $safe_table for $self->{FNAME} ($sql)\n";
   
   return();
 }
@@ -284,31 +365,62 @@ sub remove_table {
 # create a new index table
 sub create_index {
   my($self) = shift;
-  my($table,$indextable,$colsref)=@_;
+  my($table, $indextable, $colsref) = @_;
 
-  my $sql = "CREATE INDEX $indextable on $table (";
-  $sql .= join(",",@{$colsref});
+  # Clean and Quote Table Name
+  my $clean_table = $table;
+  $clean_table =~ s/^"|"$//g;
+  my $safe_table = $self->{DBH}->quote_identifier($clean_table);
+
+  # Clean and Quote Index Name
+  my $clean_index = $indextable;
+  $clean_index =~ s/^"|"$//g;
+  my $safe_indextable = $self->{DBH}->quote_identifier($clean_index);
+
+  # Clean and Quote the List of Columns
+  # Mapping over the array reference to fix every column individually.
+  my @safe_cols = map {
+      my $col = $_;
+      $col =~ s/^"|"$//g;               # Strip existing quotes
+      $self->{DBH}->quote_identifier($col); # Re-quote safely
+  } @{$colsref};
+
+  # Build SQL
+  my $sql = "CREATE INDEX $safe_indextable ON $safe_table (";
+  $sql .= join(",", @safe_cols);
   $sql .= ")";
   
-  $self->{DBH}->do($sql);
+  $self->{DBH}->do($sql)
+    or die "CREATE INDEX FAILED!\nSQL: $sql\nError: " . $self->{DBH}->errstr;
+    
   $self->mycommit();
 
-  print "\t   LLmonDB_sqlite: created indextable $indextable for $self->{FNAME} ($sql)\n";
+  print "\t   LLmonDB_sqlite: created index $safe_indextable for $self->{FNAME} ($sql)\n";
   
   return();
 }
 
-
-# create a new index table
+# remove a new index table
 sub remove_index {
   my($self) = shift;
-  my($indextable)=@_;
+  my($indextable) = @_;
 
-  my $sql = "DROP INDEX $indextable";
-  $self->{DBH}->do($sql);
+  # Clean the index name (strip existing quotes)
+  my $clean_index = $indextable;
+  $clean_index =~ s/^"|"$//g;
+
+  # Quote safely using DBI
+  my $safe_indextable = $self->{DBH}->quote_identifier($clean_index);
+
+  # Build SQL
+  my $sql = "DROP INDEX $safe_indextable";
+
+  $self->{DBH}->do($sql)
+    or die "DROP INDEX FAILED!\nSQL: $sql\nError: " . $self->{DBH}->errstr;
+
   $self->mycommit();
 
-  print "\t   LLmonDB_sqlite: remove indextable $indextable for $self->{FNAME} ($sql)\n";
+  print "\t   LLmonDB_sqlite: remove indextable $safe_indextable for $self->{FNAME} ($sql)\n";
   
   return();
 }
@@ -355,7 +467,12 @@ sub query_columns {
   my($table) = @_;
   my ($retval,@data, $coldef);
   
-  my $sql = "SELECT sql FROM sqlite_master WHERE type IN ('table','view') AND name = '$table'";
+  # Clean the table name for the lookup. 
+  # sqlite_master stores the name unquoted (usually), even if created with quotes.
+  my $lookup_table = $table;
+  $lookup_table =~ s/^"|"$//g;
+
+  my $sql = "SELECT sql FROM sqlite_master WHERE type IN ('table','view') AND name = '$lookup_table'";
 
   my $sth = $self->{DBH}->prepare($sql);
   my $rc=$sth->execute();
@@ -367,6 +484,11 @@ sub query_columns {
       foreach $coldef (split(/\s*,\s*/,$cols) ) {
         if($coldef=~/^\s*([^\s]+)\s(.+)\s*$/) {
           my ($name,$sql)=($1,$2);
+          
+          # Strip quotes from the extracted column name.
+          # If SQL is: "runtime-total" VARCHAR... -> $name becomes: runtime-total
+          $name =~ s/^"|"$//g;
+
           push(@{$retval->{collist}},$name);
           $retval->{coldata}->{$name}->{name}=$name;
           $retval->{coldata}->{$name}->{sql}=$sql;
@@ -426,12 +548,20 @@ sub start_insert_sequence {
   my($self) = shift;
   my($table,$colsref) = @_;
   my @placeholders=map { '?' } 1.. scalar @{$colsref};
+  # First fix quotation of table and column names
+  my $safe_table = $self->{DBH}->quote_identifier($table);
+  my @safe_cols = map {
+      my $col = $_;
+      $col =~ s/^"|"$//g;               # Strip existing external quotes
+      $self->{DBH}->quote_identifier($col); # Let DBI handle the quoting safely
+  } @{$colsref};
+  # Now prepare the SQL command
   my $sql = sprintf('INSERT INTO %s (%s) VALUES (%s)',
-                    $table,
-                    join(",",@{$colsref}),
-                    join(",",@placeholders),
+                    $safe_table,
+                    join(",", @safe_cols),
+                    join(",", @placeholders),
                     );
-  my $sth = $self->{DBH}->prepare($sql);
+  my $sth = $self->{DBH}->prepare($sql) or die "PREPARE FAILED!\nError: " . $self->{DBH}->errstr . "\nSQL DUMP:\n$sql\n";
 
   $self->{DBH}->begin_work();
   printf("\t   LLmonDB_sqlite: start_insert_sequence %s (sql: %s...)\n",$table,substr($sql,0,16)) if($debug>=3);
@@ -468,9 +598,16 @@ sub remove_contents {
   my($self) = shift;
   my($table) = @_;
 
-  my $sql="delete from $table";
-  my $rc=$self->{DBH}->do($sql);
-  printf("\t   LLmonDB_sqlite: removed (sql: %s...)\n",substr($sql,0,16)) if($debug>=3);
+  # Clean and Quote Table Name
+  my $clean_table = $table;
+  $clean_table =~ s/^"|"$//g;
+  my $safe_table = $self->{DBH}->quote_identifier($clean_table);
+
+  my $sql = "DELETE FROM $safe_table";
+  
+  my $rc = $self->{DBH}->do($sql);
+  
+  printf("\t   LLmonDB_sqlite: removed (sql: %s...)\n", substr($sql,0,16)) if($debug>=3);
   $self->mycommit();
   
   return($rc);
@@ -768,7 +905,14 @@ sub query_get_execute {
   
   my $sth = $self->{DBH}->prepare($sql);
   if(!$sth) {
-    printf(STDERR "[query_get_execute] \t   LLmonDB_sqlite: ERROR cannot prepare query_get_execute(table: $table sql: %s...)\n",substr($sql,0,120));
+    # Get the detailed error message from the database handle
+    my $db_error = $self->{DBH}->errstr;
+    printf(STDERR "[query_get_execute] \t LLmonDB_sqlite: ERROR - Cannot prepare SQL statement.\n");
+    printf(STDERR "  Main Database: %s \n", $self->{DBNAME});
+    printf(STDERR "  Attached Database: %s \n", defined($attach) ? $attach : 'None');
+    printf(STDERR "  Table (if provided): %s\n", defined($table) ? $table : 'N/A');
+    printf(STDERR "  Database Error: %s\n", $db_error);
+    printf(STDERR "  Full SQL Dump:\n---\n%s\n---\n", $sql);
     return(undef);
   }
   my $rc=$sth->execute();
@@ -845,30 +989,51 @@ sub delete_all_rows {
   my($table) = @_;
   my ($retval);
   
-  my $sql="DELETE FROM $table";
+  # Clean and Quote Table Name
+  my $clean_table = $table;
+  $clean_table =~ s/^"|"$//g;
+  my $safe_table = $self->{DBH}->quote_identifier($clean_table);
+
+  my $sql = "DELETE FROM $safe_table";
   
-  my $rc=$self->{DBH}->do($sql);
+  my $rc = $self->{DBH}->do($sql);
+  
+  # Error logging
   $self->LOGREPORT($self->{DBNAME},"E:delete_all_rows",caller(),$DBI::errstr) if(!defined($rc));
+  
   $self->mycommit();
-  $retval=$rc;
+  $retval = $rc;
+  
   print "\t   LLmonDB_sqlite: delete_all_entries $sql ($rc entries)\n" if($debug>=3);
   return($retval);
 }
 
 sub delete_some_rows {
   my($self) = shift;
-  my($table,$where) = @_;
+  my($table, $where) = @_;
   my ($retval);
   
-  my $sql="DELETE FROM $table";
-  $sql.=" WHERE $where" if($where);
-  my $rc=$self->{DBH}->do($sql);
+  # Clean and Quote Table Name
+  my $clean_table = $table;
+  $clean_table =~ s/^"|"$//g;
+  my $safe_table = $self->{DBH}->quote_identifier($clean_table);
+  
+  # Build SQL
+  my $sql = "DELETE FROM $safe_table";
+  $sql .= " WHERE $where" if($where);
+  
+  my $rc = $self->{DBH}->do($sql);
+  
+  # Error logging
   $self->LOGREPORT($self->{DBNAME},"E:delete_some_rows",caller(),$DBI::errstr) if(!defined($rc));
+  
   if(!defined($rc)) {
     print STDERR "[delete_some_rows] \t   LLmonDB_sqlite: ERROR in delete_some_rows, sql=$sql\n";
   }
+  
   $self->mycommit();
-  $retval=$rc;
+  $retval = $rc;
+  
   print "\t   LLmonDB_sqlite: delete_some_entries $sql ($rc entries)\n" if($debug>=3);
   return($retval);
 }

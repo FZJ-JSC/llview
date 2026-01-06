@@ -42,34 +42,49 @@ sub process_data_query_and_save_csv_dat {
     printf("$self->{INSTNAME}  --> WARNING: query database %s not known, skipping dataset $dataset->{name}\n",$dataset->{data_database});
     return;
   }
-#  if(!exists($self->{TABLES}->{$dataset->{data_database}}->{$dataset->{data_table}})) {
-#    printf("$self->{INSTNAME}  --> WARNING: query table %s/%s not known, skipping dataset $dataset->{name}\n",$dataset->{data_database},$dataset->{data_table});
-#    return;
-#  }
+  # if(!exists($self->{TABLES}->{$dataset->{data_database}}->{$dataset->{data_table}})) {
+  #   printf("$self->{INSTNAME}  --> WARNING: query table %s/%s not known, skipping dataset $dataset->{name}\n",$dataset->{data_database},$dataset->{data_table});
+  #   return;
+  # }
 
   # check data tables
   my $from;
   my $joincol="";
+  my $joincol_sql="";   # Prepare Quoted Identifiers for Join Column
   my @datatables=split(/\s*,\s*/,$dataset->{data_table});
   if($#datatables>0) {
-      my @fromlist; my $c=0;
-      if(!exists($dataset->{data_table_join_col})) {
-        print STDERR "LLmonDB:    ERROR, attribute data_table_join_col missing for dataset $dataset->{name}\n";
-        return();
-      } else {
-        $joincol=$dataset->{data_table_join_col};
+    my @fromlist; my $c=0;
+    if(!exists($dataset->{data_table_join_col})) {
+      print STDERR "LLmonDB:    ERROR, attribute data_table_join_col missing for dataset $dataset->{name}\n";
+      return();
+    } else {
+      $joincol=$dataset->{data_table_join_col};
+      # Create quoted version for SQL
+      $joincol_sql = $joincol; 
+      $joincol_sql =~ s/^"|"$//g; 
+      $joincol_sql = qq("$joincol_sql");
+    }
+    foreach my $d (@datatables) {
+      $c++;
+      # Quote table names in FROM list
+      my $d_sql = $d; 
+      $d_sql =~ s/^"|"$//g; 
+      $d_sql = qq("$d_sql");
+      
+      push(@fromlist,sprintf("%s D%d", $d_sql, $c));
+      if($c>1) {
+        $where.=" AND " if($where);
+        # Use quoted join column
+        $where.=sprintf("D1.%s=D%d.%s", $joincol_sql, $c, $joincol_sql);
       }
-      foreach my $d (@datatables) {
-        $c++;
-        push(@fromlist,sprintf("%s D%d",$d,$c));
-        if($c>1) {
-          $where.=" AND " if($where);
-          $where.=sprintf("D1.%s=D%d.%s",$joincol,$c,$joincol);
-        }
-      }
-      $from = join(",",@fromlist);
+    }
+    $from = join(",",@fromlist);
   } else {
-      $from = sprintf("%s D%d",$dataset->{data_table},1);
+    # Quote single table name
+    my $d_sql = $dataset->{data_table};
+    $d_sql =~ s/^"|"$//g; 
+    $d_sql = qq("$d_sql");
+    $from = sprintf("%s D%d", $d_sql, 1);
   }
 
   if(exists($dataset->{time_aggr})) {
@@ -85,22 +100,27 @@ sub process_data_query_and_save_csv_dat {
   # check delimiter
   my $delimiter=',';
   if(exists($dataset->{csv_delimiter})) {
-      $delimiter=$dataset->{csv_delimiter};
+    $delimiter=$dataset->{csv_delimiter};
   }
-
   
   # check columns
   my (@cols,@cols_fmt,$format,$header,$tscol,$cnt);
   $cnt=0;$tscol=-1;
+  
+  # Quote 'dataset' column
   if(exists($dataset->{column_filemap})) {
-    push(@cols,"S.dataset");
+    push(@cols,'S."dataset"'); 
   }
   # print Dumper($dataset);
   
   foreach my $col (split(/\s*,\s*/,$dataset->{columns})) {
     my ($c,$as,$ccol);
     if($col=~/^(.*)->(.*)$/) {
-      $c=$1;$as=" as $2";$ccol=$2;
+      $c=$1;$as=$2;$ccol=$2;
+      
+      # Clean and quote Alias
+      $as =~ s/^"|"$//g;
+      $as = qq( AS "$as"); # Add AS explicitly
     } else {
       $ccol=$c=$col;$as="";
     }
@@ -111,7 +131,13 @@ sub process_data_query_and_save_csv_dat {
       $col_convert_by_colnum->{$cnt}=$col_convert_by_col->{$ccol};
     }
     $cnt++;
-    push(@cols,($c eq $joincol)?"D1.$c$as":"$c$as");
+    
+    # Clean and quote Column Name
+    my $c_sql = $c;
+    $c_sql =~ s/^"|"$//g;
+    $c_sql = qq("$c_sql");
+    
+    push(@cols,($c eq $joincol)?"D1.$c_sql$as":"$c_sql$as");
     push(@cols_fmt,"%s");
   }
   
@@ -145,18 +171,36 @@ sub process_data_query_and_save_csv_dat {
   $self->{SAVE_LASTFH}=$fh;
   $self->{SAVE_LASTFILE}="---";
 
+  # Clean Table/DB Names for SQL Injection
+  my $data_db_sql = $dataset->{data_database}; $data_db_sql =~ s/^"|"$//g; $data_db_sql = qq("$data_db_sql");
+  my $data_tb_sql = $dataset->{data_table};    $data_tb_sql =~ s/^"|"$//g; $data_tb_sql = qq("$data_tb_sql");
+  my $stat_tb_sql = $dataset->{stat_table};    $stat_tb_sql =~ s/^"|"$//g; $stat_tb_sql = qq("$stat_tb_sql");
+  
+  # Clean TS Column
+  my $ts_col_sql = $dataset->{column_ts} || ""; 
+  $ts_col_sql =~ s/^"|"$//g; 
+  $ts_col_sql = qq("$ts_col_sql") if $ts_col_sql;
+
+
   # generate multiple files from one query?
   if(exists($dataset->{column_filemap})) {
-    my $sql=sprintf("SELECT %s FROM %s.%s D1 INNER JOIN  %s S ON D1.%s=S.ukey AND D1.%s>S.lastts_saved AND S.NAME=\"%s\" %s ORDER BY S.dataset,D1.%s",
+    # Clean the Filemap Column ($col is defined at top of subroutine)
+    my $col_filemap_sql = $col;
+    $col_filemap_sql = "" if(!defined($col_filemap_sql)); # Safety check
+    $col_filemap_sql =~ s/^"|"$//g;
+    $col_filemap_sql = qq("$col_filemap_sql");
+
+    # Quoted Identifiers in SQL
+    my $sql=sprintf("SELECT %s FROM %s.%s D1 INNER JOIN %s S ON D1.%s=S.ukey AND D1.%s>S.lastts_saved AND S.\"NAME\"=\"%s\" %s ORDER BY S.\"dataset\",D1.%s",
                     join(",",@cols),
-                    $dataset->{data_database},
-                    $dataset->{data_table},
-                    $dataset->{stat_table},
-                    $col,
-                    $dataset->{column_ts},
+                    $data_db_sql,
+                    $data_tb_sql,
+                    $stat_tb_sql,
+                    $col_filemap_sql,
+                    $ts_col_sql,
                     $dataset->{name},
                     ($where)?"WHERE $where":"",
-                    $dataset->{column_ts}
+                    $ts_col_sql
                     );
     
     printf("%s process_data_query_and_save_csv_dat: (multi) sql: %s\n",$self->{INSTNAME},$sql) if($sql_debug);
@@ -178,7 +222,8 @@ sub process_data_query_and_save_csv_dat {
     if(exists($dataset->{renew})) {
       if($dataset->{renew} eq "delta") {
         $where .= " AND " if($where);
-        $where .= sprintf("%s > %f",$dataset->{column_ts},$ds->{$filepath_parsed}->{lastts_saved});
+        # Quoted column name in WHERE
+        $where .= sprintf("%s > %f", $ts_col_sql, $ds->{$filepath_parsed}->{lastts_saved});
       }
     }
 
@@ -191,11 +236,16 @@ sub process_data_query_and_save_csv_dat {
       foreach my $c (split(/\s*,\s*/,$dataset->{order})) {
         $c =~ s/^\s+|\s+$//g;
         ($orderby, $ordertype) = split(' ', $c);
+        
+        # Quote order by column
+        $orderby =~ s/^"|"$//g;
+        $orderby = qq("$orderby");
+        
         push(@order_cols,"D1.$orderby $ordertype");
       }
       $order=sprintf("ORDER BY %s",join(",",@order_cols));
     } else {
-      $order = sprintf("ORDER BY D1.%s",$dataset->{column_ts})
+      $order = sprintf("ORDER BY D1.%s", $ts_col_sql)
     }
 
     # build and call the query
@@ -372,8 +422,18 @@ sub process_data_query_time_aggr_get_where {
   my $self = shift;
   my($dataref)=@_;
 
+  # Clean and Quote identifiers
+  my $ts_col_sql = $dataref->{column_ts};
+  $ts_col_sql =~ s/^"|"$//g;
+  $ts_col_sql = qq("$ts_col_sql");
+  my $table_sql = $dataref->{data_table};
+  $table_sql =~ s/^"|"$//g;
+  $table_sql = qq("$table_sql");
+
   # get min values for each resolution
-  my $sql=sprintf("SELECT _time_res,min(%s) min_ts FROM %s GROUP by _time_res",$dataref->{column_ts},$dataref->{data_table});
+  my $sql=sprintf("SELECT \"_time_res\",min(%s) min_ts FROM %s GROUP by \"_time_res\"",
+                  $ts_col_sql,
+                  $table_sql);
   my $mints_hash=$self->{DB}->query($dataref->{data_database},$dataref->{data_table},
                                     {
                                       sql => $sql,
@@ -386,9 +446,9 @@ sub process_data_query_time_aggr_get_where {
   my $lastmints=0;
   foreach my $res (sort {$a <=> $b} (keys(%{$mints_hash}))) {
     if($lastmints>0) {
-      push(@whereparts,"( (_time_res=$res) AND ($dataref->{column_ts}<$lastmints) )");
+      push(@whereparts,"( (\"_time_res\"=$res) AND ($ts_col_sql<$lastmints) )");
     } else {
-      push(@whereparts,"(_time_res=$res)");
+      push(@whereparts,"(\"_time_res\"=$res)");
     }
     $lastmints=$mints_hash->{$res}->{min_ts};
   }

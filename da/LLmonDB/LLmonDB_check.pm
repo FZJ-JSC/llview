@@ -62,31 +62,42 @@ sub checkDB {
     if($tables_in_DB_ref) {
       %tables_in_db = map { $_ => 1 } @{$tables_in_DB_ref};
     }
-    # print "tables_in_db:",Dumper(\%tables_in_db);
     
     # check tables from config
     foreach my $t (@{$self->{CONFIGDATA}->{databases}->{$db}->{tables}}) {
       my $tableref=$t->{table};
       $table=$tableref->{name};
+      
+      # Clean table name for consistent lookup (strip quotes)
+      my $clean_table = $table;
+      $clean_table =~ s/^"|"$//g;
 
       my $do_recreate_table=0;
       
       printf("  LLmonDB:  -> check $db table $table\n") if($debug>=3);
       my $configcoldefs=$self->{CONFIG}->get_columns_defs($db,$table);
 
-      if(exists($tables_in_db{$table})) {
+      if(exists($tables_in_db{$clean_table}) || exists($tables_in_db{$table})) {
+        
+        my $dbcoldefs=$dbobj->query_columns($table); 
+        
+        # Create a normalized lookup for config columns
+        my %clean_config_lookup;
+        foreach my $k (keys %{$configcoldefs->{coldata}}) {
+            my $ck = $k; 
+            $ck =~ s/^"|"$//g;
+            $clean_config_lookup{$ck} = $k;
+        }
 
-        # check columns
-        my $dbcoldefs=$dbobj->query_columns($table);
-        # print "columns in Config table $table: @{$configcoldefs->{collist}}\n";
-        # print "columns in DB     table $table: @{$dbcoldefs->{collist}}\n";
-
-        # first, check cols from config file (only existence, order of cols need be changed in SQL)
+        # first, check cols from config file
         foreach my $col (@{$configcoldefs->{collist}}) {
-          if(exists($dbcoldefs->{coldata}->{$col})) {
-            if($configcoldefs->{coldata}->{$col}->{sql} ne $dbcoldefs->{coldata}->{$col}->{sql}) {
+          my $clean_col = $col;
+          $clean_col =~ s/^"|"$//g;
+          
+          if(exists($dbcoldefs->{coldata}->{$clean_col})) {
+            if($configcoldefs->{coldata}->{$col}->{sql} ne $dbcoldefs->{coldata}->{$clean_col}->{sql}) {
               $found++;
-              printf("  LLmonDB:     CHECK: table column $col changed ('$dbcoldefs->{coldata}->{$col}->{sql}' to '$configcoldefs->{coldata}->{$col}->{sql}')]\n");
+              printf("  LLmonDB:     CHECK: table column $col changed ('$dbcoldefs->{coldata}->{$clean_col}->{sql}' to '$configcoldefs->{coldata}->{$col}->{sql}')]\n");
               printf("  LLmonDB:     [DRY: alter table column $col ]\n");
               if(!$dryrun) {
                 $do_recreate_table=1;
@@ -108,14 +119,13 @@ sub checkDB {
 
         # second, check cols from db file
         foreach my $col (@{$dbcoldefs->{collist}}) {
-          if(!exists($configcoldefs->{coldata}->{$col})) {
+          if(!exists($clean_config_lookup{$col})) {
             $found++;$dataloss++;
             printf("  LLmonDB:     CHECK: table column $col only in DB ('$dbcoldefs->{coldata}->{$col}->{sql}'), column will be removed\n");
             printf("  LLmonDB:     CHECK: WARNING [data loss], remove column will destroy data in this column !!!\n");
             if(!$dryrun) {
               $do_recreate_table=1;
               $done++;
-              # $dbobj->remove_column($table,$col,$configcoldefs->{coldata}->{$col}->{sql});
             } else {
               printf("  LLmonDB:     [DRY: remove column $col to table $table ]\n");
             }
@@ -133,11 +143,12 @@ sub checkDB {
         }
       } else {
         # create table
+        $found++; 
         printf("  LLmonDB:     CHECK: table $table missing in DB\n");
         if(!$dryrun) {
           $dbobj->create_table($table,$configcoldefs);
+          $done++;
         } else {
-          $found++;
           printf("  LLmonDB:     [DRY: create database table ($db,$table)]\n");
         }
       }
@@ -147,7 +158,9 @@ sub checkDB {
     foreach $table (@{$tables_in_DB_ref}) {
       my $tab_exists=0;
       foreach my $t (@{$self->{CONFIGDATA}->{databases}->{$db}->{tables}}) {
-        if($t->{table}->{name} eq $table) {
+        my $cfg_table = $t->{table}->{name};
+        $cfg_table =~ s/^"|"$//g;
+        if($cfg_table eq $table) {
           $tab_exists=1; last;
         }
       }
@@ -159,7 +172,6 @@ sub checkDB {
           $dbobj->remove_table($table);
           $done++;
         } else {
-          $found++;
           printf("  LLmonDB:     [DRY: remove database table ($db,$table)]\n");
         }
       }
@@ -175,51 +187,53 @@ sub checkDB {
     foreach my $t (@{$self->{CONFIGDATA}->{databases}->{$db}->{tables}}) {
       my $tableref=$t->{table};
       $table=$tableref->{name};
+      my $clean_table = $table;
+      $clean_table =~ s/^"|"$//g;
 
-      # check index from config
       my $indexdefs=$self->{CONFIG}->get_index_columns($db,$table);
       my $icount=0;
       foreach my $indexcoldefs (@{$indexdefs}) {
         if($#{$indexcoldefs}>=0) {
           $icount++;
-          $indextable=sprintf("%s_idx",$table) if($icount==1);
-          $indextable=sprintf("%s_%d_idx",$table,$icount) if($icount>1);
+          $indextable=sprintf("%s_idx",$clean_table) if($icount==1);
+          $indextable=sprintf("%s_%d_idx",$clean_table,$icount) if($icount>1);
           $indextables_in_config{$indextable}=1;
 
-          # print "TMPDEB: $db,$table,$indextable\n" if($db eq "gpustate");
           printf("  LLmonDB:  -> check $db indextable $indextable\n") if($debug>=3);
 
-          # check if index table exists
           if(exists($index_in_db{$indextable})) {
-            # check index columns
             my $dbcoldefs=$dbobj->query_index_columns($indextable);
             my $diff=0;
             if($#{$indexcoldefs}!=$#{$dbcoldefs->{collist}}) {
               $diff=1;
             } else {
               for(my $c=0;$c<=$#{$indexcoldefs};$c++) {
-                if($indexcoldefs->[$c] ne $dbcoldefs->{collist}->[$c]) {
+                my $clean_idx_col = $indexcoldefs->[$c];
+                $clean_idx_col =~ s/^"|"$//g;
+                if($clean_idx_col ne $dbcoldefs->{collist}->[$c]) {
                   $diff=1;
                 }
               }
             }
 
             if($diff) {
+              $found++; 
               printf("  LLmonDB:     CHECK: indextable for table $table hast different columns  (DB:@{$indexcoldefs}) != (Config:@{$dbcoldefs->{collist}}), recreate index table\n");
               if(!$dryrun) {
                 $dbobj->remove_index($indextable);
                 $dbobj->create_index($table,$indextable,$indexcoldefs);
+                $done++;
               } else {
-                $found++;
                 printf("  LLmonDB:     [DRY: re-create database index ($db,$indextable)]\n");
               }
             }
           } else {
+            $found++; 
             printf("  LLmonDB:     CHECK: indextable for table $table does not exists in DB, create indextable\n");
             if(!$dryrun) {
               $dbobj->create_index($table,$indextable,$indexcoldefs);
+              $done++;
             } else {
-              $found++;
               printf("  LLmonDB:     [DRY: create database index ($db,$indextable)]\n");
             }
           }
@@ -227,14 +241,14 @@ sub checkDB {
       }
     }
     
-    # check tables index from db
     foreach $indextable (@{$index_in_DB_ref}) {
       if(!exists($indextables_in_config{$indextable})) {
         printf("  LLmonDB:     CHECK: indextable $indextable in DB not in config file, remove indextable from data base\n");
+        $found++; 
         if(!$dryrun) {
           $dbobj->remove_index($indextable);
+          $done++;
         } else {
-          $found++;
           printf("  LLmonDB:     [DRY: remove database index ($db,$indextable)]\n");
         }
       }

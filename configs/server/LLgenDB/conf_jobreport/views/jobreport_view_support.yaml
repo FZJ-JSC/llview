@@ -179,7 +179,7 @@
            template: "/data/LLtemplates/workflows"
            icon: "list-alt"
            context: "data/support/workflows.json"
-           default: "false"
+           default: false
            ref:
              - table
            data:

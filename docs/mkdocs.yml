@@ -12,7 +12,7 @@ site_name: User Documentation
 site_description: Documentation of LLview monitoring tool
 nav:
   - About: 
-    - Intro: index.md
+    - Overview: index.md
     - Internal Releases: releases/index.md
     - Public Releases: releases/public.md
     - JURI Releases: releases/juri.md
@@ -33,7 +33,10 @@ nav:
       - System Errors: jobreport/system_errors.md
     - List of metrics: jobreport/metrics_list.md
     - Examples: jobreport/examples.md
-  - Benchmarks: benchmarks/index.md
+  - Benchmarks: 
+    - Overview: benchmarks/index.md
+    - Configuration Guide: benchmarks/configuration.md
+    - Configuration Examples: benchmarks/examples.md
   - Known Issues: known_issues/index.md
   - Contact: contact/index.md
   - Access: access/index.md
@@ -55,6 +58,7 @@ nav:
     - Adding New Metrics:
       - General Steps: install/addmetrics.md
       - "Example: CPU model": install/addmetrics_example.md
+    - Continuous Benchmarking: install/benchmarks.md
     - Troubleshooting: install/troubleshooting.md
   # - Description:
   #   - Home: description/index.md

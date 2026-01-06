@@ -113,7 +113,7 @@
         field: "runtime",
         # valueGetter: "(params) => {console.log("ValueGetter",params); return params.data['runtime'];}",
         headerName: "Runtime",
-        cellDataType: "timeInterval",
+        cellDataType: "number",
         valueFormatter: "(params) => hhmm_short(params)",
         filter: "agNumberColumnFilter",
         filterParams: numberFilterParams,

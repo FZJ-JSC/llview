@@ -5,6 +5,13 @@ A simplified package of LLview is also available Open Source on GitHub. [See mor
 Developments on the internal releases of LLview are not following the new implementations as the public one. New fixes and improvements done on the internal releases are brought periodically to the public release, but not vice-versa. The versions of the internal "releases" are kept in place for simplicity.
 A single version of JURI is used for both internal and public versions of LLview. [See here the changelog for JURI](juri.md).
 
+### 2.4.2-base (December 19, 2025)
+
+<h4> Added </h4>
+
+- Added KontView link to the top navigation bar
+
+
 ### 2.4.1 (November 1, 2025)
 
 <h4> Added </h4>
@@ -18,8 +25,8 @@ A single version of JURI is used for both internal and public versions of LLview
 - Improved `waittime` after a job has started or is in the queue
 - Changed date format of `DATE_NOW` (`info_str` on JURI) to ISO including timezone
 
-### 2.3.2 (December 16, 2024)
 
+### 2.3.2 (December 16, 2024)
 
 <h4> Added </h4>
 
