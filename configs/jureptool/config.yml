@@ -1,12 +1,13 @@
 # Copyright (c) 2023 Forschungszentrum Juelich GmbH.
-# This file is part of LLview. 
+# This file is part of LLview.
 #
 # This is an open source software distributed under the GPLv3 license. More information see the LICENSE file at the top level.
 #
 # Contributions must follow the Contributor License Agreement. More information see the CONTRIBUTING.md file at the top level.
 #
 # Contributors:
-#    Filipe Guimarães (Forschungszentrum Juelich GmbH) 
+#    Filipe Guimarães (Forschungszentrum Juelich GmbH)
+#    Matthias Lapu (CEA)
 
 # Timezone name (a list can be found in https://en.wikipedia.org/wiki/List_of_tz_database_time_zones)
 timezone: 'Europe/Berlin'
@@ -16,6 +17,16 @@ timezone: 'Europe/Berlin'
 # - replace can be done with: [string_from,string_to]
 # - removals can be done with: (string_to_remove)
 hostname: 'https://llview.fz-juelich.de/#system(-dc)[ ,_]#'
+
+# JURI uses Jureptool to create html and pdf reports
+# Jureptool relies plotly and jquery to build the html pages
+# The required javascript files for plotly and jquery are located in:
+# JURI/js/ext, (https://github.com/FZJ-JSC/JURI/tree/main/js/ext)
+#
+# Set the option below to true if you want to use the CDN for jquery and plotly
+# Enabling this allows Jureptool to generate HTML files without requiring JURI.
+# CDN = Content Delivery Network
+use_cdn: false
 
 #Folder prefix to be added to items in plotlists file
 folder_prefix: '$LLVIEW_DATA/$LLVIEW_SYSTEMNAME/tmp/jobreport/data/'

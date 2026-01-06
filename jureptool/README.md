@@ -35,7 +35,7 @@ Options that can be passed via SLURM `--comment` flag:
 
 ### Usage:
 ```
-usage: main.py [-h] [--daemon] [--demo] [--nomove] [--nohtml] [--gzip] [--plotlyjs PLOTLYJS] [--maxjobs MAXJOBS] [--maxsec MAXSEC] [--shutdown SHUTDOWN [SHUTDOWN ...]]
+usage: main.py [-h] [--daemon] [--demo] [--nomove] [--nohtml] [--gzip] [--maxjobs MAXJOBS] [--maxsec MAXSEC] [--shutdown SHUTDOWN [SHUTDOWN ...]]
                [--nprocs NPROCS] [--loglevel LOGLEVEL] [--logprefix LOGPREFIX] [--configfolder CONFIGFOLDER] [--outfolder OUTFOLDER] [--semail SEMAIL] [--remail REMAIL]
                file [file ...]
 
@@ -51,7 +51,6 @@ optional arguments:
   --nomove              Don't copy files to final location
   --nohtml              Deactivate generation of HTML
   --gzip                Compress HTML using gzip
-  --plotlyjs PLOTLYJS   Location of the 'plotly.min.js' file (default: 'cdn')
   --maxjobs MAXJOBS     Maximum number of jobs to process (default: MAXJOBS=10000)
   --maxsec MAXSEC       Filter date range with maximum seconds range (default: no filter)
   --shutdown SHUTDOWN [SHUTDOWN ...]
