@@ -19,26 +19,15 @@ timezone: 'Europe/Berlin'
 hostname: 'https://llview.fz-juelich.de/#system(-dc)[ ,_]#'
 
 # JURI uses Jureptool to create html and pdf reports
-# Jureptool relies plotly and jquery to build the html pages
+# Jureptool relies on plotly and jquery to build the html pages
 # The required javascript files for plotly and jquery are located in:
 # JURI/js/ext, (https://github.com/FZJ-JSC/JURI/tree/main/js/ext)
-#
-# Set the option below to true if you want to use the CDN for jquery and plotly
-# Enabling this allows Jureptool to generate HTML files without requiring JURI.
-# CDN = Content Delivery Network
-use_cdn: false
-cdn_jquery: 'https://code.jquery.com/jquery-3.6.0.min.js'
-cdn_plotly: 'https://cdn.plot.ly/plotly-latest.min.js'
-
-# otherwise, if you want to use it locally without relying on JURI,
-# you can add the jquery.min.js and the plotly.min.js
-# ex : jquery_path: 'foo/bar/jquery.min.js'
-
-# If you leave these as null:
-#   - Jureptool will automatically use the built-in copies from JURI/js/ext
-#   - Or, if `use_cdn` is set to True, the CDN versions of jquery and plotly will be used.
-jquery_path: null
-plotly_path: null
+# Moreover, Content Delivery Network (CDN) can also be used
+# ex :
+# jquery_location: 'https://code.jquery.com/jquery-3.6.0.min.js'
+# plotly_location: 'https://cdn.plot.ly/plotly-latest.min.js'
+plotly_location: null
+jquery_location: null
 
 #Folder prefix to be added to items in plotlists file
 folder_prefix: '$LLVIEW_DATA/$LLVIEW_SYSTEMNAME/tmp/jobreport/data/'

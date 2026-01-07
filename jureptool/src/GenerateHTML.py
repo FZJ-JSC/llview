@@ -778,23 +778,20 @@ def CreateHTML( config,
 
   </script>
 """
-  if config['appearance']['use_cdn']:
-      jquery_path = config['appearance'].get('cdn_jquery')
-      plotly_path = config['appearance'].get('cdn_plotly')
-  else:
-    jquery_path = (
-        config['appearance'].get('jquery_path')
-        or f"{replace_vars(config['appearance']['hostname'], config['appearance'])}/js/ext/jquery.min.js"
-    )
 
-    plotly_path = (
-        config['appearance'].get('plotly_path')
-        or f"{replace_vars(config['appearance']['hostname'], config['appearance'])}/js/ext/plotly.min.js"
-    )
+  # Getting location of plotly
+  if loc := config['appearance'].get('plotly_location'):
+      plotly_path = loc
+  else:
+    plotly_path = f"{replace_vars(config['appearance']['hostname'], config['appearance'])}/js/ext/plotly.min.js"
+  # Getting location of jquery
+  if loc := config['appearance'].get('jquery_location'):
+      jquery_path = loc
+  else:
+    jquery_path = f"{replace_vars(config['appearance']['hostname'], config['appearance'])}/js/ext/jquery.min.js"
 
   html += f"  <script src='{jquery_path}'></script>\n"
   html += f"  <script src='{plotly_path}'></script>\n"
-
 
   html += f"""
   <title>Job ID {config['appearance']['jobid']} Report</title>
