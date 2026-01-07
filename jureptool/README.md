@@ -95,3 +95,180 @@ rm -fr ~/.cache/matplotlib
 (on MacOs, matplotlib's cache folder is `~/.matplotlib`.)
 
 
+### Expected file
+
+JuRepTool uses `.json` to create PDF and HTML. The expected `.json` files are as follows:
+
+```json
+{
+  "cpu": {
+    "currentwatts_avg": null,
+    "currentwatts_max": null,
+    "currentwatts_min": null,
+    "load_avg": null,
+    "load_max": null,
+    "load_min": null,
+    "usage_avg": null,
+    "usage_max": null,
+    "usage_min": null,
+    "used_cores_avg": null,
+    "used_cores_logic_avg": null,
+    "used_cores_logic_max": null,
+    "used_cores_logic_min": null,
+    "used_cores_max": null,
+    "used_cores_min": null,
+    "used_cores_phys_avg": null,
+    "used_cores_phys_max": null,
+    "used_cores_phys_min": null,
+    "used_mem_avg": null,
+    "used_mem_max": null,
+    "used_mem_min": null
+  },
+
+  "fabric": {
+    "mbin_avg": null,
+    "mbin_max": null,
+    "mbin_min": null,
+    "mbout_avg": null,
+    "mbout_max": null,
+    "mbout_min": null,
+    "pckin_avg": null,
+    "pckin_max": null,
+    "pckin_min": null,
+    "pckout_avg": null,
+    "pckout_max": null,
+    "pckout_min": null
+  },
+
+  "files": {
+    "coreusagenodefile": "",
+    "fabricnodefile": "",
+    "fsallnodefile": "",
+    "fsfastdatanodefile": "",
+    "fshomenodefile": "",
+    "fsprojectnodefile": "",
+    "fsscratchnodefile": "",
+    "gpunodefile": "",
+    "htmlfile": "",
+    "jmcfile": "",
+    "loadmemnodefile": "",
+    "pdffile": ""
+  },
+
+  "fs": {
+    "fs_all_Mbr_sum": null,
+    "fs_all_MbrR_max": null,
+    "fs_all_Mbw_sum": null,
+    "fs_all_MbwR_max": null,
+    "fs_all_ocR_max": null,
+
+    "fs_fastdata_Mbr_sum": null,
+    "fs_fastdata_MbrR_max": null,
+    "fs_fastdata_Mbw_sum": null,
+    "fs_fastdata_MbwR_max": null,
+    "fs_fastdata_ocR_max": null,
+
+    "fs_home_Mbr_sum": null,
+    "fs_home_MbrR_max": null,
+    "fs_home_Mbw_sum": null,
+    "fs_home_MbwR_max": null,
+    "fs_home_ocR_max": null,
+
+    "fs_project_Mbr_sum": null,
+    "fs_project_MbrR_max": null,
+    "fs_project_Mbw_sum": null,
+    "fs_project_MbwR_max": null,
+    "fs_project_ocR_max": null,
+
+    "fs_scratch_Mbr_sum": null,
+    "fs_scratch_MbrR_max": null,
+    "fs_scratch_Mbw_sum": null,
+    "fs_scratch_MbwR_max": null,
+    "fs_scratch_ocR_max": null
+  },
+
+  "gpu": {
+    "gpu_active_avg": null,
+    "gpu_clk_max": null,
+    "gpu_memu_avg": null,
+    "gpu_memu_max": null,
+    "gpu_memur_avg": null,
+    "gpu_pu_avg": null,
+    "gpu_pu_max": null,
+    "gpu_sclk_max": null,
+    "gpu_temp_avg": null,
+    "gpu_temp_max": null,
+    "gpu_util_avg": null,
+    "gpulist": "",
+    "gpuspec": ""
+  },
+
+  "IC": {
+    "icgroupmap": ""
+  },
+
+  "jmc": {
+    "descs": "",
+    "maximums": "",
+    "minimums": "",
+    "names": "",
+    "numvars": 0
+  },
+
+  "job": {
+    "account": "",
+    "command": "",
+    "comment": "",
+    "endedhm": "",
+    "estendtime": "",
+    "finished": null,
+    "jobid": "",
+    "lastupdate": "",
+    "lastupdatets": null,
+    "name": "",
+    "nodelist": "",
+    "numgpus": null,
+    "numnodes": null,
+    "owner": "",
+    "queue": "",
+    "queuedate": "",
+    "runtime": null,
+    "runtimehm": "",
+    "runtimeperc": null,
+    "starttime": "",
+    "system": "",
+    "updatetime": "",
+    "waittime": "",
+    "wallh": null,
+    "wallhm": ""
+  },
+
+  "num_datapoints": {
+    "cores_ndps": null,
+    "fa_ndps": null,
+    "fs_all_ndps": null,
+    "fs_fastdata_ndps": null,
+    "fs_home_ndps": null,
+    "fs_project_ndps": null,
+    "fs_scratch_ndps": null,
+    "gpu_ndps": null,
+    "jmc_ndps": null,
+    "ld_ndps": null
+  },
+
+  "rc": {
+    "errmsgnodes": "",
+    "errmsgs": "",
+    "max_rc": null,
+    "nsteps": null,
+    "numerrnodes": null,
+    "nummsgs": null,
+    "rc_rc": null,
+    "rc_signr": null,
+    "rc_state": "",
+    "rc_wallh": null,
+    "stepspec": ""
+  }
+}
+
+```
