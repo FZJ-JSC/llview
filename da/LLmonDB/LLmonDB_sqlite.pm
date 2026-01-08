@@ -714,24 +714,37 @@ sub query_hash_values_table {
   my $sql;
   if(!defined($qsql)) {
     if(!defined($table)) {
-      printf(STDERR "[query_hash_values_table] \t   LLmonDB_sqlite: ERROR cannot prepare query_hash_values_table, [table not defined] ($nkeys,$nvalue,$where,$qsql,%s,%s)\n",caller());
+      printf(STDERR "[query_hash_values_table] \t LLmonDB_sqlite: ERROR - 'table' argument is undefined.\n");
+      printf(STDERR "  Database: %s\n", $self->{DBNAME});
+      printf(STDERR "  Caller: %s line %s\n", caller());
       return(undef);
     }
     $sql = "SELECT $keylist,$nvalue FROM $table";
     $sql.=" WHERE $where" if($where);
   } else {
     $sql=$qsql;
-    # print "query_hash_values_table: sql=$sql\n";
   }
-  # print "query_hash_values_table: $sql\n";
+  
   my $sth = $self->{DBH}->prepare($sql);
   if(!$sth) {
-    printf(STDERR "[query_hash_values_table] \t   LLmonDB_sqlite: ERROR cannot prepare query_hash_values_table(table: $table sql: %s...)\n",substr($sql,0,240));
+    my $db_error = $self->{DBH}->errstr;
+    printf(STDERR "[query_hash_values_table] \t LLmonDB_sqlite: ERROR - Cannot prepare SQL statement.\n");
+    printf(STDERR "  Database: %s\n", $self->{DBNAME});
+    printf(STDERR "  Table (if provided): %s\n", defined($table) ? $table : 'N/A');
+    printf(STDERR "  Database Error: %s\n", $db_error);
+    printf(STDERR "  Full SQL Dump:\n---\n%s\n---\n", $sql);
     return(undef);
   }
-  $sth->execute();
+  
+  if (!$sth->execute()) {
+    my $db_error = $self->{DBH}->errstr;
+    printf(STDERR "[query_hash_values_table] \t LLmonDB_sqlite: ERROR - Cannot execute SQL statement.\n");
+    printf(STDERR "  Database: %s\n", $self->{DBNAME});
+    printf(STDERR "  Database Error: %s\n", $db_error);
+    printf(STDERR "  Full SQL Dump:\n---\n%s\n---\n", $sql);
+    return(undef);
+  }
 
-  # $self->{DBH}->{FetchHashKeyName} = 'NAME_lc'; # use lowercase names
   $retval = $sth->fetchall_hashref($nkeys);
 
   print "\t   LLmonDB_sqlite: query_hash_single_table $sql\n" if($debug>=3);

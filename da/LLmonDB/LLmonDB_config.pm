@@ -217,10 +217,12 @@ sub load_config {
   my $data=$self->read_configfile($self->{CONFIGFILE},$self->{CONFIGFILE},1,"");
   $self->{RAWCONFIGDATA}=$data;
   
+  # When the environment variable is set, print the YAML config to file
+  # NOTE: It requires LLview to be restarted, since the monitor daemon will get the
+  # environment of when it was launched.
   if($ENV{LLMONDB_PRINT_CONFIG_TO_DIR}) {
     my $cfile=$self->{CFILE};$cfile=~s/\.yaml$//s;
     my $outfile=File::Spec->catfile($ENV{LLMONDB_PRINT_CONFIG_TO_DIR},"${cfile}_raw.yaml");
-    print "LLmonDB_config: LLMONDB_PRINT_CONFIG_TO_DIR: write $outfile\n";
     $self->print_to($outfile);
   }
   

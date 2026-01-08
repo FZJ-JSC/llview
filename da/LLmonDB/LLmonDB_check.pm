@@ -208,9 +208,16 @@ sub checkDB {
               $diff=1;
             } else {
               for(my $c=0;$c<=$#{$indexcoldefs};$c++) {
+                # Get and clean config column
                 my $clean_idx_col = $indexcoldefs->[$c];
-                $clean_idx_col =~ s/^"|"$//g;
-                if($clean_idx_col ne $dbcoldefs->{collist}->[$c]) {
+                $clean_idx_col =~ s/^"|"$//g; # Remove surrounding quotes
+                
+                # Get and clean DB column
+                my $clean_db_col = $dbcoldefs->{collist}->[$c];
+                $clean_db_col =~ s/^"|"$//g;  # Remove surrounding quotes from DB result too
+
+                # Compare cleaned versions
+                if($clean_idx_col ne $clean_db_col) {
                   $diff=1;
                 }
               }
@@ -218,7 +225,7 @@ sub checkDB {
 
             if($diff) {
               $found++; 
-              printf("  LLmonDB:     CHECK: indextable for table $table hast different columns  (DB:@{$indexcoldefs}) != (Config:@{$dbcoldefs->{collist}}), recreate index table\n");
+              printf("  LLmonDB:     CHECK: indextable for table $table has different columns  (DB:@{$dbcoldefs->{collist}}) != (Config:@{$indexcoldefs}), recreate index table\n");
               if(!$dryrun) {
                 $dbobj->remove_index($indextable);
                 $dbobj->create_index($table,$indextable,$indexcoldefs);
