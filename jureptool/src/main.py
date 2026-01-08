@@ -1,12 +1,12 @@
 # Copyright (c) 2023 Forschungszentrum Juelich GmbH.
-# This file is part of LLview. 
+# This file is part of LLview.
 #
 # This is an open source software distributed under the GPLv3 license. More information see the LICENSE file at the top level.
 #
 # Contributions must follow the Contributor License Agreement. More information see the CONTRIBUTING.md file at the top level.
 #
 # Contributors:
-#    Filipe Guimarães (Forschungszentrum Juelich GmbH) 
+#    Filipe Guimarães (Forschungszentrum Juelich GmbH)
 
 import os                                                  # OS library (files and folders operations)
 import sys                                                 # system variables for stdout and stderr
@@ -30,7 +30,7 @@ import argparse
 import itertools
 import shutil
 import yaml
-import datetime 
+import datetime
 from pytz import timezone
 
 
@@ -57,7 +57,7 @@ def check_shutdown_callback(self):
   """
   Callback used after every job to check if shutdown file exists
   to terminate the jobs
-  """  
+  """
   if check_shutdown():
     if email: msg.send_email(semail,remail,"Shutdown file found, stopping generation of PDF-job reports")
     log.warning("Shutdown file found, stopping jobs")
@@ -68,7 +68,7 @@ def error_handler(e):
   """
   Error callback to catch any raised exception raised by some
   of the child processes, and send email
-  """  
+  """
   if email: msg.send_email(semail,remail,f"Error in PDF-Job report:\n {' '.join(traceback.format_exception(type(e), e, e.__traceback__))}")
   log.error(f"Error:\n {' '.join(traceback.format_exception(type(e), e, e.__traceback__))}")
   global nerrors
@@ -98,7 +98,7 @@ def ProcessReport(njob,total_jobs,job,config):
   Wrapper to catch eventual errors in _ProcessReport
   """
   log = logging.getLogger('logger')
-  
+
   try:
     _ProcessReport(njob,total_jobs,job,config)
   except Exception as e:
@@ -125,7 +125,7 @@ def _ProcessReport(njob,total_jobs,job,config):
 
   # Getting timezonegap
   config['appearance']['timezonegap'] = timezone(config['appearance']['timezone']).localize(datetime.datetime.strptime(data["job"]["starttime"],'%Y-%m-%d %H:%M:%S')).utcoffset().seconds
-  
+
   # Removing sensitive data in demo mode
   if config['demo']:
     # folder = "."
@@ -154,7 +154,7 @@ def _ProcessReport(njob,total_jobs,job,config):
   except (ValueError,KeyError):
     data['job']['numgpus'] = 0
     num_gpus = 0
-  
+
   # Escaping job name
   data['job']['name'] = re.escape(data['job']['name'])
 
@@ -287,7 +287,7 @@ def _ProcessReport(njob,total_jobs,job,config):
   ##################################### Reading data from files #####################################
   for fh,fh_info in files.items():
     # If number of points is less than 2 or if the filename is not given, don't read the file
-    if (int(fh_info['datapoints'])<2) or (fh not in data['files']) or (data['files'][fh] in ["",0,"-"]): 
+    if (int(fh_info['datapoints'])<2) or (fh not in data['files']) or (data['files'][fh] in ["",0,"-"]):
       continue
 
     # Reading file with information for all nodes and all times
@@ -313,11 +313,11 @@ def _ProcessReport(njob,total_jobs,job,config):
     y_x_keys = [key for key in {**y_headers, **x_headers}.keys()]
 
     # Dropping duplicated lines
-    df_temp.drop_duplicates(subset=y_x_keys, keep='first', inplace=True) 
+    df_temp.drop_duplicates(subset=y_x_keys, keep='first', inplace=True)
 
     # Dropping rows above ts range
     if config['appearance']['maxsec']:
-      df_temp.drop(df_temp[df_temp[config['plots']['_x']['header']] > df_temp[config['plots']['_x']['header']].min()+config['appearance']['maxsec']].index, inplace=True) 
+      df_temp.drop(df_temp[df_temp[config['plots']['_x']['header']] > df_temp[config['plots']['_x']['header']].min()+config['appearance']['maxsec']].index, inplace=True)
 
     # Dropping rows with infinity values
     df_temp = df_temp[~df_temp.isin([np.inf, -np.inf]).any(axis=1)]
@@ -379,7 +379,7 @@ def _ProcessReport(njob,total_jobs,job,config):
       # If there are no graphs to plot in this section, skip
       if not graphs_to_plot: continue
 
-      # Getting the file headers in this section 
+      # Getting the file headers in this section
       files_in_section = [config_section[_]['_file_header'] for _ in graphs_to_plot]
 
       ################################# Setting up TOC and graphs_to_plot ####################################
@@ -487,7 +487,7 @@ def _ProcessReport(njob,total_jobs,job,config):
       to_plot_extra[section]['colorplot'] = []
       to_plot_extra[section]['unified'] = []
       to_plot_extra[section]['description'] = []
-      # Looping over graphs defined in the custom section 
+      # Looping over graphs defined in the custom section
       for idx,_ in enumerate(graphs_to_plot):
         # The header on the dat file uses a generic name, and not the real "name" of the graph
         to_plot_extra[section]['headers'].append(f"value{idx}")
@@ -548,7 +548,7 @@ def _ProcessReport(njob,total_jobs,job,config):
         df_overview[side]['legend'] = []
         for (fh,graphs),legend in zip(cols.items(),legends):
           # Skipping plot if no data is present
-          if files[fh]['data'] is None: continue 
+          if files[fh]['data'] is None: continue
           if x_header_overview == 'ts': x_header = 'datetime'
           df_temp = files[fh]['data'][list(graphs)].groupby([x_header], as_index=False).mean()
           # # Transforming timestamps (with timezone) to datetime
@@ -694,8 +694,8 @@ def _ProcessReport(njob,total_jobs,job,config):
     #   proj_end = timeline_df['end'].max()
     proj_end = datetime.datetime.timestamp(datetime.datetime.strptime(data['job']['updatetime'], '%Y-%m-%d %H:%M:%S'))
     timeline_df.loc[timeline_df['end']<0,'end'] = proj_end
-    timeline_df['start_time'] = timeline_df['beg'].apply(lambda x: datetime.datetime.fromtimestamp(int(x+config['appearance']['timezonegap']),datetime.timezone.utc)) 
-    timeline_df['end_time'] = timeline_df['end'].apply(lambda x: datetime.datetime.fromtimestamp(int(x+config['appearance']['timezonegap']),datetime.timezone.utc)) 
+    timeline_df['start_time'] = timeline_df['beg'].apply(lambda x: datetime.datetime.fromtimestamp(int(x+config['appearance']['timezonegap']),datetime.timezone.utc))
+    timeline_df['end_time'] = timeline_df['end'].apply(lambda x: datetime.datetime.fromtimestamp(int(x+config['appearance']['timezonegap']),datetime.timezone.utc))
     timeline_df['duration'] = timeline_df['end_time']-timeline_df['start_time']
     timeline_df[['color','edgecolor','colorhtml','edgecolorhtml']] = timeline_df['st'].apply(lambda x: add_color(x))
     # Escaping job names
@@ -764,7 +764,7 @@ def _ProcessReport(njob,total_jobs,job,config):
   # Output files:
   # output = f"{folder}/python_{data['files']['pdffile']}"
   output_pdf = f"{config['outfolder']}/{data['files']['pdffile']}"
-  if config['html'] or config['gzip']: 
+  if config['html'] or config['gzip']:
     output_html = f"{config['outfolder']}/{data['files']['htmlfile']}"
 
   # Getting time range of the job:
@@ -802,17 +802,17 @@ def _ProcessReport(njob,total_jobs,job,config):
     timeline_html,system_report_html = LastPages.LastPages(pdf,data,config,page_num,timeline_df,time_range,error_lines)
 
   ############################################################################
-  if config['html'] or config['gzip']: 
+  if config['html'] or config['gzip']:
     config['appearance']['jobid'] = data['job']['jobid'] # Job ID for title and filename
     config['appearance']['system'] = data['job']['system'].lower().replace('_',' ') # System for filename
-    GenerateHTML.CreateHTML(config, 
-                            figs, 
-                            navbar=navbar, 
-                            first=first_page_html, 
-                            overview=overview_fig, 
-                            nodelist=nodelist_html, 
+    GenerateHTML.CreateHTML(config,
+                            figs,
+                            navbar=navbar,
+                            first=first_page_html,
+                            overview=overview_fig,
+                            nodelist=nodelist_html,
                             timeline=timeline_html,
-                            system_report=system_report_html, 
+                            system_report=system_report_html,
                             filename=output_html)
   # Moving files to final folder
   if config['move']:
@@ -850,7 +850,7 @@ def process_plotlist(config,q):
     counter += 1
 
   # Getting list of json files with all running jobs (and finished in the last 30 min) to process
-  # If config['json']=True, all files are already json 
+  # If config['json']=True, all files are already json
   if config['json']:
     jobs = config['file']
   else:
@@ -868,11 +868,11 @@ def process_plotlist(config,q):
   njobs = len(jobs)
   total_jobs = min(njobs,config['maxjobs'])
 
-  if total_jobs==0: 
+  if total_jobs==0:
     log.warning(f"No jobs in plotlist file!")
     return
 
-  # Create pool for dispatching work 
+  # Create pool for dispatching work
   global pool
   pool = mp.Pool(config['nprocs'], worker_init, [q,config['logging']['level']])
 
@@ -880,9 +880,9 @@ def process_plotlist(config,q):
 
   njob = 0
   for job in jobs:
-    njob += 1                      # FOR DEBUG 
-    if njob > config['maxjobs']:   # FOR DEBUG 
-      break                        # FOR DEBUG 
+    njob += 1                      # FOR DEBUG
+    if njob > config['maxjobs']:   # FOR DEBUG
+      break                        # FOR DEBUG
     pool.apply_async(ProcessReport, [njob,total_jobs,job,config], callback=check_shutdown_callback, error_callback=error_handler)
 
   pool.close()
@@ -946,12 +946,12 @@ class CustomFormatter(logging.Formatter):
                     logging.ERROR: self.red + self.fmt + self.reset,
                     logging.CRITICAL: self.bold_red + self.fmt + self.reset
                   }
-    
+
   def format(self, record):
     log_fmt = self.FORMATS.get(record.levelno)
     formatter = logging.Formatter(fmt=log_fmt,datefmt=self.datefmt)
     return formatter.format(record)
-    
+
 # Adapted from: https://stackoverflow.com/a/53257669/3142385
 class _ExcludeErrorsFilter(logging.Filter):
     def filter(self, record):
@@ -967,7 +967,7 @@ def log_init(config):
   log = logging.getLogger('logger')
   log.setLevel(config['level'])
 
-  # Setup handler: file (when configured) or stdout, stderr 
+  # Setup handler: file (when configured) or stdout, stderr
   if 'file' in config:
     fh = logging.FileHandler(config['file'], mode=config['filemode'])
     fh.setLevel(config['level'])
@@ -1024,7 +1024,8 @@ def main():
 
   # Parse arguments
   parser = argparse.ArgumentParser(description="JuRepTool")
-  parser.add_argument("file", nargs="+", help="File including list of running and recently-finished jobs or JSON file of a job")
+  parser.add_argument("file", nargs="*", default="", help="File including list of running and recently-finished jobs or JSON file of a job")
+  parser.add_argument('--infolder', nargs="+", default="", help="Folder(s) with all the .json to be processed (alternative to file option)")
   parser.add_argument("--daemon", default=False, action="store_true" , help="Run as a 'daemon', i.e., in an infinite loop")
   parser.add_argument("--demo", default=False, action="store_true" , help="Run in 'demo' mode (hide usernames, project id and job names)")
   parser.add_argument("--nomove", default=False, action="store_true" , help="Don't copy files to final location")
@@ -1043,6 +1044,9 @@ def main():
   parser.add_argument("--remail", default="", help="Receiver email to use in case of errors (default: None)")
   args = parser.parse_args()
 
+  if not args.file and not args.infolder:
+    parser.error("Either file(s) or --infolder must be specified")
+
   # Parsing configuration
   config = {}
   # Report appearance
@@ -1057,11 +1061,18 @@ def main():
 
   # Configuration
   config['file'] = []
-  for file in args.file:
-    config['file']+=glob.glob(file)
-  config['json'] = False
-  if all([_.endswith('json') for _ in config['file']]):
-    config['json'] = True
+
+  if args.infolder:
+      for folder in args.infolder:
+        if not os.path.isdir(folder):
+            raise ValueError(f"--infolder must be a valid directory: {folder}")
+        config['file'] += [os.path.join(folder, fname) for fname in os.listdir(folder) if fname.endswith('.json')]
+        config['json'] = True
+  else:
+      for file in args.file:
+          config['file'] += glob.glob(file)
+      config['json'] = all([_.endswith('json') for _ in config['file']])
+
   config['demo'] = args.demo
   config['html'] = not args.nohtml
   config['gzip'] = args.gzip
