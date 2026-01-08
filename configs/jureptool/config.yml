@@ -16,7 +16,11 @@ timezone: 'Europe/Berlin'
 # Substitutions can be used with keys given in #(...)#. Inside it:
 # - replace can be done with: [string_from,string_to]
 # - removals can be done with: (string_to_remove)
+# if only jureptool is used and not juri, keep this settings empty
 hostname: 'https://llview.fz-juelich.de/#system(-dc)[ ,_]#'
+# at the bottom of the generated html page, there will be a logo to llview that
+# links to juri, if there is no juri (hostname = ''), put this link instead
+standalone_link: 'https://apps.fz-juelich.de/jsc/llview/docu/install/server_install/#jureptool'
 
 # JURI uses Jureptool to create html and pdf reports
 # Jureptool relies on plotly and jquery to build the html pages
