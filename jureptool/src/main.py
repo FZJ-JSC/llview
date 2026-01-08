@@ -7,6 +7,7 @@
 #
 # Contributors:
 #    Filipe Guimarães (Forschungszentrum Juelich GmbH)
+#    Matthias Lapu (CEA)
 
 import os                                                  # OS library (files and folders operations)
 import sys                                                 # system variables for stdout and stderr
