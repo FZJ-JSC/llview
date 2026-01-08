@@ -82,8 +82,10 @@ sub get_data {
 
     if($checklmldata) {
       if(!exists($self->{DATA}->{SYSTEM_TS})) {
-        printf(STDERR "\n[LML_DBupdate_file] ERROR SYSTEM_TS missing, probably no system element in input files, leaving...\n\n");
-        return();
+        $self->{DATA}->{SYSTEM_TS} = int(time());
+        printf("\n[LML_DBupdate_file] WARNING: SYSTEM_TS missing, probably no system element in input files. Setting to current time (%d)...\n\n", $self->{DATA}->{SYSTEM_TS});
+        # printf(STDERR "\n[LML_DBupdate_file] ERROR SYSTEM_TS missing, probably no system element in input files, leaving...\n\n");
+        # return();
       }
     }
 

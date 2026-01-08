@@ -103,41 +103,38 @@ def flatten_json(json_data):
   
   return flattened_data
 
-def gen_tab_config(empty=False,suffix="cb",folder="./"):
+def gen_tab_config(default=False,suffix="cb",folder="./"):
   """
   This function generates the main tab configuration for LLview (with Overview + each Benchmark).
-  When all benchmarks are empty, it generates an empty YAML
   """
   filename = os.path.join(folder,f'tab_{suffix}.yaml')
   log = logging.getLogger('logger')
   log.info(f"Generating main tab configuration file {filename}\n")
 
-  pages = []
-  if not empty:
-    pages = [{
-      'page': {
-        'name': "Benchmarks",
-        'section': "benchmarks",
-        'icon': "bar-chart",
-        'pages': [
-          {
-            'page': {
-              'name': "Overview",
-              'section': "cblist",
-              'default': False,
-              'template': "/data/LLtemplates/CB",
-              'context': "data/cb/cb_list.csv",
-              # 'footer_graph_config': "/data/ll/footer_cblist.json",
-              'ref': [ 'datatable' ],
-              'data': {
-                'default_columns': [ 'Name', 'Timings', '#Runs', 'Status' ]
-              }
+  pages = [{
+    'page': {
+      'name': "Benchmarks",
+      'section': "benchmarks",
+      'icon': "bar-chart",
+      'pages': [
+        {
+          'page': {
+            'name': "Overview",
+            'section': "cblist",
+            'default': default,
+            'template': "/data/LLtemplates/CB",
+            'context': "data/cb/cb_list.csv",
+            # 'footer_graph_config': "/data/ll/footer_cblist.json",
+            'ref': [ 'datatable' ],
+            'data': {
+              'default_columns': [ 'Name', 'Timings', '#Runs', 'Status' ]
             }
-          },
-          {'include_here': None}
-        ]
-      }
-    }]
+          }
+        },
+        {'include_here': None}
+      ]
+    }
+  }]
 
   # Writing out YAML configuration file
   yaml_string = yaml.safe_dump(pages, default_flow_style=None)
@@ -783,7 +780,8 @@ class BenchRepo:
                           include=to_include
                         )
 
-      if 'ts' not in current_data[0]:
+      # If current_data is not empty but 'ts' is not found
+      if current_data and 'ts' not in current_data[0]:
         self.log.error(f"'ts' could not be obtained for '{combined_name}'.\n")
         return False # Abort processing
 
@@ -794,7 +792,7 @@ class BenchRepo:
       for line in current_data:
         # Assume the run is successful until proven otherwise.
         # If a status already exists (e.g., from common_data), respect it.
-        run_status = line.get('_status', "SUCCESSFUL")
+        run_status = line.get('_status', "S")
 
         # Use `used_metrics` to check all required fields.
         for metric in used_metrics:
@@ -808,13 +806,13 @@ class BenchRepo:
             
             # For the plot metrics, set the problematic value to None, so it's not plotted
             if metric in plot_metrics:
-              run_status = "FAILED"
+              run_status = "F"
               # Set the value to None so it will be skipped during plotting.
               line[metric] = None 
             
             # If a non-string value is empty, it's a failure and needs a default.
             # The default value of the string is '', so missing strings should not
-            # trigger 'FAILED' status - which may be not intended in some cases,
+            # trigger 'F' status - which may be not intended in some cases,
             # but for others (i.e., 'flags used'), it's necessary
 
             # For the table parameters, annotations, etc. set the default value
@@ -822,7 +820,7 @@ class BenchRepo:
               metric_type = metrics_types.get(metric, 'str')
               # If a non-string parameter is empty, it's a failure.
               if metric_type != 'str':
-                run_status = "FAILED"
+                run_status = "F"
               
               # Set the value to its appropriate default for display in the table.
               line[metric] = self.default.get(metric_type, '')
@@ -834,7 +832,21 @@ class BenchRepo:
       # (This has to be done before cleaning the old ts to be able to
       # collect all unique values)
       for param in graphparameters:
-        graphparameters[param].update([data[param] for data in current_data])
+        # Get type info to help decide if we should filter defaults
+        p_type = metrics_types.get(param, 'str')
+        p_default = self.default.get(p_type)
+
+        # Logic to keep values in graphparameters:
+        # 1. data[param] is not None; OR
+        # 2. It is a string (We allow empty strings/defaults for strings)
+        # 3. It is not the default value (We hide "-1" for failed ints/floats)
+        valid_values = [
+            data[param] for data in current_data
+            if data.get(param) is not None 
+            and (p_type == 'str' or data[param] != p_default)
+        ]
+        
+        graphparameters[param].update(valid_values)
 
       self.log.debug(f"Data for {source} contains: {current_data}\n")  
       self.log.debug(f"Headers: {metrics_types}\n")
@@ -969,7 +981,7 @@ class BenchRepo:
       self.log.error(f"Type '{vtype}' not recognised! Use 'datetime', 'str', 'int' or 'float'. Skipping conversion...\n")
     return value
 
-  def gen_configs(self,folder="./"):
+  def gen_configs(self,folder="./",history_n=5):
     """
     Generates the different configuration files needed by LLview:
     - DBupdate configuration containing the DB and tables descriptions
@@ -986,7 +998,7 @@ class BenchRepo:
     return_code = True
 
     # DBupdate config
-    success = self.gen_dbupdate_conf(os.path.join(folder,f'db_{suffix}.yaml'))
+    success = self.gen_dbupdate_conf(os.path.join(folder,f'db_{suffix}.yaml'),history_n=history_n)
     if not success:
       self.log.error("Error generating DB configuration file{}. Skipping...\n".format((' for \''+self._name+'\'') if self._name else ''))
       return_code = False
@@ -1051,7 +1063,7 @@ class BenchRepo:
   def _quote(self,identifier):
     return f'"{identifier}"'
 
-  def gen_dbupdate_conf(self,filename):
+  def gen_dbupdate_conf(self, filename, history_n=5):
     """
     Create YAML file to be used in LLview for DBupdate configuration
     """
@@ -1064,13 +1076,16 @@ class BenchRepo:
     # This set will track unique benchmarks to generate the final aggregation tables
     benchmarks_processed = set()
 
+    # Calculate length for N items: (N * 1 char for status) + (N-1 * 1 char for dash)
+    history_str_len = (history_n * 2) - 1
+
     # Looping over all the benchmarks inside this object
     # (It can be done for each benchmark/tab or for all collected ones when singleLML is used)
     for benchname, tabname, benchmark_data in self._iter_all_data():
       # Add the benchmark name to our set for post-processing
       benchmarks_processed.add(benchname)
 
-      # Table names cannot (should not?) contain spaces, but tab names may have spaces (maybe also benchmark names)
+      # Table names cannot (should not?) contain spaces, but tab names may have spaces
       # This name is for the per-tab/per-benchmark tables
       combined_name = benchname.replace(" ","_") + (f"_{tabname.replace(' ','_')}" if tabname else "")
       columns = []
@@ -1081,7 +1096,7 @@ class BenchRepo:
       parameters = benchmark_data['parameters']
 
       # Looping over all the metrics that are used in this benchmark, which should be put into the DB
-      for metric,mtype in metrics.items():
+      for metric, mtype in metrics.items():
         metric_str = metric.replace(' ','_')
         # Defining a column for current metric
         column = {
@@ -1094,9 +1109,9 @@ class BenchRepo:
         if metric == 'ts':
           # The table name here must be the specific per-tab data table name
           column[f'LML_minlastinsert'] = f"mintsinserted"
-          # column[f'mintsinserted_cb_{combined_name}_data'] = f"mintsinserted_cb_{combined_name}_data"
         # Collecting all columns
         columns.append(column)
+
       # Adding id of type ukey_t, needed for internal usage on LLview
       columns.append({
         'name': 'id',
@@ -1121,7 +1136,7 @@ class BenchRepo:
               INSERT INTO "cb_{benchname}_timestamps" ("ts", "source", "_status")
                         SELECT "ts", "{combined_name}", "_status"
                         FROM "cb_{combined_name}_data";
-""",
+""".strip(),
                                                                     },
                                                       },
                                             # This triggers its own overview and the benchmark's timestamp aggregator
@@ -1131,53 +1146,49 @@ class BenchRepo:
                               }
                     })
 
-      # Getting list of metrics that are plotted on the graphs (not in table nor annotations)
-      # to get min/avg/max on the overview table
+      # Getting list of metrics that are plotted on the graphs
       graph_metrics = [plot['y'] for tab, plot in self._iter_plots(config) if 'y' in plot]
 
-      # Prepare the comma-separated list of sanitized parameter names
-      params_str = ''.join([f', "{key.replace(' ', '_')}"' for key in parameters])
+      # Prepare sanitized parameter names and aggregated metrics strings
+      params_str = ''.join([f', "{key.replace(" ", "_")}"' for key in parameters])
+      insert_metrics_str = ''.join([f',{lb}                                "{m.replace(" ", "_")}_min", "{m.replace(" ", "_")}_avg", "{m.replace(" ", "_")}_max"' for m in graph_metrics])
+      select_metrics_str = ''.join([f',{lb}                                MIN("{m.replace(" ", "_")}"),AVG("{m.replace(" ", "_")}"),MAX("{m.replace(" ", "_")}")' for m in graph_metrics])
+      groupby_params_str = ', '.join([f'"{key.replace(" ", "_")}"' for key in parameters])
 
-      # Prepare the INSERT list for the aggregated metrics
-      insert_metrics_str = ''.join([f',{lb}                                "{m.replace(' ', '_')}_min", "{m.replace(' ', '_')}_avg", "{m.replace(' ', '_')}_max"' for m in graph_metrics])
-
-      # Prepare the SELECT list for the aggregated metrics
-      select_metrics_str = ''.join([f',{lb}                                MIN("{m.replace(' ', '_')}"),AVG("{m.replace(' ', '_')}"),MAX("{m.replace(' ', '_')}")' for m in graph_metrics])
-
-      # Prepare the GROUP BY list
-      groupby_params_str = ', '.join([f'"{key.replace(' ', '_')}"' for key in parameters])
+      # Getting history of status (Oldest -> Newest)
+      # We use a subquery with ORDER BY to ensure GROUP_CONCAT joins them in chronological order.
+      full_hist_sql = "GROUP_CONCAT(_status, '-')"
+      history_expr = f"CASE WHEN COUNT(_status) > {history_n} THEN '-' || SUBSTR({full_hist_sql}, -{history_str_len}) ELSE {full_hist_sql} END"
 
       # Description of the overview table for this given benchmark/tab
-      # This is also a per-tab table now
       tables.append({'table': { 'name': f'cb_{combined_name}_overview',
                                 'options': {
                                             'update': {
                                                         'sql_update_contents': {
-                                                          # This SQL now correctly references the per-tab/combined_name tables
                                                           'sql': f"""DELETE FROM "cb_{combined_name}_overview";
                 INSERT INTO "cb_{combined_name}_overview" ("id", "name", "_status", "count", "valid_count", "min_ts", "max_ts"
                                 {params_str}{insert_metrics_str}
                                 )
                         SELECT id, "{combined_name}",
-                                (SELECT "_status" FROM "cb_{combined_name}_data" AS T2 WHERE T2.id = "cb_{combined_name}_data".id ORDER BY "ts" DESC LIMIT 1),
-                                COUNT("ts"), 
-                                SUM(CASE WHEN _status <> 'FAILED' THEN 1 ELSE 0 END),
+                                {history_expr},
+                                COUNT("ts"),
+                                SUM(CASE WHEN "_status" <> 'F' THEN 1 ELSE 0 END),
                                 MIN("ts"), MAX("ts")
                                 {params_str}{select_metrics_str}
-                        FROM "cb_{combined_name}_data"
+                        FROM (SELECT * FROM "cb_{combined_name}_data" ORDER BY "ts" ASC)
                         GROUP by {groupby_params_str};
-""",
+""".strip(),
                                                                     },
                                                       },
                                           },
                                 'columns': [
-                                  {'name': 'id',         'type': 'ukey_t'},
-                                  {'name': 'name',       'type': 'str_t'},
-                                  {'name': '_status',    'type': 'str_t'}, 
-                                  {'name': 'count',      'type': 'int_t'},
-                                  {'name': 'valid_count','type': 'int_t'},
-                                  {'name': 'min_ts',     'type': 'ts_t'},
-                                  {'name': 'max_ts',     'type': 'ts_t'},
+                                  {'name': 'id',             'type': 'ukey_t'},
+                                  {'name': 'name',           'type': 'str_t'},
+                                  {'name': '_status',        'type': 'str_t'},
+                                  {'name': 'count',          'type': 'int_t'},
+                                  {'name': 'valid_count',    'type': 'int_t'},
+                                  {'name': 'min_ts',         'type': 'ts_t'},
+                                  {'name': 'max_ts',         'type': 'ts_t'},
                                 ]
                                 +[{'name': key.replace(' ', '_'), 'type': f'{metrics[key]}_t'} for key in parameters]
                                 +[{'name': f'{key.replace(' ', '_')}_{suffix}', 'type': f'{metrics[key]}_t'} for key in graph_metrics for suffix in ['min','avg','max']],
@@ -1186,6 +1197,9 @@ class BenchRepo:
 
     # After processing all tabs, create the intermediate timestamp tables for each benchmark
     for benchname in benchmarks_processed:
+      full_hist_sql = "GROUP_CONCAT(_status, '-')"
+      history_expr_global = f"CASE WHEN COUNT(_status) > {history_n} THEN '-' || SUBSTR({full_hist_sql}, -{history_str_len}) ELSE {full_hist_sql} END"
+
       tables.append({'table': {
                                 'name': f"cb_{benchname}_timestamps",
                                 # This table's job is to collect all timestamps and trigger the final update
@@ -1196,12 +1210,12 @@ class BenchRepo:
                                                           'sql': f"""DELETE FROM "cb_benchmarks" WHERE name="{benchname}";
                           INSERT INTO "cb_benchmarks" ("name", "count", "valid_count", "min_ts", "max_ts", "_status")
                                     SELECT "{benchname}",
-                                          COUNT("ts"), 
-                                          SUM(CASE WHEN _status <> 'FAILED' THEN 1 ELSE 0 END),
+                                          COUNT("ts"),
+                                          SUM(CASE WHEN _status <> 'F' THEN 1 ELSE 0 END),
                                           MIN("ts"), MAX("ts"),
-                                          (SELECT "_status" FROM "cb_{benchname}_timestamps" ORDER BY "ts" DESC LIMIT 1)
-                                    FROM "cb_{benchname}_timestamps";
-""", # The last "_status" value is added here
+                                          {history_expr_global}
+                                    FROM (SELECT * FROM "cb_{benchname}_timestamps" ORDER BY "ts" ASC);
+""".strip(),
                                                                     },
                                                       },
                                           },
@@ -1349,8 +1363,13 @@ class BenchRepo:
       {
         'field': "_status",
         'headerName': "Status",
-        'cellStyle': "(params) => cell_color(params)",
-        'headerTooltip': 'Status of the last run',
+        'cellRenderer': "(params) => cell_status(params)",
+        'headerTooltip': 'Status of the last runs, oldest (left) to newest (right)',
+        'cellStyle': { 
+          'display': 'flex', 
+          'align-items': 'center', 
+          'justify-content': 'center',
+        }
       }]
 
       # The main dataset dictionary for this benchmark/tab
@@ -2245,6 +2264,8 @@ def main():
   parser.add_argument("--repofolder",      default=False, help="Folders where the repos will be cloned")
   parser.add_argument("--outconfigfolder", default=False, help="Folder to generate config files")
   parser.add_argument("--skipupdate",      action='store_true', help="Skip updating the repos (if they don't exist, they will still be cloned)")
+  parser.add_argument("--setdefault",      action='store_true', help="Set Benchmark page with 'default: true'")
+  parser.add_argument("--statuspoints",    default=5, help="Set how many previous points are shown on the status column")
 
   args = parser.parse_args()
 
@@ -2281,9 +2302,7 @@ def main():
 
   unique = BenchRepo()
 
-  all_empty = True
   if config:
-
     # Start generic timer
     start_time = time.time()
 
@@ -2366,7 +2385,6 @@ def main():
             log.warning(f"Object for '{combined_name}' is empty, output will include only timings...\n")
 
           # Add timing key for each 
-          # if not empty():
           timing = {}
           name = f'get{combined_name.replace(" ","_")}'
           timing[name] = {}
@@ -2382,10 +2400,9 @@ def main():
           bench.add(timing)
 
           bench.to_LML(os.path.join(args.outfolder if args.outfolder else './',f"{combined_name.replace(" ","_")}_LML.xml"))
-          all_empty = False
 
           # Creating configuration files
-          success = bench.gen_configs(folder=(args.outconfigfolder if args.outconfigfolder else ''))
+          success = bench.gen_configs(folder=(args.outconfigfolder if args.outconfigfolder else ''),history_n=args.statuspoints)
           if not success:
             log.error(f"Error generating configuration files for '{combined_name}'!\n")
             continue
@@ -2402,8 +2419,7 @@ def main():
       if unique.empty():
         log.warning(f"Unique object is empty, output will include only timings...\n")
 
-      # Add timing key for each 
-      # if not empty():
+      # Add timing key for Unique object
       timing = {}
       name = f'getBenchmarks'
       timing[name] = {}
@@ -2419,24 +2435,16 @@ def main():
       unique.add(timing)
 
       unique.to_LML(os.path.join(args.outfolder if args.outfolder else './',args.singleLML))
-      all_empty = False
 
       # Creating configuration files
-      success = unique.gen_configs(folder=(args.outconfigfolder if args.outconfigfolder else ''))
+      success = unique.gen_configs(folder=(args.outconfigfolder if args.outconfigfolder else ''),history_n=args.statuspoints)
       if not success:
         log.error(f"Error generating configuration files!\n")
   else:
     log.warning(f"No repos given.\n")
 
-  # Creating required configuration files if all benchmarks are empty
-  if all_empty:
-    log.warning(f"Creating empty LLview config files...\n")
-    success = BenchRepo().gen_configs(folder=(args.outconfigfolder if args.outconfigfolder else ''))
-    if not success:
-      log.error(f"Error generating empty configuration files!\n")
-
   # Creating LLview tab configuration file
-  success = gen_tab_config(empty=all_empty,folder=(args.outconfigfolder if args.outconfigfolder else ''))
+  success = gen_tab_config(default=args.setdefault,folder=(args.outconfigfolder if args.outconfigfolder else ''))
   if not success:
     log.error(f"Error generating tab configuration file!\n")
 

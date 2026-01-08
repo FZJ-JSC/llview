@@ -22,6 +22,7 @@ import math
 import csv
 from copy import deepcopy
 from subprocess import check_output
+from typing import Dict, Any
 
 def expand_NodeList(nodelist: str) -> str:
   r"""
@@ -75,8 +76,12 @@ def remove_key(value: str) -> str:
 def remove_id_num(id: str) -> str:
   """
   Remove id number (inside parenthesis)
+
+  Remove integers at the end of the id. 
+  If no integer at the end is matched, return the id itself.
   """
-  return re.match(r'(.+)\(\d+\)$',id).group(1)
+  m = re.match(r'(.+)\(\d+\)$',id)
+  return m.group(1) if m else id
 
 def to_seconds(time: str) -> int:
   """
@@ -92,9 +97,9 @@ def to_seconds(time: str) -> int:
     ret = int(match.group(1)) * 60 * 60 + int(match.group(2)) * 60 + int(match.group(3))
   elif match := re.match(f'^{patint}[-]{patint}[:]{patint}[:]{patint}$',time):
     ret = int(match.group(1)) * 24 * 60 * 60 + int(match.group(2)) * 60 * 60 + int(match.group(3)) * 60 + int(match.group(4))
-  return ret
+  return int(ret)
 
-def to_hours(time: str) -> int:
+def to_hours(time: str) -> (float|str):
   if not time: return time
   comp = [float(_) for _ in re.split('[-:]',time)]
   ret = comp[-4]*24 if len(comp)==4 else 0 + comp[-3] + comp[-2]/60 + comp[-1]/60/60
@@ -307,6 +312,7 @@ def nodeinfo(options: dict, nodes_info) -> dict:
     elif (re.match(r'^\d+$',nodeinfo['RealMemory'])) and (re.match(r'^\d+$',nodeinfo['FreeMem'])):
 
       # Getting reserved memory:
+      memreserved = 0
       if ('mem_reserved' in options):
         if isinstance(options['mem_reserved'],float) or isinstance(options['mem_reserved'],int):
           memreserved =  options['mem_reserved']
@@ -381,17 +387,32 @@ def stepinfo(options: dict, steps_info) -> dict:
   log.info("Adding extra information for stepinfo...\n")
 
   stepsextra = {}
-  # Updating the jobs dictionary by adding or removing keys
-  for stepname,stepinfo in steps_info.items():
-    # Obtaining 'jobid' and 'step' from stepname and adding to steps_info
-    match = re.match(r'^([\d\_\+]+)\.?(.*)$',stepname)
-    stepsextra.setdefault(stepname,{})
-    stepsextra[stepname]['jobid'] = match.group(1)
-    stepsextra[stepname]['step'] = match.group(2) if match.group(2) else 'job'
-    # Obtaining 'rc' and 'signr' from ExitCode and adding to steps_info
-    match = re.match(r'^(\d*):?(\d*)$',stepinfo['ExitCode'])
-    stepsextra[stepname]['rc'] = match.group(1) if match.group(1) else '-'
-    stepsextra[stepname]['signr'] = match.group(2) if match.group(2) else '-'
+  # Using 'info' as the variable name to avoid shadowing the function name 'stepinfo'
+  for stepname, info in steps_info.items():
+    stepsextra.setdefault(stepname, {})
+    
+    # Match 'jobid' and 'step' from the stepname string
+    name_match = re.match(r'^([\d\_\+]+)\.?(.*)$', stepname)
+    # Check if the match was successful before accessing groups
+    if name_match:
+      stepsextra[stepname]['jobid'] = name_match.group(1)
+      stepsextra[stepname]['step'] = name_match.group(2) if name_match.group(2) else 'job'
+    else:
+      # Fallback values if the stepname does not match the expected pattern
+      stepsextra[stepname]['jobid'] = '-'
+      stepsextra[stepname]['step'] = '-'
+
+    # Match 'rc' and 'signr' from the ExitCode value
+    exit_match = re.match(r'^(\d*):?(\d*)$', info['ExitCode'])
+    # Check if the match was successful to prevent AttributeError
+    if exit_match:
+      stepsextra[stepname]['rc'] = exit_match.group(1) if exit_match.group(1) else '-'
+      stepsextra[stepname]['signr'] = exit_match.group(2) if exit_match.group(2) else '-'
+    else:
+      # Fallback values if ExitCode is empty or in an unexpected format
+      stepsextra[stepname]['rc'] = '-'
+      stepsextra[stepname]['signr'] = '-'
+      
   return stepsextra
 
 
@@ -404,12 +425,31 @@ class SlurmInfo:
     self._dict = {} # Dictionary with modified information (which is outputted to LML)
     self.log   = logging.getLogger('logger')
 
-  def __add__(self, other):
-    first = self
-    second = other
-    first._raw |= second._raw
-    first.add(second._dict)
-    return first
+  def __iadd__(self, other: 'SlurmInfo') -> 'SlurmInfo':
+    """
+    Implements the in-place addition (+=) operator.
+    """
+    if not isinstance(other, SlurmInfo):
+      return NotImplemented
+    
+    # Use the enhanced deep_merge function to merge the _data dictionaries
+    self.deep_merge(self._raw, other._raw)
+    
+    # Use the add function to add the data from the 'other' instance
+    self.add(other._dict)
+
+    return self
+
+  def __add__(self, other: 'SlurmInfo') -> 'SlurmInfo':
+    """
+    Implements the standard addition (+) operator.
+    """
+    if not isinstance(other, SlurmInfo):
+      return NotImplemented
+    
+    new_obj = deepcopy(self)
+    new_obj += other
+    return new_obj
 
   def __iter__(self):
     return (t for t in self._dict.keys())
@@ -423,17 +463,62 @@ class SlurmInfo:
   def __delitem__(self,key):
     del self._dict[key]
 
+  def deep_merge(self, target_dict: Dict[str, Any], source_dict: Dict[str, Any]) -> None:
+    """
+    Recursively merges the source dictionary into the target dictionary.
+
+    This function modifies the target dictionary in place.
+    It combines lists and sets, and recursively merges nested dictionaries.
+    """
+    # Iterate over each key-value pair in the dictionary we are adding from
+    for key, source_value in source_dict.items():
+      # Check if the key already exists in the target dictionary
+      if key in target_dict:
+        target_value = target_dict[key]
+        
+        # If both the target and source values are dictionaries, recurse
+        if isinstance(target_value, dict) and isinstance(source_value, dict):
+          self.deep_merge(target_value, source_value)
+        
+        # If both are lists, extend the target list with the source list
+        elif isinstance(target_value, list) and isinstance(source_value, list):
+          target_value.extend(source_value)
+          
+        # If both are sets, update the target set with the source set (union)
+        elif isinstance(target_value, set) and isinstance(source_value, set):
+          target_value.update(source_value)
+          
+        # Otherwise, the source value overwrites the target value
+        else:
+          target_dict[key] = deepcopy(source_value)
+          
+      # If the key does not exist in the target, add it
+      else:
+        target_dict[key] = deepcopy(source_value)
+
+  def deep_update(self,target, override):
+    """
+    Recursively update a dictionary.
+    """
+    for key, value in override.items():
+      if isinstance(value, dict):
+        # Get the existing value or an empty dict, then recurse.
+        target[key] = self.deep_update(target.get(key, {}), value)
+      else:
+        # Overwrite the value if it's not a dictionary.
+        target[key] = value
+    return target
+
   def add(self, to_add: dict, add_to=None):
     """
     (Deep) Merge dictionary 'to_add' into internal 'self._dict'
     """
-    # self._dict |= dict
     if not add_to:
       add_to = self._dict
     for bk, bv in to_add.items():
       av = add_to.get(bk)
       if isinstance(av, dict) and isinstance(bv, dict):
-        self.add(bv,add_to=av)
+        self.add(bv, add_to=av)
       else:
         add_to[bk] = deepcopy(bv)
     return
@@ -475,7 +560,7 @@ class SlurmInfo:
 
     return
 
-  def parse_input(self, initial_cmd, foreach=[None], timestamp="", prefix="", stype="", delimiter="|"):
+  def parse_input(self, initial_cmd, foreach=[None], timestamp={}, prefix="", stype="", delimiter="|"):
     """
     This function parses the output of Slurm commands
     and returns them in a dictionary
@@ -529,7 +614,13 @@ class SlurmInfo:
           self.log.warning(rawoutput.split("\n")[0]+"\n")
           continue
         # Getting unit to be parsed from first keyword
-        unitname = re.match(r"(\w+)",rawoutput).group(1)
+        # Match 'unitname' from the rawoutput string
+        name_match = re.match(r"(\w+)",rawoutput)
+        # Check if the match was successful before accessing groups
+        if not name_match:
+          self.log.error(f"Could not match unitname in output: {rawoutput}. Skipping...\n")
+          continue
+        unitname = name_match.group(1)
         self.log.debug(f"Parsing units of {unitname}...\n")
         units = re.findall(fr"({unitname}[\s\S]+?)\n\n",rawoutput)
         for unit in units:
@@ -541,7 +632,13 @@ class SlurmInfo:
           self.log.warning(f"No output units from command '{cmd}'\n")
           continue
         # Getting unit to be parsed from first keyword
-        unitname = re.match(r"(\w+)",rawoutput).group(1)
+        # Match 'unitname' from the rawoutput string
+        name_match = re.match(r"(\w+)",rawoutput)
+        # Check if the match was successful before accessing groups
+        if not name_match:
+          self.log.error(f"Could not match unitname in output: {rawoutput}. Skipping...\n")
+          continue
+        unitname = name_match.group(1)
         self.log.debug(f"Parsing units of {unitname} in output of '{cmd}'...\n")
         for unit in units:
           current_unit = unit[unitname]
@@ -554,10 +651,9 @@ class SlurmInfo:
           for key,value in unit.items():
             # If the value exist, join with new one separated by comma
             # Unless the value is the current_unit, since that does not need accumulation
-            if key in self._raw[current_unit] and value != current_unit: 
-              # Only add if values are different
-              if value not in self._raw[current_unit][key].split(','):
-                value_to_add = f"{self._raw[current_unit][key]},{value}"
+            # (Only add if values are different)
+            if (key in self._raw[current_unit]) and (value != current_unit) and (value not in self._raw[current_unit][key].split(',')): 
+              value_to_add = f"{self._raw[current_unit][key]},{value}"
             else:
               value_to_add = value
             self.add_value(key,value_to_add,self._raw[current_unit])
@@ -579,24 +675,47 @@ class SlurmInfo:
     """
     # self.log.debug(f"Unit: \n{unit}\n")
     lines = unit.split("\n")
-    # first line treated differently to get the 'unit' name and avoid unnecessary comparisons
-    for pair in lines[0].strip().split(' '):
-      key, value = pair.split('=',1)
+    # Split the first line into individual key=value pairs
+    parts = lines[0].strip().split(' ')
+    current_unit = None
+
+    # Handle the first element separately to define the 'current_unit'
+    if parts:
+      key, value = parts[0].split('=', 1)
       if key == unitname:
         current_unit = value
         self._raw[current_unit] = {}
-        # Adding prefix and type of the unit, when given in the input
+        # Adding prefix and type of the unit to the dictionary
         if stype:
           self._raw[current_unit]["__prefix"] = prefix
-        if stype:
           self._raw[current_unit]["__type"] = stype
-      # JobName must be treated separately, as it does not occupy the full line
-      # and it may contain '=' and ' '
-      elif key == "JobName":
-        value = re.search(".*JobName=(.*)$",lines[0].strip()).group(1)
+        # Add the unit itself as the first value
+        self.add_value(key, value, self._raw[current_unit])
+
+    # If the unit context was not set, return
+    if not current_unit:
+      self.log.error(f"Could not match unit in line: {parts[0]}. Skipping...\n")
+      return
+
+    # Process the rest of the pairs (skipping the first one)
+    for pair in parts[1:]:
+      key, value = pair.split('=', 1)
+      
+      # JobName requires special handling as it may contain '=' and ' '
+      if key == "JobName":
+        # Search for 'JobName' in the full first line string
+        name_match = re.search(".*JobName=(.*)$", lines[0].strip())
+        if not name_match:
+          self.log.error(f"Could not match JobName in line: {lines[0].strip()}. Skipping...\n")
+          continue
+        
+        value = name_match.group(1)
         self._raw[current_unit][key] = value
+        # Stop processing the line once JobName is handled
         break
-      self.add_value(key,value,self._raw[current_unit])
+      
+      # Handle standard key=value pairs
+      self.add_value(key, value, self._raw[current_unit])
 
     # Other lines must be checked if there are more than one item per line
     # When one item per line, it must be considered that it may include '=' in 'value'
@@ -986,8 +1105,10 @@ def main():
     parser.print_help()
     exit(1)
 
-  if (args.singleLML):
-    unique = SlurmInfo()
+  unique = SlurmInfo()
+
+  # Start generic timer
+  start_time = time.time()
 
   #####################################################################################
   # Processing config file
@@ -996,7 +1117,7 @@ def main():
       log.error(f"No LML file given for {key} in config file! Skipping section...\n")
       continue
 
-    start_time = time.time()
+    local_start_time = time.time()
 
     log.info(f"Collecting {key}...\n")
 
@@ -1027,6 +1148,7 @@ def main():
       for extra_entry in options['add']:
         # If the extra commands are to be looped over some quantity
         # the 'foreach' key can be used (it is obtained)
+        foreach = [None]
         if extra_entry['foreach']:
           foreach_value = set()
           for name, item in slurm_info.items():
@@ -1051,39 +1173,59 @@ def main():
         extra_entry['mapping'] = options['mapping']
         slurm_info.parse(extra_entry)
 
-    end_time = time.time()
-    log.debug(f"Gathering {key} information took {end_time - start_time:.4f}s\n")
+    local_end_time = time.time()
+    log.debug(f"Gathering {key} information took {local_end_time - local_start_time:.4f}s\n")
 
-    # Add timing key
-    # if not slurm_info.empty():
+    # When there's an object per entry, the LML and configurations are generated for each of them
+    if (not args.singleLML):
+
+      if slurm_info.empty():
+        log.warning(f"Object for {key} is empty, output will include only timings...\n")
+
+      # Add timing key
+      timing = {}
+      name = f'get{key}'
+      timing[name] = {}
+      timing[name]['startts'] = local_start_time
+      timing[name]['datats'] = local_start_time
+      timing[name]['endts'] = local_end_time
+      timing[name]['duration'] = local_end_time - local_start_time
+      timing[name]['nelems'] = len(slurm_info)
+      # The __nelems_{type} is used to indicate to DBupdate the number of elements - important when the file is empty
+      timing[name][f"__nelems_{options['type'] if 'type' in options else 'item'}"] = len(slurm_info)
+      timing[name]['__type'] = 'pstat'
+      timing[name]['__id'] = f'pstat_get{key}'
+      slurm_info.add(timing)
+
+      slurm_info.to_LML(f"{args.outfolder.rstrip('/')+'/' if args.outfolder else ''}{options['LML']}")
+
+    else:
+      # Accumulating for a single LML
+      unique = unique + slurm_info
+
+  # End generic timer
+  end_time = time.time()
+
+  if (args.singleLML):
+    if unique.empty():
+      log.warning(f"Unique object is empty, output will include only timings...\n")
+
+    # Add timing key for Unique object
     timing = {}
-    name = f'get{key}'
+    name = f'getSlurmInfo'
     timing[name] = {}
     timing[name]['startts'] = start_time
     timing[name]['datats'] = start_time
     timing[name]['endts'] = end_time
     timing[name]['duration'] = end_time - start_time
-    timing[name]['nelems'] = len(slurm_info)
+    timing[name]['nelems'] = len(unique)
     # The __nelems_{type} is used to indicate to DBupdate the number of elements - important when the file is empty
-    timing[name][f"__nelems_{options['type'] if 'type' in options else 'item'}"] = len(slurm_info)
+    timing[name][f"__nelems_slurm"] = len(unique)
     timing[name]['__type'] = 'pstat'
-    timing[name]['__id'] = f'pstat_get{key}'
-    slurm_info.add(timing)
-
-    if (not args.singleLML):
-      if slurm_info.empty():
-        log.warning(f"Object {key} is empty, nothing to output to LML! Skipping...\n")
-      else:
-        slurm_info.to_LML(f"{args.outfolder.rstrip('/')+'/' if args.outfolder else ''}{options['LML']}")
-    else:
-      # Accumulating for a single LML
-      unique = unique + slurm_info
-
-  if (args.singleLML):
-    if unique.empty():
-      log.warning(f"Unique object is empty, nothing to output to LML! Skipping...\n")
-    else:
-      unique.to_LML(f"{args.outfolder.rstrip('/')+'/' if args.outfolder else ''}{args.singleLML}")
+    timing[name]['__id'] = f'pstat_getSlurmInfo'
+    unique.add(timing)
+      
+    unique.to_LML(f"{args.outfolder.rstrip('/')+'/' if args.outfolder else ''}{args.singleLML}")
   return
 
 if __name__ == "__main__":
