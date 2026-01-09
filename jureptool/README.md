@@ -94,6 +94,21 @@ rm -fr ~/.cache/matplotlib
 ```
 (on MacOs, matplotlib's cache folder is `~/.matplotlib`.)
 
+### Docker
+
+A Docker image is provided to run Jureptool. Jureptool requires access to the config folder and the file argument.
+
+You will need to pass these arguments using mounted volumes in Docker. See the example below :
+```sh
+# pwd = llview/jureptool
+docker build -t jureptool .
+
+docker run \
+  -v $(pwd)/configs:/jureptool/configs \
+  -v $(pwd)/folder:/jureptool/folder \
+  jureptool --configfolder configs folder
+```
+
 
 ### Expected file
 
