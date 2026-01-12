@@ -1022,9 +1022,11 @@ def main():
   mp.set_start_method('forkserver')
   global nerrors
   nerrors = 0
-
+  default_config_folder = os.path.dirname(os.path.realpath(__file__))+"/../../configs/jureptool"
   # Parse arguments
-  parser = argparse.ArgumentParser(description="JuRepTool")
+  parser = argparse.ArgumentParser( description="JuRepTool : Detailed Job Report Generation Script",
+                                    epilog="Example: main.py --configfolder <config_folder> <file_or_folder_json> \n")
+
   parser.add_argument("file", nargs="+", default="", help="File including list of running and recently-finished jobs or JSON file of a job")
   parser.add_argument("--daemon", default=False, action="store_true" , help="Run as a 'daemon', i.e., in an infinite loop")
   parser.add_argument("--demo", default=False, action="store_true" , help="Run in 'demo' mode (hide usernames, project id and job names)")
@@ -1038,11 +1040,15 @@ def main():
   parser.add_argument("--nprocs", default=4, type=int, help="Number of process to run in parallel (default: NPROCS=4)")
   parser.add_argument("--loglevel", default=False, help="Select log level: 'DEBUG', 'INFO', 'WARNING', 'ERROR' (more to less verbose)")
   parser.add_argument("--logprefix", help="Prefix for the daily log and errlog files (default: None)")
-  parser.add_argument("--configfolder", default=os.path.dirname(os.path.realpath(__file__))+"/../../configs/jureptool", help="Folder with YAML configuration files (default: src/../../configs/jureptool)")
+  parser.add_argument("--configfolder", default=default_config_folder, help="Folder with YAML configuration files (default: src/../../configs/jureptool)")
   parser.add_argument("--outfolder", default="./results", help="Folder to store temporary and demo PDFs")
   parser.add_argument("--semail", default="", help="Sender email to use in case of errors (default: None)")
   parser.add_argument("--remail", default="", help="Receiver email to use in case of errors (default: None)")
   args = parser.parse_args()
+
+  if args.configfolder == default_config_folder:
+    print(f"Warning: No --configfolder provided, using default: {default_config_folder}")
+    print("         If this is not intended, please specify a config folder with --configfolder.")
 
   # Parsing configuration
   config = {}

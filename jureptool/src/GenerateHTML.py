@@ -1324,6 +1324,11 @@ def CreateFirstTables(data,config,num_cpus,num_gpus,gpus,ierr):
     </div>
 """
 
+  if config['appearance'].get('hostname'):
+      hostname_link = f"{replace_vars(config['appearance']['hostname'], data['job'])}/login.php"
+  else:
+      hostname_link = config['appearance'].get('standalone_link')
+
   navbar = f"""
     <div id="navbar" class="no-print">
       <table style="border: 0px solid black; width: 100%;">
@@ -1361,7 +1366,7 @@ def CreateFirstTables(data,config,num_cpus,num_gpus,gpus,ierr):
           <td style="text-align: center;">{"#GPUs: <b>"+str(data['job']['numgpus'])+"</b>" if gpus else ""}</td>
           <td style="text-align: center;">Last Update: <b>{data['job']['updatetime']}</b></td>
           <td rowspan="2" style="width:6%; padding: 0px; vertical-align:middle;">
-            <a href="{replace_vars(config['appearance']['hostname'],data['job'])}/login.php" class="simple">
+            <a href="{hostname_link}" class="simple">
             <div style="position: relative;">
               <svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 940 555"  height="40px" style="fill-rule:evenodd;" xmlns:xlink="http://www.w3.org/1999/xlink">
                 <g><path style="opacity:0.991" fill="#163b67" d="M 20.5,14.5 C 39.8333,14.5 59.1667,14.5 78.5,14.5C 78.5,140.833 78.5,267.167 78.5,393.5C 90.8333,393.5 103.167,393.5 115.5,393.5C 115.5,297.167 115.5,200.833 115.5,104.5C 134.833,104.5 154.167,104.5 173.5,104.5C 173.5,200.833 173.5,297.167 173.5,393.5C 212.167,393.5 250.833,393.5 289.5,393.5C 289.5,410.833 289.5,428.167 289.5,445.5C 250.833,445.5 212.167,445.5 173.5,445.5C 173.5,457.833 173.5,470.167 173.5,482.5C 243.833,482.5 314.167,482.5 384.5,482.5C 384.5,500.167 384.5,517.833 384.5,535.5C 294.833,535.5 205.167,535.5 115.5,535.5C 115.5,505.5 115.5,475.5 115.5,445.5C 83.5,445.5 51.5,445.5 19.5,445.5C 19.1684,301.763 19.5017,158.097 20.5,14.5 Z"/></g>
