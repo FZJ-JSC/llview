@@ -33,12 +33,12 @@ SimpleBenchmark:
   plots:
     - x: ts
       y: Performance
-      traces:
+      group_by:
         - Nodes
 ```
 
 ## Example 2: Complex Configuration (Multi-Mode Application)
-This example demonstrates a generic Molecular Dynamics application ("MolecDyn") that runs in two distinct modes: **Simulation** (performance measured in ns/day) and **Energy Minimization** (convergence measured in steps). It also demonstrates using **Derived Metrics** and **Annotations**.
+This example demonstrates a generic Molecular Dynamics application ("MolecDyn") that runs in two distinct modes: **Simulation** (performance measured in ns/day) and **Energy Minimization** (convergence measured in steps). It also demonstrates using **Global Plot Settings**, **Derived Metrics**, and **Tabs**.
 
 ```yaml
 MolecDyn_Suite:
@@ -92,8 +92,11 @@ MolecDyn_Suite:
         - Atoms
         - Precision
 
-      # Global Styles for this tab
-      traces:
+      # Global Plot Settings for this tab
+      # Defines default grouping, annotations, and visual style for all plots below.
+      plot_settings:
+        group_by: [Atoms, Precision] # Default curves
+        annotations: [JobID]         # Default hover info
         colors:
           colormap: 'Set1'
         styles:
@@ -101,21 +104,16 @@ MolecDyn_Suite:
 
       plots:
         # Plot 1: Raw Performance
+        # Inherits all settings from 'plot_settings'
         - x: ts
           y: Performance
-          traces: 
-            - Atoms
-            - Precision
-          annotations:
-            - JobID  # Show JobID when hovering over points
 
         # Plot 2: Derived Metric
+        # Overrides grouping to show curves only by Precision
         - x: ts
           y: PerfPerAtom
-          traces:
+          group_by:
             - Precision
-          annotations:
-            - JobID
 
     # Tab 2: Energy Minimization (Different metrics entirely)
     Minimization:
@@ -143,14 +141,14 @@ MolecDyn_Suite:
         - Algorithm
         - Tolerance
       
-      # Footer Tabs: Organize plots into categories
+      # Footer Tabs: Organize plots into visual categories
       plots:
         tabs:
           Convergence:
             - x: ts
               y: Steps
               # One curve per Algorithm
-              traces:
+              group_by:
                 - Algorithm
               # Local Style Override: Lines + Markers
               styles:
@@ -161,6 +159,6 @@ MolecDyn_Suite:
             # Viewing convergence relative to input tolerance
             - x: Tolerance
               y: Steps
-              traces:
+              group_by:
                 - Algorithm
 ```

@@ -29,8 +29,13 @@ def CreateHTML( config,
   <head>
   <meta charset="UTF-8">
 """
+  if loc := config['appearance'].get('fontawesome_location'):
+    fontawesome_location = loc
+  else:
+    fontawesome_location = f"{replace_vars(config['appearance']['hostname'],config['appearance'])}/css/ext/font-awesome.min.css"
+
   html += f"""
-  <link rel="stylesheet" href='{replace_vars(config['appearance']['hostname'],config['appearance'])}/css/ext/font-awesome.min.css'>
+  <link rel="stylesheet" href='{fontawesome_location}'>
   <link rel="icon" type="image/svg+xml"
       href="data:image/svg+xml,%3Csvg height='100%25' stroke-miterlimit='10' style='fill-rule:nonzero;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;' version='1.1' viewBox='0 0 32 32' width='100%25' xml:space='preserve' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink'%3E%3Cpath d='M8.02154 13.6133L8.03331 23.6475L10.2411 23.6597L12.4489 23.6718L12.4489 25.7506L12.4489 27.8294L18.7334 27.8294L25.018 27.8294L25.018 26.6379L25.018 25.4464L20.0885 25.4464L15.1589 25.4464L15.1589 24.5587L15.1589 23.6709L17.869 23.6709L20.5791 23.6709L20.5791 22.456L20.5791 21.2412L17.869 21.2412L15.1589 21.2412L15.1589 14.4894L15.1589 7.73754L13.8039 7.73754L12.4489 7.73754L12.4489 14.4894L12.4489 21.2412L11.5844 21.2412L10.72 21.2412L10.72 12.4101L10.72 3.57898L9.36489 3.57898L8.00972 3.57898L8.02154 13.6133' fill='%23023d6b' fill-rule='evenodd' opacity='1' stroke='none'/%3E%3Cpath d='M15.0868 0.0309399C9.2877 0.347224 4.09586 3.83135 1.56139 9.10753C-0.520462 13.4413-0.520462 18.5745 1.56139 22.9083C5.1584 30.3963 13.8239 33.894 21.607 30.9994C25.9088 29.3995 29.3916 25.9168 30.9915 21.615C32.5077 17.538 32.307 12.997 30.4386 9.10753C28.097 4.233 23.5169 0.89078 18.1603 0.147847C17.6781 0.080936 16.1368-0.0254576 15.8598-0.0109727C15.7956-0.0076085 15.4477 0.0112218 15.0868 0.0309399M8.02154 13.6133L8.03331 23.6475L10.2411 23.6597L12.4489 23.6718L12.4489 25.7506L12.4489 27.8294L18.7334 27.8294L25.018 27.8294L25.018 26.6379L25.018 25.4464L20.0885 25.4464L15.1589 25.4464L15.1589 24.5587L15.1589 23.6709L17.869 23.6709L20.5791 23.6709L20.5791 22.456L20.5791 21.2412L17.869 21.2412L15.1589 21.2412L15.1589 14.4894L15.1589 7.73754L13.8039 7.73754L12.4489 7.73754L12.4489 14.4894L12.4489 21.2412L11.5844 21.2412L10.72 21.2412L10.72 12.4101L10.72 3.57898L9.36489 3.57898L8.00972 3.57898L8.02154 13.6133' fill='%23ffffff' fill-rule='evenodd' opacity='1' stroke='none'/%3E%3C/svg%3E" />
 """
@@ -1319,6 +1324,11 @@ def CreateFirstTables(data,config,num_cpus,num_gpus,gpus,ierr):
     </div>
 """
 
+  if config['appearance'].get('hostname'):
+      hostname_link = f"{replace_vars(config['appearance']['hostname'], data['job'])}/login.php"
+  else:
+      hostname_link = config['appearance'].get('standalone_link')
+
   navbar = f"""
     <div id="navbar" class="no-print">
       <table style="border: 0px solid black; width: 100%;">
@@ -1356,7 +1366,7 @@ def CreateFirstTables(data,config,num_cpus,num_gpus,gpus,ierr):
           <td style="text-align: center;">{"#GPUs: <b>"+str(data['job']['numgpus'])+"</b>" if gpus else ""}</td>
           <td style="text-align: center;">Last Update: <b>{data['job']['updatetime']}</b></td>
           <td rowspan="2" style="width:6%; padding: 0px; vertical-align:middle;">
-            <a href="{replace_vars(config['appearance']['hostname'],data['job'])}/login.php" class="simple">
+            <a href="{hostname_link}" class="simple">
             <div style="position: relative;">
               <svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 940 555"  height="40px" style="fill-rule:evenodd;" xmlns:xlink="http://www.w3.org/1999/xlink">
                 <g><path style="opacity:0.991" fill="#163b67" d="M 20.5,14.5 C 39.8333,14.5 59.1667,14.5 78.5,14.5C 78.5,140.833 78.5,267.167 78.5,393.5C 90.8333,393.5 103.167,393.5 115.5,393.5C 115.5,297.167 115.5,200.833 115.5,104.5C 134.833,104.5 154.167,104.5 173.5,104.5C 173.5,200.833 173.5,297.167 173.5,393.5C 212.167,393.5 250.833,393.5 289.5,393.5C 289.5,410.833 289.5,428.167 289.5,445.5C 250.833,445.5 212.167,445.5 173.5,445.5C 173.5,457.833 173.5,470.167 173.5,482.5C 243.833,482.5 314.167,482.5 384.5,482.5C 384.5,500.167 384.5,517.833 384.5,535.5C 294.833,535.5 205.167,535.5 115.5,535.5C 115.5,505.5 115.5,475.5 115.5,445.5C 83.5,445.5 51.5,445.5 19.5,445.5C 19.1684,301.763 19.5017,158.097 20.5,14.5 Z"/></g>

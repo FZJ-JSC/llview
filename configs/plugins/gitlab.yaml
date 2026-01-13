@@ -12,7 +12,7 @@
 application:
   host: 'https://gitlab.jsc.fz-juelich.de/project/application'
   token: "some_token" # Token with at minimum "Role: Reporter" and "scope: read_repo"
-  branch: "some_brach" # If the results are not on the master/main branch, it can be changed
+  branch: "some_branch" # If the results are not on the master/main branch, it can be changed
   sources:
     folders: 
       - 'folder1'
@@ -24,50 +24,100 @@ application:
       - '.*.json'
     include:
       - '.*pattern.*\.csv'
-  # Parameters are the values that are set up for a given run
-  # Each combination will lead to a line in the table, except
-  # when "kind: graph" is given. In this case, each combination
-  # will lead to different curves on the graphs
-  parameters:
-    systemname: # systemname is a mandatory table parameter
+
+  # The 'metrics' section defines ALL data points (parameters, measurements, annotations).
+  # Usage (Table column vs. Graph curve) is defined in the 'table' and 'plots' sections below.
+  metrics:
+    # --- Identification Parameters ---
+    systemname: 
       type: str  # Type str is the default, when it is not given
       from: filename # Values can be obtained from the filename. In this case, a regex must be given.
       regex: '(.+?)_.+?\.csv' # The group given in (...) is used for the parameter
       description: 'System where the benchmark was run' # Description to be shown when hovering over header
+    
     queue:
-      from: content # from content is the default, when it is not given
+      from: content # 'from: content' is the default (reads from CSV header matching the key name)
       type: str
       description: 'Slurm partition'
+
+    # --- Calculated Parameter ---
     nodes:
-      # Values can also be obtained from calculations of other values. The calculations are based on the header/key names
-      from: "'Distributed Processes'*'Threads per Processes'/'Number of CPUs per Node'"
+      # Values can also be obtained from calculations of other values. 
+      # The calculations are based on the metric keys (not necessarily CSV headers).
+      # Note: 'Distributed Processes' etc. must also be defined in this list if used here.
+      # from: "'Distributed Processes'*'Threads per Processes'/'Number of CPUs per Node'"
       type: int
       header: nodes
-      kind: graph # Each unique value of this parameter will lead to a curve in the graph (not entries in the table)
+
+    # --- Grouping Parameters (Previously 'kind: graph') ---
     taskspernode:
       from: content
       type: int
       header: taskspernode # The header/key to be read from the file
-      kind: graph
+    
     threadspertask:
       from: content
       type: int
-      kind: graph
-  # Metrics are the measured values. Each metric have its own graph
-  metrics:
-    ts: # ts is a mandatory variable, as it is used for the x axis on the graphs
+
+    # --- Measured Values ---
+    ts: # 'ts' (timestamp) is mandatory for the X-axis of graphs
       from: filename
       regex: '.+?_(.+?)\.csv'
+      type: ts # Specific type for timestamps
+    
     runtime:
       type: float
       header: runtime[s] # The header/key to be read from the file
+    
     performance:
       type: float
       header: performance[Gflops]
-  # Annotations can be added to the hover information on the graph
-  annotations:
+
+    # --- Annotation Metadata ---
     jobid:
       type: str
+    
     gitcommit:
       header: 'HPCG git commit'
-      regex: '(^.{0,8}).*' # A regex can be given to convert str variables
+      regex: '(^.{0,8}).*' # A regex can be given to clean/shorten str values
+
+  # -----------------------------------------------------------------------
+  # Visualization Configuration
+  # -----------------------------------------------------------------------
+
+  # Parameters that define the rows of the summary table
+  table:
+    - systemname
+    - queue
+
+  # Global settings for all plots
+  plot_settings:
+    # group_by: metrics used to split data into different curves
+    group_by:
+      - nodes
+      - taskspernode
+      - threadspertask
+    # annotations: metrics to show on hover
+    annotations:
+      - jobid
+      - gitcommit
+    # Changing colors and styles of the graphs
+    colors:
+      colormap: 'Paired' # Qualitative colormap (Default: tab10)
+      sort_strategy: 'interleave_even_odd' # Options: 'standard' (Default), 'reverse', 'interleave_even_odd', 'center_out'
+      skip: # Colours to skip (Default: [])
+        - '#ffff99'
+    styles: # Styles for the traces (passed to plotly.js scatter plot)
+      mode: 'lines+markers'  # Overwrite default 'markers'
+      marker:
+        size: 8              # Overwrite default marker size
+        opacity: 0.9         # Overwrite default opacity
+      line:                  # Add a completely new key
+        width: 2
+
+  # Definitions of the specific graphs to generate
+  plots:
+    - x: ts
+      y: runtime
+    - x: ts
+      y: performance

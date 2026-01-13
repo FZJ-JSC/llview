@@ -16,7 +16,11 @@ timezone: 'Europe/Berlin'
 # Substitutions can be used with keys given in #(...)#. Inside it:
 # - replace can be done with: [string_from,string_to]
 # - removals can be done with: (string_to_remove)
+# if only jureptool is used and not juri, keep this settings empty
 hostname: 'https://llview.fz-juelich.de/#system(-dc)[ ,_]#'
+# at the bottom of the generated html page, there will be a logo to llview that
+# links to juri, if there is no juri (hostname = ''), put this link instead
+standalone_link: 'https://apps.fz-juelich.de/jsc/llview/docu/install/server_install/#jureptool'
 
 # JURI uses Jureptool to create html and pdf reports
 # Jureptool relies on plotly and jquery to build the html pages
@@ -24,10 +28,13 @@ hostname: 'https://llview.fz-juelich.de/#system(-dc)[ ,_]#'
 # JURI/js/ext, (https://github.com/FZJ-JSC/JURI/tree/main/js/ext)
 # Moreover, Content Delivery Network (CDN) can also be used
 # ex :
+# plotly_location: 'https://cdn.plot.ly/plotly-3.3.0.min.js'
 # jquery_location: 'https://code.jquery.com/jquery-3.6.0.min.js'
-# plotly_location: 'https://cdn.plot.ly/plotly-latest.min.js'
+# fontawesome_location: 'https://cdnjs.cloudflare.com/ajax/libs/font-awesome/7.0.1/css/fontawesome.min.css'
+
 plotly_location: null
 jquery_location: null
+fontawesome_location: null
 
 #Folder prefix to be added to items in plotlists file
 folder_prefix: '$LLVIEW_DATA/$LLVIEW_SYSTEMNAME/tmp/jobreport/data/'
