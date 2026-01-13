@@ -1,9 +1,8 @@
 # Configuration Guide
 
-The configuration is defined in YAML file(s) (e.g., `benchmarks.yaml`). 
+The configuration is defined in YAML file(s) (e.g., `benchmarks.yaml`).
 LLview can accept a single file (with one or more benchmarks) or a folder containing many separate YAML files.
 See [examples of configuration files here](examples.md).
-
 
 ## 1. Defining the Benchmark and its Sources
 
@@ -17,7 +16,7 @@ MyBenchmark:
 ```
 
 LLview collects the data directly from a Git repository (e.g., GitLab).
-To indicate from where (and how) the information should be obtained, you have to define the `host` (repository address), a `token` with "read_repo" access at a minimum Reporter level, and optionally a `branch` where the results are stored. 
+To indicate from where (and how) the information should be obtained, you have to define the `host` (repository address), a `token` with "read_repo" access at a minimum Reporter level, and optionally a `branch` where the results are stored.
 Then, the `folders` or `files` list should be given as `sources` (also accepting regex patterns).
 
 ```yaml
@@ -81,7 +80,6 @@ The `metrics` section defines every data point you want to track. A metric can b
     Due to internal manipulation of the tables and databases, the following keys are forbidden (case-insensitive):
     `dataset`, `name`, `ukey`, `lastts_saved`, `checksum`, `status`, `mts`
 
-
 ### Metric Options Reference
 
 | Option | Description |
@@ -99,25 +97,33 @@ The `metrics` section defines every data point you want to track. A metric can b
 
 LLview generates a hierarchy of views for your benchmarks:
 
-1.  **Global Overview Page:** Lists all configured benchmarks. Columns include Name, First Run Date, Last Run Date, Total Data Points, and the Status of the most recent run.
+1.  **Global Overview Page:** Lists all configured benchmarks. Columns include Name, First Run Date, Last Run Date, and Counts (Total vs. Valid).
 2.  **Benchmark Detail Page:** Shows the summary table and graphs for a specific benchmark.
 
 ### Understanding Status & Failures
-LLview automatically calculates a `_status` for every data point:
+LLview automatically calculates a `_status` for every data point and uses this to generate the **Status History** sparkline (`...-S-S-F-S-S`) and count valid runs.
 
-*   **SUCCESSFUL:** All metrics required for plotting (x-axis, y-axis, and trace definitions) are present and valid.
-*   **FAILED:** Critical metrics are missing, `NaN`, `None`, or empty.
+*   **S (Successful):** All critical metrics were found.
+*   **F (Failed):** A metric required for plotting or a non-string parameter was found to be missing, `NaN`, `None`, or empty.
 
-**How to report failures:**
-To correctly track failed runs in the timeline, your benchmark workflow should generate a result file (e.g., CSV) even if the application crashes.
+**How to report failures correctly:**
+To ensure failures are tracked in the timeline, your benchmark workflow should generate a result file (e.g., CSV) even if the application crashes.
 
-*   **Correct Approach:** Generate a CSV containing the input parameters (e.g., timestamp, compiler, nodes) but leave the performance metric columns **empty**. LLview will ingest this, detect the missing data, and mark the run as **FAILED**.
-*   **Incorrect Approach:** Generating no file at all. LLview cannot track what doesn't exist, so the "Last Status" will remain "Successful" (from the previous valid run).
+*   **Correct Approach:** Generate a CSV containing the input parameters (e.g., timestamp, compiler, nodes) but leave the performance metric columns **empty**. LLview will ingest this, mark the run as **FAILED**, and visualize it as a gap in the graph.
+*   **Incorrect Approach:** Generating no file at all. LLview cannot track what doesn't exist, so the "Last Status" will remain stale (showing the last successful run).
 
-## 4. Aggregation & Visualization Logic
+**Status in the Dashboard:**
+
+*   **Total Runs:** Counts all ingestions (Success + Failed).
+*   **Valid Runs:** Counts only `S` runs.
+*   **Status History:** Shows the last 5 runs (Oldest $\to$ Newest). A leading dash `-` indicates more history exists.
+
+## 4. Aggregation & Visualization
+
+This section controls how the raw data defined in `metrics` is grouped, aggregated, and displayed on the dashboard.
 
 ### The `table` Section (Aggregation)
-The metrics listed here will define the **columns** of the summary table on the Benchmark Detail Page.
+The metrics listed here will define the **columns** of the summary table on the Benchmark Page.
 
 *   **How it works:** Each unique combination of values for these metrics generates one distinct, selectable row.
 *   **Best Practice:** Use input parameters (e.g., `System`, `Nodes`, `Compiler`).
@@ -131,28 +137,56 @@ The metrics listed here will define the **columns** of the summary table on the 
     # Result: One row for "Cluster-A / 4 Nodes / GCC", another for "Cluster-A / 8 Nodes / Intel", etc.
 ```
 
-### The `plots` Section (Curves & Annotations)
-You can define plots using a simple list (single tab) or a dictionary (footer tabs).
+### The `plots` and `plot_settings` Sections (Visualization)
 
-*   **`traces`:** If you list metrics here (e.g., `traces: [Compiler]`), LLview calculates every unique value found for "Compiler" (e.g., "GCC", "Intel") and generates a separate curve for each.
+You can define global defaults using `plot_settings` and specific graph definitions using the `plots` list. Settings follow an inheritance hierarchy: **Global < Local**.
+
+```yaml
+  # Global Settings (Inherited by all plots)
+  plot_settings:
+    group_by: [Stage, Modules]
+    annotations: ['JobID', 'CommitHash']
+    colors:
+      colormap: 'Set1'
+    styles:
+      mode: 'lines+markers'
+
+  # Plot Definitions
+  plots:
+    # Plot 1: Inherits all global settings
+    - x: ts
+      y: 'Bandwidth Copy'
     
-*   **`annotations`:** A list of metrics to display in the tooltip when hovering over a specific data point. This is the correct place for unique metadata (Git Commits, Job IDs, Build timestamps) that provide context but do not define the curve itself.
+    # Plot 2: Overrides global settings locally
+    - x: ts
+      y: 'Bandwidth Scale'
+      group_by: [System] 
+      styles:
+        marker: { size: 10 }
+```
 
-    ```yaml
-    plots:
-      - x: ts
-        y: Performance
-        traces: ['Nodes']
-        annotations: ['JobID', 'CommitHash'] # Shows ID and Commit on hover
-    ```
+### Plot Settings Reference
+
+The following keys can be used inside `plot_settings` (globally) or inside a specific item in `plots` (locally).
+
+| Key | Sub-Key | Description | Default / Options |
+| :--- | :--- | :--- | :--- |
+| **`group_by`** | | List of metrics used to split data into different curves. | `[]` (Single curve) |
+| <span style="white-space:nowrap">**`annotations`**</span> | | List of metrics to display in the tooltip when hovering over data points. | `[]` |
+| **`colors`** | `colormap` | Name of the Matplotlib/Plotly colormap to use. | `'tab10'` |
+| | <span style="white-space:nowrap">`sort_strategy`</span> | Order in which colors are assigned to traces. Options: `'standard'`, `'reverse'`, `'interleave_even_odd'` | `'standard'` |
+| | `skip` | List of HEX color codes to exclude from the colormap. | `[]` |
+| **`styles`** | | Dictionary of style properties passed directly to the [Plotly.js Scatter trace](https://plotly.com/javascript/reference/scatter/). | `type: scatter`<br>`mode: markers`<br>`marker: { opacity: 0.6, size: 5 }` |
 
 ## 5. Structuring Benchmarks (Tabs)
+
+For complex benchmarks, you can split the views using Tabs.
 
 ### A. Benchmark Tabs (Page Level)
 Splits the entire page (Table + Footer). This is intended for a single benchmark application that supports different **execution modes** requiring completely different input parameters (columns).
 
 *   **Usage:** Define a `tabs:` dictionary under the root benchmark.
-*   **Inheritance:** Configuration defined at the **Root** level (Host, Token, Description, Sources) is automatically inherited by the tabs unless explicitly overwritten inside the tab.
+*   **Inheritance:** Configuration defined at the **Root** level (Host, Token, `plot_settings`, etc.) is automatically inherited by the tabs unless explicitly overwritten inside the tab.
 
 ### B. Footer Tabs (Graph Level)
 Splits the graphs area into visual tabs. This is useful for organizing many plots (e.g., separating "Performance" graphs from "System Usage" graphs).
@@ -169,10 +203,3 @@ Splits the graphs area into visual tabs. This is useful for organizing many plot
         - x: ts
           y: 'Total Runtime'
 ```
-
-## 6. Styling
-
-Styles follow an inheritance hierarchy: **Global < Local**.
-
-1.  **Global Styling (`traces` key):** Sets the default look for *all* plots in the benchmark.
-2.  **Local Styling (`styles` key inside `plots`):** Overwrites the global settings for that specific graph.

@@ -151,7 +151,7 @@ class BenchRepo:
   """
 
   # Default colormap to use on the footer
-  DEFAULT_COLORMAP = 'Paired'
+  DEFAULT_COLORMAP = 'tab10'
   # Different sorts of the colormaps
   SORT_STRATEGIES = {
     # A standard ascending sort
@@ -163,7 +163,7 @@ class BenchRepo:
   }
   # The default key used if none is specified in the config
   DEFAULT_SORT_KEY = 'standard'
-  # Default style of the traces
+  # Default style of the plots
   DEFAULT_TRACE_STYLE = {
     'type': 'scatter',
     'mode': 'markers',
@@ -503,14 +503,16 @@ class BenchRepo:
         used_metrics.add(plot_config['y'])
         plot_metrics.add(plot_config['y'])
       
-      # Add all metrics used for traces and annotations
-      used_metrics.update(plot_config.get('traces', []))
-      plot_metrics.update(plot_config.get('traces', []))
+      # Add all metrics used for plot curves/traces and annotations
+      group_by_cols = plot_config.get('group_by', [])
+      used_metrics.update(group_by_cols)
+      plot_metrics.update(group_by_cols)
       used_metrics.update(plot_config.get('annotations', []))
 
-      # Starting a set to store the possible value of each of the traces/curves
-      for key in plot_config.get('traces', []):
+      # Starting a set to store the possible value of each of the grouping parameters
+      for key in group_by_cols:
         graphparameters.setdefault(key, set())
+      
       # Getting annotations that will be used in graphs
       for key in plot_config.get('annotations', []):
         annotations.add(key)
@@ -1542,51 +1544,7 @@ class BenchRepo:
       parameters = benchmark_data['parameters']
       raw_data = benchmark_data['raw']
 
-      # Create a map from the y-axis name (the graph's identifier) to its annotations
-      plot_annotations_map = {
-        plot['y']: plot.get('annotations', [])
-        for tab, plot in self._iter_plots(config)
-        if 'y' in plot
-      }
-
-      # Checking valid combinations of graph parameters
-      # (This will only work if all data is in raw_data. If this is filtered before, it may happen that
-      # not all valid combinations are generated)
-      valid_combinations = [] # To store all valid combinations of graph parameters
-      # Generating all possible combinations of the graph parameters
-      if graphparameters: # Ensure graphparameters is not empty before creating product
-        for combination in product(*graphparameters.values()):
-          valid_combination = True
-          # Creating dictionary for current combination
-          current_combination = {key:value for key,value in zip(graphparameters.keys(),combination)}
-          for key,value in current_combination.items():
-            # If value is default one, ignore this combination, as it didn't have a valid value
-            if self.default[metrics[key]] == value:
-              self.log.debug(f"Invalid combination {combination}, {key} has default value of {value}\n")
-              valid_combination = False
-              continue
-            # If there's no value with the current combination, skip it
-            if not any(set(current_combination.items()).issubset(set(data.items())) for data in raw_data):
-              self.log.debug(f"Combination {combination}, has no values\n")
-              valid_combination = False
-              continue
-          if valid_combination:
-            valid_combinations.append(current_combination)
-      # Sorting list by key and value
-      valid_combinations.sort(key=lambda d: tuple(sorted(d.items())))
-
-      # Getting global defaults for traces/colors
-      global_traces_config = config.get('traces', {})
-      # Global Colors Defaults
-      global_colors_config = global_traces_config.get('colors', {})
-      default_colormap = global_colors_config.get('colormap', BenchRepo.DEFAULT_COLORMAP)
-      default_skip = global_colors_config.get('skip', [])
-      default_sort_key = global_colors_config.get('sort_strategy', BenchRepo.DEFAULT_SORT_KEY)
-      
-      # Global Styles Defaults
-      global_trace_styles = global_traces_config.get('styles', {})
-
-      # Build a map of {tab_name: [list_of_plots]}
+      # Build a map of {tab_name: [list_of_plots]} 
       footer_tabs_map = {}
       for tab_name, plot_config in self._iter_plots(config):
         # If no tabs, the tab_name is None. We'll use a default name.
@@ -1605,20 +1563,61 @@ class BenchRepo:
           if 'y' not in plot_config: continue
           graphelem = plot_config['y']
 
-          # Resolve Colors for this specific plot (Local > Global > Default)
-          local_colors = plot_config.get('colors', {})
-          
-          current_colormap = local_colors.get('colormap', default_colormap)
-          current_skip = local_colors.get('skip', default_skip)
-          current_sort_key = local_colors.get('sort_strategy', default_sort_key)
+          # CALCULATING VALID COMBINATIONS FOR THIS SPECIFIC PLOT
+          # Get the grouping keys (traces)
+          current_group_by = plot_config.get('group_by', [])
 
-          # Resolve Styles for this specific plot (Local merged into Global)
-          local_styles = plot_config.get('styles', {})
+          # Filter graphparameters to only include keys used in this plot's grouping
+          # This ensures we don't generate combinations for unrelated parameters
+          current_plot_params = {
+            k: v for k, v in graphparameters.items() 
+            if k in current_group_by
+          }
+
+          valid_combinations = [] 
+          # Generating all possible combinations of the graph parameters for this plot
+          if current_plot_params:
+            for combination in product(*current_plot_params.values()):
+              valid_combination = True
+              # Creating dictionary for current combination
+              current_combination = {key:value for key,value in zip(current_plot_params.keys(),combination)}
+              
+              for key,value in current_combination.items():
+                # If value is default one, ignore this combination, as it didn't have a valid value
+                if self.default[metrics[key]] == value:
+                  self.log.debug(f"Invalid combination {combination}, {key} has default value of {value}\n")
+                  valid_combination = False
+                  continue
+                
+                # If there's no value with the current combination, skip it
+                # (Note: This checks if the combination exists in the raw data because even if nothing is plotted now, 
+                # we have to plot the combinations for old points)
+                if not any(set(current_combination.items()).issubset(set(data.items())) for data in raw_data):
+                  self.log.debug(f"Combination {combination}, has no values\n")
+                  valid_combination = False
+                  continue
+              
+              if valid_combination:
+                valid_combinations.append(current_combination)
+            
+            # Sorting list by key and value
+            valid_combinations.sort(key=lambda d: tuple(sorted(d.items())))
+
+          # Handle case where there are no groups/traces (single curve)
+          # If valid_combinations is empty, we create a single dummy 'traceelem' (empty dict)
+          combinations_to_process = valid_combinations if valid_combinations else [{}]
+
+          # GET STYLES FROM THE COMBINED CONFIG
+          # Since we propagated plot_settings into each plot, we read directly from plot_config.
           
-          # Start with global styles
-          current_trace_styles = deepcopy(global_trace_styles)
-          # Update with local plot-specific styles
-          self.deep_update(current_trace_styles, local_styles)
+          # Resolve Colors
+          colors_config = plot_config.get('colors', {})
+          current_colormap = colors_config.get('colormap', BenchRepo.DEFAULT_COLORMAP)
+          current_skip = colors_config.get('skip', [])
+          current_sort_key = colors_config.get('sort_strategy', BenchRepo.DEFAULT_SORT_KEY)
+
+          # Resolve Styles
+          current_trace_styles = plot_config.get('styles', {})
 
           # Prepare Colormap Generator
           sort_function = BenchRepo.SORT_STRATEGIES.get(current_sort_key, BenchRepo.SORT_STRATEGIES[BenchRepo.DEFAULT_SORT_KEY])
@@ -1639,13 +1638,6 @@ class BenchRepo:
 
           # Loop over traces
           traces = []
-          
-          # Handle case where there are no 'traces' defined in config (single curve)
-          # If valid_combinations is empty, we create a single dummy 'traceelem' (empty dict)
-          # so the loop runs exactly once.
-          # This is used to plot single curves without any filter ('where' keys)
-          combinations_to_process = valid_combinations if valid_combinations else [{}]
-
           for traceelem in combinations_to_process:
             color = next(colors)
             while color in current_skip: # Use current_skip
@@ -1653,7 +1645,7 @@ class BenchRepo:
 
             # Start with Hardcoded Default
             plot_properties = deepcopy(BenchRepo.DEFAULT_TRACE_STYLE)
-            # Update with resolved (Global+Local) styles
+            # Update with resolved styles (Merged Global + Local)
             self.deep_update(plot_properties, current_trace_styles)
 
             # If traceelem is populated (normal traces), generate name and 'where' clause
@@ -1683,12 +1675,13 @@ class BenchRepo:
               plot_properties['line']['color'] = color
 
             # Adding on-hover/annotation data, if present
-            # Get the annotations for the current graph
-            current_graph_annotations = plot_annotations_map.get(graphelem, [])
+            # Get the annotations directly from the plot config
+            current_graph_annotations = plot_config.get('annotations', [])
 
             if current_graph_annotations:
               onhover_data = {'onhover': [{key: {'name': key}} for key in current_graph_annotations]}
               plot_properties |= onhover_data
+            
             trace = {'trace': plot_properties}
             traces.append(trace)  
 
@@ -2346,6 +2339,27 @@ def main():
         if not group_config.get('plots'):
           log.warning(f"No 'plots' to display for this {group}. Skipping...\n")
           continue
+
+        # Propagate 'plot_settings' into individual plots
+        # Get the global settings for this group (inherited from common_config if tabs exist)
+        global_settings = group_config.get('plot_settings', {})
+        plots_section = group_config.get('plots')
+
+        # Normalize plots structure for iteration:
+        # If it's a dict with 'tabs', we iterate over its values (lists of plots).
+        # If it's a direct list, we wrap it in a list [plots_section].
+        plots_groups = plots_section['tabs'].values() if (isinstance(plots_section, dict) and 'tabs' in plots_section) else [plots_section]
+
+        # Propagate settings into every individual plot
+        for plot_list in plots_groups:
+          for i, plot in enumerate(plot_list):
+            # Merge Global Settings + Specific Plot Settings
+            # We start with globals (deepcopy to avoid nested ref issues), then overwrite with specifics.
+            merged_plot = deepcopy(global_settings)
+            merged_plot.update(plot)
+            
+            # Update the list in-place so downstream code sees the full config
+            plot_list[i] = merged_plot
 
         # Start repo timer
         repo_start_time = time.time()
