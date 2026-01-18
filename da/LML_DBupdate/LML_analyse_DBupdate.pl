@@ -135,7 +135,7 @@ sub write_steptimings_lml {
   my($filename,$wf_name,$starttime,$endtime,$steprefs)=@_;
   my($count,%stepnr,$step);
 
-  print "write_steptimings_lml($filename,$wf_name,$starttime,$endtime,$steprefs)\n";
+  # print "write_steptimings_lml($filename,$wf_name,$starttime,$endtime,$steprefs)\n";
   
   open(OUT,"> $filename") || die "cannot open file $filename";
   printf(OUT "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");

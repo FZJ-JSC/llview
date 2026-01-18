@@ -43,10 +43,10 @@ sub read_xml_fast {
   if(!open(IN,$infile)) {
     print STDERR "$0: ERROR: could not open $infile, leaving...\n";return(0);
   }
-  while(<IN>) {
-    $xmlin.=$_;
-  }
+  # Slurp the file
+  { local $/; $xmlin = <IN>; }
   close(IN);
+  
   my $tdiff=time-$tstart;
   printf("LML_da_workflow_obj: read  XML in %6.4f sec\n",$tdiff) if($self->{VERBOSE});
 
@@ -56,52 +56,75 @@ sub read_xml_fast {
 
   $tstart=time;
 
-  # light-weight self written xml parser, only working for simple XML files  
+  # Clean up newlines for simpler regexes
   $xmlin=~s/\n/ /gs;
   $xmlin=~s/\s\s+/ /gs;
-  my ($tag,$tagname,$rest,$ctag,$nrc,@list);
-  foreach $tag (split(/\>\s*/,$xmlin)) {
-    $ctag.=$tag;
-    $nrc=($ctag=~ tr/\"/\"/);
-    if($nrc%2==0) {
-      $tag=$ctag;
-      $ctag="";
-    } else {
+
+  my ($tag, $tagname, $rest, @list);
+
+  # Loop through the string finding Tags one by one.
+  # The Regex Explanation:
+  # <              : Match start of tag
+  # (?:            : Non-capturing group for tag content
+  #   "[^"]*"      : Match double-quoted strings (fastest simple case)
+  #   |            : OR
+  #   '[^']*'      : Match single-quoted strings
+  #   |            : OR
+  #   [^'">]       : Match anything that isn't a quote or end-tag
+  # )*             : Repeat 0 or more times
+  # >              : Match end of tag
+  while ($xmlin =~ /(<(?:"[^"]*"|'[^']*'|[^'">])*>)/gs) {
+    $tag = $1;
+    
+    # Check for Comments
+    if ($tag =~ /^<\!--/) {
       next;
     }
     
-    # print STDERR "TAG: '$tag'\n";
-    if($tag=~/^<[\/\?](.*[^\s\>])/) { # end of a tag
-      $tagname=$1;
-      # print "TAGE: '$tagname'\n";
-      $self->xml_end($self->{DATA},$tagname,());
-    } elsif($tag=~/<([^\s]+)\s*$/) { # start of simple tag
-      $tagname=$1;
-      # print STDERR "TAG0: '$tagname'\n";
-      $self->xml_start($self->{DATA},$tagname,());
-    } elsif($tag=~/<([^\s]+)(\s(.*)[^\/])$/) { # start of tag with options
-      $tagname=$1;
-      $rest=$2;$rest=~s/^\s*//gs;$rest=~s/\s*$//gs;$rest=~s/\=\s+\"/\=\"/gs;
-      # print STDERR "TAG1: '$tagname' rest='$rest'\n";
-      @list = $rest =~ /([^\s]+?)="(.*?)"/g;
-      $self->xml_start($self->{DATA},$tagname,@list);
-    } elsif($tag=~/<([^\s]+)(\s(.*)\s?)\/$/) { # closed tag (that closes by itself, <.../>) with options
-      $tagname=$1;
-      $rest=$2;$rest=~s/^\s*//gs;$rest=~s/\s*$//gs;$rest=~s/\=\s+\"/\=\"/gs;
-      # print STDERR "TAG2: '$tagname' rest='$rest' closed\n";
-      @list = $rest =~ /([^\s]+?)="(.*?)"/g;
-      $self->xml_start($self->{DATA},$tagname,@list);
-      $self->xml_end($self->{DATA},$tagname,());
+    # Check for End Tags </tag>
+    elsif ($tag =~ /^<\/\s*([^\s>]+)/) {
+      $tagname = $1;
+      $self->xml_end($self->{DATA}, $tagname, ());
+    }
+    
+    # Check for Start Tags (with optional self-closing /)
+    # This regex captures the Name ($1) and the raw attributes string ($2)
+    elsif ($tag =~ /^<([^\s\/>]+)(?:\s+(.*?))?\s*(\/?)>$/) {
+      $tagname     = $1;
+      my $attr_str = $2 || "";
+      my $is_closed= $3; # If this is "/", it is a self-closing tag
+      
+      # Efficiently parse all attributes (key="val" or key='val') 
+      # including escaped quotes inside values.
+      @list = ();
+      while ($attr_str =~ /([^\s=]+)\s*=\s*(["'])((?:\\.|(?!\2).)*)\2/g) {
+        my ($k, $q, $v) = ($1, $2, $3);
+        $v =~ s/\\$q/$q/g; # Unescape the specific quote type used
+        push(@list, $k, $v);
+      }
+
+      # Call Start
+      $self->xml_start($self->{DATA}, $tagname, @list);
+
+      # If self-closing <tag ... />, immediately call End
+      if ($is_closed eq "/") {
+        $self->xml_end($self->{DATA}, $tagname, ());
+      }
     }
   }
 
   $tdiff=time-$tstart;
   printf("LML_da_workflow_obj: parse XML in %6.4f sec\n",$tdiff) if($self->{VERBOSE});
 
-  # print Dumper($self->{DATA});
+  # FOR DEBUG
+  # local $Data::Dumper::Useqq = 1; # Force double quotes to see backslashes clearly
+  # local $Data::Dumper::Indent = 1;
+  # local $Data::Dumper::Sortkeys = 1;
+  # print STDERR Dumper($self->{DATA});
+  # ---
+
   return($rc);
 }
-
 
 sub xml_start {
   my $self=shift; # object reference
@@ -112,20 +135,31 @@ sub xml_start {
   # print "LML_da_workflow_obj: lml_start >$name< \n";
 
   if($name eq "!--") {
-    # skipping comment
     return(1);
   }
   my %attr=(@_);
-  # Substituting environment variables on values
+
   foreach $k (sort keys %attr) {
-    while ( $attr{$k} =~ /\$\{(\w+)\}/ ) {
-      # Checking if environment variable is defined
-      if (defined($ENV{$1})) {
-        $attr{$k} =~ s/\$\{(\w+)\}/$ENV{$1}/g;
-        $attr{$k} =~ s/\$ENV\{(\w+)\}/$ENV{$1}/g;
+    
+    # Substitute ${VAR} ONLY if NOT escaped
+    # Matches: ${VAR}
+    # Ignored: \${VAR}
+    while ( $attr{$k} =~ /(?<!\\)\$\{(\w+)\}/ ) {
+      my $var = $1;
+      if (defined($ENV{$var})) {
+        $attr{$k} =~ s/(?<!\\)\$\{$var\}/$ENV{$var}/g;
       } else {
-        $attr{$k} =~ s/\$\{(\w+)\}//g;
-        $attr{$k} =~ s/\$ENV\{(\w+)\}//g;
+        $attr{$k} =~ s/(?<!\\)\$\{$var\}//g;
+      }
+    }
+
+    # Substitute $ENV{VAR} ONLY if NOT escaped
+    while ( $attr{$k} =~ /(?<!\\)\$ENV\{(\w+)\}/ ) {
+      my $var = $1;
+      if (defined($ENV{$var})) {
+        $attr{$k} =~ s/(?<!\\)\$ENV\{$var\}/$ENV{$var}/g;
+      } else {
+        $attr{$k} =~ s/(?<!\\)\$ENV\{$var\}//g;
       }
     }
   }

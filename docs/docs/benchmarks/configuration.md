@@ -176,7 +176,7 @@ The following keys can be used inside `plot_settings` (globally) or inside a spe
 | **`colors`** | `colormap` | Name of the Matplotlib/Plotly colormap to use. | `'tab10'` |
 | | <span style="white-space:nowrap">`sort_strategy`</span> | Order in which colors are assigned to traces. Options: `'standard'`, `'reverse'`, `'interleave_even_odd'` | `'standard'` |
 | | `skip` | List of HEX color codes to exclude from the colormap. | `[]` |
-| **`styles`** | | Dictionary of style properties passed directly to the [Plotly.js Scatter trace](https://plotly.com/javascript/reference/scatter/). | `type: scatter`<br>`mode: markers`<br>`marker: { opacity: 0.6, size: 5 }` |
+| **`styles`** | | Dictionary of style properties passed directly to the [Plotly.js Scatter trace](https://plotly.com/javascript/reference/scatter/). | `type: scatter`<br>`mode: markers`<br>`marker: { opacity: 0.9, size: 5 }` |
 
 ## 5. Structuring Benchmarks (Tabs)
 
