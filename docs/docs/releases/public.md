@@ -1,5 +1,46 @@
 # LLview Public Releases
 
+### 2.4.3-base (January 18, 2025)
+
+More improvements on Continuous Benchmarks, better XML parsing and improvements on JuRepTool!
+
+<h4> Added </h4>
+
+- Git plugin: Added option to set Benchmarks page as default
+- Git plugin: Added 'status history', i.e. '_status' to show the status of the last 5 runs (configurable)
+- JuRepTool: Added option to give plotly, jquery and fontawesome libraries locations (https or "local")
+- JuRepTool: added JSON structure for expected input files in JuRepTool's README.md
+- JuRepTool: Added possibility to give folders
+- JuRepTool: Added warning when a configfolder is not given
+- JuRepTool: Added option to change the link on the LLview logo
+
+<h4> Changed </h4>
+
+- CB overview table is now sorted by name;
+- Improved parsing of LML to accept single or double quotes, and quotes and $ can be escaped to be used inside commands (they are unescaped by then)
+- Add SYSTEM_TS when none is available - such that LLview works without having to parse one from e.g. Slurm;
+- Improved parsing of datatable column definitions (to be able to give more levels)
+- Improved logging of errors, to make it easy to find problems on SQL queries; 
+- Git plugin: Removed 'all_empty' check, since configs always need to be generated, also with empty files
+- Git plugin: Improved handling of defaults or failed runs
+- Git plugin: Improved configuration files for YAML (global 'plot_settings' and 'traces'->'group_by', to make it more intuitive)
+- Git plugin: Changed default colors (now tab10) and opacity to 0.9
+- Git plugin: Adapted example config and documentation for new config and defaults
+- Git plugin: Aggregate LMLs per repo, and not per tab
+- Git plugin: Changed order when getting metrics: now we verify the data first, and skip some steps for failed runs (but keep the points)
+- Git plugin: Changed table mode to 'replace' (always recreate the whole table), so 'tsfile' is not needed (but kept the possibility to use it, in case benchmarks are too big, that may be the only solution)
+
+<h4> Fixed </h4>
+
+- Fixed usage of quoted table and column names of internal SQL queries and checkDB/`updatedb`
+- Fixed possible errors in 'slurm' and 'files' plugins (more robust now)
+- Git plugin: Fix for failed runs not to generate new orphan rows in tables
+- Git plugin: Fix for null metrics that were not leading to a failed status entry
+- Git plugin: Fix for benchmarks with spaces in names
+- Git plugin: Fixed linter issues
+- Git plugin: Fixed output of git plugin when singleLML is not used (to be used for parallel runs)
+
+
 ### 2.4.2-base (December 19, 2025)
 
 Extensions on Continuous Benchmark, many improvements on plugins, more documentation!
