@@ -2,6 +2,34 @@
 
 Since the JURI (Jülich Reporting Interface) module is the same for the internal and the public versions, a single and separated page describe its changelog.
 
+### 2.4.3 (January 18, 2025)
+
+<h4> Added </h4>
+
+- Added possibility for using xaxis with string variables using `layout.xaxis.type = 'category'`
+- Added new helper function for benchmark status (i.e., history status entries)
+- Added KaTeX library (MIT license) to render LaTeX equations in 'infotext'
+
+<h4> Changed </h4>
+
+- gen_benchmark_link is applied for everyone, not only support
+- Try to get `mapjobid_to_day.cav` only if search_field is defined (pages without jobs don't need that)
+- Improved infoline/footer graphs dragger to allow also touch events
+- Use timestamp (instead of Date object) on plotly plots for performance
+- Removed (slow) unshift usage on plotly traces preparation
+- Consolidated loops over traces
+- Use 'scattergl' instead of 'scatter' when plots have too many points (given by variable WEBGL_THRESHOLD), except for stacked graphs (plotly limitation)
+- Open links on benchmark names in new windows/tabs when clicked with meta keys or middle mouse button
+
+<h4> Fixed </h4>
+
+- Catch error when `mapjobid_to_day.csv` does not exist, to allow pages without Jobs (e.g., CB only)
+- Fixed issue of updating 'view_data_info' on graph pages
+- Fixed system menu not showing up, and height of title_wrapper
+- Fixed position of scrolled dropdown menus on navbar
+- Fixed height of selected tab
+
+
 ### 2.4.2 (December 19, 2025)
 
 New: Open links in new tabs/windows with modifier keys, scrollable top navbar, faster loading pages, and many more!

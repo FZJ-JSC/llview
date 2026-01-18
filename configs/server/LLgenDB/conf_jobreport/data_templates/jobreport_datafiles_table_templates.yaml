@@ -547,22 +547,22 @@
             {
               field: "min_ts",
               headerName: "Date of First Run", 
-              headerTooltip: "Minimum timestamp of the benchmark",
+              headerTooltip: "Minimum timestamp on the benchmark",
               cellDataType: "text",
               flex: 1
             },
             {
               field: "max_ts",
               headerName: "Date of Last Run", 
-              headerTooltip: "Maximum timestamp of the benchmark",
+              headerTooltip: "Maximum timestamp on the benchmark",
               cellDataType: "text",
               flex: 1
             },
           ]
         }
       - {
-        headerName: "#Runs",
-        groupId: "#Runs",
+        headerName: "#Points",
+        groupId: "#Points",
         children: [
           {
             field: "count",

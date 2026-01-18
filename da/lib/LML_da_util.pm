@@ -40,9 +40,8 @@ sub init_globalvar {
 
 sub substitute_recursive {
   my($ds,$varhashref)=@_;
-  my($i);
+  my($i,$key);
   # $msg=sprintf("[substitute_recursive] ".ref($ds)."\n"); logmsg($msg);
-  # $msg=sprintf("[substitute_recursive] ".Dumper($ds)."\n"); logmsg($msg);
   
   if(ref($ds) eq "HASH") {
     foreach $key (keys(%{$ds})) {
@@ -63,6 +62,7 @@ sub substitute_recursive {
       }
     }
   } else {
+    # If it is a direct reference to a scalar or similar
     $msg=sprintf("[substitute_recursive] Unknown type ".ref($ds)."\n"); logmsg($msg,\*STDERR);
   }
   return(1);
@@ -77,23 +77,36 @@ sub substitute {
 
   return(0) if($$strref eq "");
 
+  # Regex to capture variable names.
+  # We use m{} and s{} with curly braces so we don't have to escape / inside.
+  # Excluded chars: { [ $ \ whitespace . , * / + - ` ( ) ' ? : ; " }
+  
   # search normal variables
-  @varlist1=($$strref=~/\$([^\{\[\$\\\s\.\,\*\/\+\-\\\`\(\)\'\?\:\;\}]+)/g);
+  # Matches $var but NOT \$var (via negative lookbehind (?<!\\))
+  @varlist1=($$strref =~ m{(?<!\\)\$([^\{\[\$\\\s\.\,\*\/\+\-\\\`\(\)\'\?\:\;\"\}]+)}g);
+  
   foreach $var (sort {length($b) <=> length($a)} (@varlist1)) {
     if(exists($hashref->{$var})) {
       my $val=$hashref->{$var};
-      $$strref=~s/\$$var/$val/egs;
+      # Safe substitution:
+      # (?<!\\) ensures we don't replace escaped \$var
+      # \Q...\E ensures the variable name is treated literally in regex
+      $$strref =~ s{(?<!\\)\$\Q$var\E}{$val}gs;
+      
       $msg=($debug==1) ? sprintf("[substitute]    var1: %s = %s\n",$var,$val) : ""; logmsg($msg);
       $found=1;
     }
   }
 
   # search variables in following form: ${name}
-  @varlist2=($$strref=~/\$\{([^\{\[\$\\\s\.\,\*\/\+\-\\\`\(\)\'\?\:\;\}]+)\}/g);
+  # Matches ${var} but NOT \${var}
+  @varlist2=($$strref =~ m{(?<!\\)\$\{([^\{\[\$\\\s\.\,\*\/\+\-\\\`\(\)\'\?\:\;\"\}]+)\}}g);
+  
   foreach $var (sort {length($b) <=> length($a)} (@varlist2)) {
     if(exists($hashref->{$var})) {
       my $val=$hashref->{$var};
-      $$strref=~s/\$\{$var\}/$val/egs;
+      $$strref =~ s{(?<!\\)\$\{\Q$var\E\}}{$val}gs;
+      
       $msg=($debug==1) ? sprintf("[substitute]    var2: %s = %s\n",$var,$val) : ""; logmsg($msg);
       $found=1;
     } 
@@ -125,14 +138,22 @@ sub substitute {
     $msg=($debug==1) ? sprintf("[substitute]    eval %s -> %s >%s<\n",$val,$$strref,$evalall) : ""; logmsg($msg);
   }
 
-  # search for variables which could not be substitute
-  @varlist1=($$strref=~/\$([^\{\[\$\\\s\.\,\*\/\+\-\\\`\(\)\'\?\:\;\}]+)/g);
-  @varlist2=($$strref=~/\$\{([^\{\[\$\\\s\.\,\*\/\+\-\\\`\(\)\'\?\:\;\}]+)\}/g);
+  # search for variables which could not be substituted
+  # We check again for things that look like variables but weren't replaced.
+  # We ignore anything preceded by a backslash.
+  @varlist1=($$strref =~ m{(?<!\\)\$([^\{\[\$\\\s\.\,\*\/\+\-\\\`\(\)\'\?\:\;\"\}]+)}g);
+  @varlist2=($$strref =~ m{(?<!\\)\$\{([^\{\[\$\\\s\.\,\*\/\+\-\\\`\(\)\'\?\:\;\"\}]+)\}}g);
+  
   if ( (@varlist1) || (@varlist2) ) {
     $SUBSTITUTE_NOTFOUND=join(',',@varlist1,@varlist2);
     $found=-1;
     $msg=sprintf("[substitute]    Unknown vars in %s: %s\n",$$strref,$SUBSTITUTE_NOTFOUND); logmsg($msg,\*STDERR);
   }
+
+  # Final Step: Unescape any manually escaped dollar signs
+  # \$var becomes $var (literal)
+  $$strref =~ s/\\\$/\$/g;
+
   return($found);
 }
 

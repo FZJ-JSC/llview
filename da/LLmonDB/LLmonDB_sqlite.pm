@@ -760,28 +760,44 @@ sub query_arrayref_of_arrayref_table {
 
   my $sql;
   if(!defined($qsql)) {
-    $sql = "SELECT * FROM $table";
+    # Quote table name safely
+    my $safe_table = $self->{DBH}->quote_identifier($table);
+    $sql = "SELECT * FROM $safe_table";
     $sql.=" WHERE $where" if($where);
   } else {
     $sql=$qsql;
     # print "query_hash_values_table: sql=$sql\n";
   }
-  print "query_arrays_table: $sql\n";
+  
+  # print "query_arrays_table: $sql\n";
+  
   my $sth = $self->{DBH}->prepare($sql);
+  
   if(!$sth) {
-    printf(STDERR "[query_arrayref_of_arrayref_table] \t   LLmonDB_sqlite: ERROR cannot prepare query_arrayref_of_arrayref_table(table: $table sql: %s...)\n",substr($sql,0,120));
+    my $db_error = $self->{DBH}->errstr;
+    printf(STDERR "[query_arrayref_of_arrayref_table] \t LLmonDB_sqlite: ERROR - Cannot prepare SQL statement.\n");
+    printf(STDERR "  Database: %s\n", $self->{DBNAME});
+    printf(STDERR "  Table: %s\n", defined($table) ? $table : 'N/A');
+    printf(STDERR "  Database Error: %s\n", $db_error);
+    printf(STDERR "  Full SQL Dump:\n---\n%s\n---\n", $sql);
     return(undef);
   }
-  $sth->execute();
+  
+  if (!$sth->execute()) {
+    my $db_error = $self->{DBH}->errstr;
+    printf(STDERR "[query_arrayref_of_arrayref_table] \t LLmonDB_sqlite: ERROR - Cannot execute SQL statement.\n");
+    printf(STDERR "  Database: %s\n", $self->{DBNAME});
+    printf(STDERR "  Database Error: %s\n", $db_error);
+    printf(STDERR "  Full SQL Dump:\n---\n%s\n---\n", $sql);
+    return(undef);
+  }
 
-  # $self->{DBH}->{FetchHashKeyName} = 'NAME_lc'; # use lowercase names
   $retval = $sth->fetchall_arrayref();
 
   print "\t   LLmonDB_sqlite: query_arrays_table $sql\n" if($debug>=3);
   # print Dumper($retval);
   return($retval);
 }
-
 
 sub query_arrayref_of_hashref_table {
   my($self) = shift;
@@ -790,21 +806,36 @@ sub query_arrayref_of_hashref_table {
 
   my $sql;
   if(!defined($qsql)) {
-    $sql = "SELECT * FROM $table";
+    # Quote table name safely
+    my $safe_table = $self->{DBH}->quote_identifier($table);
+    $sql = "SELECT * FROM $safe_table";
     $sql.=" WHERE $where" if($where);
   } else {
     $sql=$qsql;
     # print "query_hash_values_table: sql=$sql\n";
   }
-  # print "query_arrays_table: $sql\n";
+  
   my $sth = $self->{DBH}->prepare($sql);
+  
   if(!$sth) {
-    printf(STDERR "[query_arrayref_of_hashref_table] \t   LLmonDB_sqlite: ERROR cannot prepare query_arrayref_of_hashref_table(table: $table sql: %s...)\n",substr($sql,0,120));
+    my $db_error = $self->{DBH}->errstr;
+    printf(STDERR "[query_arrayref_of_hashref_table] \t LLmonDB_sqlite: ERROR - Cannot prepare SQL statement.\n");
+    printf(STDERR "  Database: %s\n", $self->{DBNAME});
+    printf(STDERR "  Table: %s\n", defined($table) ? $table : 'N/A');
+    printf(STDERR "  Database Error: %s\n", $db_error);
+    printf(STDERR "  Full SQL Dump:\n---\n%s\n---\n", $sql);
     return(undef);
   }
-  $sth->execute();
+  
+  if (!$sth->execute()) {
+    my $db_error = $self->{DBH}->errstr;
+    printf(STDERR "[query_arrayref_of_hashref_table] \t LLmonDB_sqlite: ERROR - Cannot execute SQL statement.\n");
+    printf(STDERR "  Database: %s\n", $self->{DBNAME});
+    printf(STDERR "  Database Error: %s\n", $db_error);
+    printf(STDERR "  Full SQL Dump:\n---\n%s\n---\n", $sql);
+    return(undef);
+  }
 
-  # $self->{DBH}->{FetchHashKeyName} = 'NAME_lc'; # use lowercase names
   $retval = $sth->fetchall_arrayref({});
 
   print "\t   LLmonDB_sqlite: query_arrays_table $sql\n" if($debug>=3);
@@ -812,77 +843,134 @@ sub query_arrayref_of_hashref_table {
   return($retval);
 }
 
-
 sub query_get_min {
   my($self) = shift;
   my($table,$key,$where) = @_;
   my ($retval);
     
-  my $sql = "SELECT min($key) FROM $table";
+  # Quote both table AND column (key) identifiers safely
+  my $safe_table = $self->{DBH}->quote_identifier($table);
+  my $safe_key   = $self->{DBH}->quote_identifier($key);
+
+  my $sql = "SELECT min($safe_key) FROM $safe_table";
   $sql.=" WHERE $where" if($where);
   
   my $sth = $self->{DBH}->prepare($sql);
+  
   if(!$sth) {
-    printf(STDERR "[query_get_min] \t   LLmonDB_sqlite: ERROR cannot prepare query_get_min(table: $table sql: %s...)\n",substr($sql,0,120));
+    my $db_error = $self->{DBH}->errstr;
+    printf(STDERR "[query_get_min] \t LLmonDB_sqlite: ERROR - Cannot prepare SQL statement.\n");
+    printf(STDERR "  Database: %s\n", $self->{DBNAME});
+    printf(STDERR "  Table: %s\n", $table);
+    printf(STDERR "  Column: %s\n", $key);
+    printf(STDERR "  Database Error: %s\n", $db_error);
+    printf(STDERR "  Full SQL Dump:\n---\n%s\n---\n", $sql);
     return(undef);
   }
-  $sth->execute();
+  
+  if (!$sth->execute()) {
+    my $db_error = $self->{DBH}->errstr;
+    printf(STDERR "[query_get_min] \t LLmonDB_sqlite: ERROR - Cannot execute SQL statement.\n");
+    printf(STDERR "  Database: %s\n", $self->{DBNAME});
+    printf(STDERR "  Database Error: %s\n", $db_error);
+    printf(STDERR "  Full SQL Dump:\n---\n%s\n---\n", $sql);
+    return(undef);
+  }
+
   if (my @data = $sth->fetchrow_array()) {
     $retval=$data[0];
   } else {
     $retval=-1;
   }
+  
   print "\t   LLmonDB_sqlite: query_get_min $sql\n" if($debug>=3);
   # print Dumper($retval);
   return($retval);
 }
-
 
 sub query_get_max {
   my($self) = shift;
   my($table,$key,$where) = @_;
   my ($retval);
     
-  my $sql = "SELECT max($key) FROM $table";
+  # Quote both table AND column (key) identifiers safely
+  my $safe_table = $self->{DBH}->quote_identifier($table);
+  my $safe_key   = $self->{DBH}->quote_identifier($key);
+
+  my $sql = "SELECT max($safe_key) FROM $safe_table";
   $sql.=" WHERE $where" if($where);
   
   my $sth = $self->{DBH}->prepare($sql);
+  
   if(!$sth) {
-    printf(STDERR "[query_get_max] \t   LLmonDB_sqlite: ERROR cannot prepare query_get_max(table: $table sql: %s...)\n",substr($sql,0,120));
+    my $db_error = $self->{DBH}->errstr;
+    printf(STDERR "[query_get_max] \t LLmonDB_sqlite: ERROR - Cannot prepare SQL statement.\n");
+    printf(STDERR "  Database: %s\n", $self->{DBNAME});
+    printf(STDERR "  Table: %s\n", $table);
+    printf(STDERR "  Column: %s\n", $key);
+    printf(STDERR "  Database Error: %s\n", $db_error);
+    printf(STDERR "  Full SQL Dump:\n---\n%s\n---\n", $sql);
     return(undef);
   }
-  $sth->execute();
+  
+  if (!$sth->execute()) {
+    my $db_error = $self->{DBH}->errstr;
+    printf(STDERR "[query_get_max] \t LLmonDB_sqlite: ERROR - Cannot execute SQL statement.\n");
+    printf(STDERR "  Database: %s\n", $self->{DBNAME});
+    printf(STDERR "  Database Error: %s\n", $db_error);
+    printf(STDERR "  Full SQL Dump:\n---\n%s\n---\n", $sql);
+    return(undef);
+  }
+
   if (my @data = $sth->fetchrow_array()) {
     $retval=$data[0];
   } else {
     $retval=-1;
   }
+  
   print "\t   LLmonDB_sqlite: query_get_max $sql\n" if($debug>=3);
   # print Dumper($retval);
   return($retval);
 }
-
 
 sub query_get_count {
   my($self) = shift;
   my($table,$where) = @_;
   my ($retval);
     
-  my $sql = "SELECT count(*) FROM $table";
+  my $safe_table = $self->{DBH}->quote_identifier($table);
+
+  my $sql = "SELECT count(*) FROM $safe_table";
   $sql.=" WHERE $where" if($where);
   
   my $sth = $self->{DBH}->prepare($sql);
+  
   if(!$sth) {
-    printf(STDERR "[query_get_count] \t   LLmonDB_sqlite: ERROR cannot prepare query_get_count(table: $table sql: %s...)\n",substr($sql,0,120));
+    my $db_error = $self->{DBH}->errstr;
+    printf(STDERR "[query_get_count] \t LLmonDB_sqlite: ERROR - Cannot prepare SQL statement.\n");
+    printf(STDERR "  Database: %s\n", $self->{DBNAME});
+    printf(STDERR "  Table: %s\n", $table);
+    printf(STDERR "  Database Error: %s\n", $db_error);
+    printf(STDERR "  Full SQL Dump:\n---\n%s\n---\n", $sql);
     return(undef);
   }
-  my $rc=$sth->execute();
-  $self->LOGREPORT($self->{DBNAME},"E:query_get_count",caller(),$DBI::errstr) if(!defined($rc));
+
+  if (!$sth->execute()) {
+    my $db_error = $self->{DBH}->errstr;
+    printf(STDERR "[query_get_count] \t LLmonDB_sqlite: ERROR - Cannot execute SQL statement.\n");
+    printf(STDERR "  Database: %s\n", $self->{DBNAME});
+    printf(STDERR "  Database Error: %s\n", $db_error);
+    printf(STDERR "  Full SQL Dump:\n---\n%s\n---\n", $sql);
+    $self->LOGREPORT($self->{DBNAME},"E:query_get_count",caller(),$DBI::errstr);
+    return(undef);
+  }
+
   if (my @data = $sth->fetchrow_array()) {
     $retval=$data[0];
   } else {
     $retval=-1;
   }
+  
   print "\t   LLmonDB_sqlite: query_get_count $sql\n" if($debug>=3);
   # print Dumper($retval);
   return($retval);

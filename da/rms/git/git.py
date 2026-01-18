@@ -25,7 +25,7 @@ from urllib.parse import quote
 import yaml
 import json
 import ast
-from matplotlib import colormaps   # To loop over colors in footers
+from matplotlib import colormaps # type: ignore  # To loop over colors in footers
 from matplotlib.colors import to_hex # Convert RGB to HEX
 from itertools import count,cycle,product
 from copy import deepcopy
@@ -127,7 +127,7 @@ def gen_tab_config(default=False,suffix="cb",folder="./"):
             # 'footer_graph_config': "/data/ll/footer_cblist.json",
             'ref': [ 'datatable' ],
             'data': {
-              'default_columns': [ 'Name', 'Timings', '#Runs', 'Status' ]
+              'default_columns': [ 'Name', 'Timings', '#Points', 'Status' ]
             }
           }
         },
@@ -137,9 +137,11 @@ def gen_tab_config(default=False,suffix="cb",folder="./"):
   }]
 
   # Writing out YAML configuration file
-  yaml_string = yaml.safe_dump(pages, default_flow_style=None)
+  raw_output = yaml.safe_dump(pages, None, default_flow_style=None)
+  yaml_string = raw_output if isinstance(raw_output, str) else ""
   # Adding the include line (LLview-specific, not YAML standard)
-  yaml_string = yaml_string.replace("- {include_here: null}",'%include "./page_cb.yaml"')
+  if yaml_string:
+    yaml_string = yaml_string.replace("- {include_here: null}",'%include "./page_cb.yaml"')
   with open(filename, 'w') as file:
     file.write(yaml_string)
 
@@ -168,7 +170,7 @@ class BenchRepo:
     'type': 'scatter',
     'mode': 'markers',
     'marker': {
-      'opacity': 0.6,
+      'opacity': 0.9,
       'size': 5
     }
   }
@@ -182,7 +184,7 @@ class BenchRepo:
     self._skipupdate = skipupdate # Skip update of repos (when they were already cloned). Good to use when no new points exist (e.g., 2 consecutive runs)
 
     # If name is not given, this is the main object to collect the separate entries
-    if name:
+    if name and config:
       # Determine the parent dictionary level.
       if self._tab:
         # Get or create the dictionary for 'name', then the one for 'self._tab'.
@@ -198,8 +200,7 @@ class BenchRepo:
       target['parameters'] = {}      # Dictionary of {parameter: description} shown on the table (one row per value parameter)
       target['graphparameters'] = {} # Dict of {parameters: [unique values]} shown on the graphs (one curve per value parameter)
       target['annotations'] = set()  # Set of metrics that show as annotations on graphs
-      if config:
-        target['config'] = config
+      target['config'] = config
 
     self._counter = count(start=0)          # counter for the total number of points
     self.log   = logging.getLogger('logger')
@@ -282,14 +283,15 @@ class BenchRepo:
       else:
         target_dict[key] = deepcopy(source_value)
 
-  def deep_update(self,target, override):
+  @staticmethod
+  def deep_update(target, override):
     """
     Recursively update a dictionary.
     """
     for key, value in override.items():
       if isinstance(value, dict):
         # Get the existing value or an empty dict, then recurse.
-        target[key] = self.deep_update(target.get(key, {}), value)
+        target[key] = BenchRepo.deep_update(target.get(key, {}), value)
       else:
         # Overwrite the value if it's not a dictionary.
         target[key] = value
@@ -620,13 +622,7 @@ class BenchRepo:
                     metadata.update(line_dict)
                   else:
                     self.log.warning(f"Warning: Metadata line is not a dict: {line_dict}")
-                      
-                  # parsed_comment = json.loads(comment_json_str)
-                  # # We only care about dictionary-type metadata
-                  # if isinstance(parsed_comment, dict):
-                  #   metadata.update(parsed_comment) # Simple dict merge
               except (ValueError, SyntaxError) as e:
-              # except json.JSONDecodeError:
                 # This line is a comment, but not valid JSON. Ignoring it.
                 self.log.warning(f"Ignoring non-JSON comment in {source}: {stripped_line}\n")
                 pass
@@ -684,26 +680,8 @@ class BenchRepo:
 
           current_data.append(current_line)
 
-        # Converting data obtained from file content and multiplying by factor, when present
-        for key in list(headers.values())+list(calc_headers.keys()):
-          # Getting the type of the metric
-          mtype = metrics_types[key]
-          for data in current_data:
-            if mtype == 'str':
-              convert = metrics_section[key].get('regex')
-            else:
-              convert = metrics_section[key].get('factor')
-            try:
-              data[key] = self.convert_data(
-                                            data[key],
-                                            vtype='ts' if key == 'ts' else mtype,
-                                            factor=convert,
-                                            )
-            except ValueError:
-              self.log.debug(f"Cannot convert value '{data[key]}' for '{key}' in source {source}! Skipping conversion...\n")
-              continue
-
       # Getting common data and metrics that are obtained from filename or from metadata
+      # This is done BEFORE conversion, so we can validate and set status properly
       common_data = {}
       common_data['__type'] = "benchmark"
       common_data['__prefix'] = "bm"
@@ -773,24 +751,14 @@ class BenchRepo:
       # Adding 'common_data' to all entries of 'current_data'
       current_data[:] = [(data|common_data) for data in current_data]
 
-      # Applying filters 'exclude' and/or 'include' for each metric, when present
-      # (This must be done before collecting the unique graph parameters
-      # to remove unwanted values)
-      self.apply_pattern(
-                          current_data,
-                          exclude=to_exclude,
-                          include=to_include
-                        )
-
       # If current_data is not empty but 'ts' is not found
       if current_data and 'ts' not in current_data[0]:
         self.log.error(f"'ts' could not be obtained for '{combined_name}'.\n")
         return False # Abort processing
 
       # Perform validation (to set the _status) and default-setting on each line
-      # This is done after everything, such that missing data can still
-      # be skipped from conversion, and 'ts' may still fail (if setting to default before,
-      # it could be seen as valid)
+      # This is done BEFORE conversion, so empty/failed values don't crash the converter
+      # and are kept for status history.
       for line in current_data:
         # Assume the run is successful until proven otherwise.
         # If a status already exists (e.g., from common_data), respect it.
@@ -830,6 +798,42 @@ class BenchRepo:
         # Set the final, determined status for the line
         line['_status'] = run_status
 
+      # Applying filters 'exclude' and/or 'include' for each metric, when present
+      # (This must be done before collecting the unique graph parameters
+      # to remove unwanted values, but should be done after the validation for the status
+      # to avoid filtering failed runs and keep them in the status history)
+      self.apply_pattern(
+                          current_data,
+                          exclude=to_exclude,
+                          include=to_include
+                        )
+
+      # Converting data obtained from file content and multiplying by factor, when present
+      # (Here we skip failed lines, since they don't have valid values)
+      for key in list(headers.values())+list(calc_headers.keys()):
+        # Getting the type of the metric
+        mtype = metrics_types[key]
+        for data in current_data:
+          
+          # Skip conversion if the line is already marked as FAILED (except for strings, which might be partial data)
+          # OR if the value itself is None (was set to None by validation)
+          if data.get('_status') == 'F' and data.get(key) is None:
+            continue
+          
+          if mtype == 'str':
+            convert = metrics_section[key].get('regex')
+          else:
+            convert = metrics_section[key].get('factor')
+          try:
+            data[key] = self.convert_data(
+                                          data[key],
+                                          vtype='ts' if key == 'ts' else mtype,
+                                          factor=convert,
+                                          )
+          except ValueError:
+            self.log.debug(f"Cannot convert value '{data[key]}' for '{key}' in source {source}! Skipping conversion...\n")
+            continue
+
       # Collecting unique values for graph parameters in current source:
       # (This has to be done before cleaning the old ts to be able to
       # collect all unique values)
@@ -865,12 +869,14 @@ class BenchRepo:
         current_data[:] = [data for data in current_data if data['ts'] > self._lastts]
 
       # Storing temporary lastts from last timestamp of current data
-      lastts_temp = max([data['ts'] for data in current_data]+[self._lastts,lastts_temp])
+      if current_data:
+        # Ensure we don't crash if current_data became empty after filter
+        lastts_temp = max([data['ts'] for data in current_data]+[self._lastts,lastts_temp])
 
       if current_data: # Adding an id to current data, to have an unique identifier for the csv file generation
         self._dict |= {
           f"{combined_name}_{next(self._counter)}": data | {
-              'id': '_'.join([self._format_id_value(data.get(key)) for key in parameters])
+            'id': '_'.join([self._format_id_value(data.get(key)) for key in parameters])
           } 
           for data in current_data
         }
@@ -995,7 +1001,7 @@ class BenchRepo:
     - CSV configuration for the files with data for the footers
     - Footer configuration with the description of the tabs, graphs and curves
     """
-    suffix = self._name if self._name else 'cb'
+    suffix = self._name.replace(" ","_") if self._name else 'cb'
 
     return_code = True
 
@@ -1128,12 +1134,13 @@ class BenchRepo:
                                 'options': {
                                             'update': {
                                                         'LML': f"cb_{combined_name}",
-                                                        'mode': 'add',
+                                                        'mode': 'replace',
                                                         'sql_update_contents': {
                                                           'vars': 'mintsinserted',
                                                           'sqldebug': 1,
                                                           # This SQL first deletes its old entries from the timestamp table,
                                                           # then inserts the new ones, tagging them with its own name as the source.
+                                                          # Group by timestamp; MIN(_status) ensures 'F' wins over 'S'
                                                           'sql': f"""DELETE FROM "cb_{benchname}_timestamps" WHERE source = "{combined_name}";
               INSERT INTO "cb_{benchname}_timestamps" ("ts", "source", "_status")
                         SELECT "ts", "{combined_name}", "_status"
@@ -1154,15 +1161,45 @@ class BenchRepo:
       # Prepare sanitized parameter names and aggregated metrics strings
       params_str = ''.join([f', "{key.replace(" ", "_")}"' for key in parameters])
       insert_metrics_str = ''.join([f',{lb}                                "{m.replace(" ", "_")}_min", "{m.replace(" ", "_")}_avg", "{m.replace(" ", "_")}_max"' for m in graph_metrics])
-      select_metrics_str = ''.join([f',{lb}                                MIN("{m.replace(" ", "_")}"),AVG("{m.replace(" ", "_")}"),MAX("{m.replace(" ", "_")}")' for m in graph_metrics])
+      select_metrics_str = ''.join([
+          f',{lb}                                MIN(NULLIF("{m.replace(" ", "_")}", "")),AVG(NULLIF("{m.replace(" ", "_")}", "")),MAX(NULLIF("{m.replace(" ", "_")}", ""))' 
+          for m in graph_metrics
+      ])
       groupby_params_str = ', '.join([f'"{key.replace(" ", "_")}"' for key in parameters])
 
       # Getting history of status (Oldest -> Newest)
+      # Here we want to generate one status entry per timestamp
       # We use a subquery with ORDER BY to ensure GROUP_CONCAT joins them in chronological order.
-      full_hist_sql = "GROUP_CONCAT(_status, '-')"
-      history_expr = f"CASE WHEN COUNT(_status) > {history_n} THEN '-' || SUBSTR({full_hist_sql}, -{history_str_len}) ELSE {full_hist_sql} END"
 
-      # Description of the overview table for this given benchmark/tab
+      # This tells the subquery: "Only look at data that matches the current Overview row"
+      # Example result: T2."System" = T1."System" AND T2."Experiment" = T1."Experiment"
+      match_conditions = []
+      for key in parameters:
+        col_name = key.replace(' ', '_')
+        match_conditions.append(f'T2."{col_name}" = T1."{col_name}"')
+      
+      match_expr = " AND ".join(match_conditions)
+      if not match_expr: match_expr = "1=1" # Safety fallback
+
+      # Building the History Subquery:
+      # - Filter by the current parameters (match_expr)
+      # - Group by "ts" to collapse multiple points into ONE status (MIN: F wins over S)
+      # - Order by "ts" ASC
+      # - Concatenate the results
+      inner_history_sql = f"SELECT GROUP_CONCAT(daily_stat, '-') FROM (SELECT MIN(\"_status\") as daily_stat FROM \"cb_{combined_name}_data\" AS T2 WHERE {match_expr} GROUP BY \"ts\" ORDER BY \"ts\" ASC)"
+
+      # We also need a subquery to count the DISTINCT timestamps for the final dash logic (when there are further status points)
+      count_subquery = f"SELECT COUNT(DISTINCT \"ts\") FROM \"cb_{combined_name}_data\" AS T2 WHERE {match_expr}"
+
+      history_expr = f"(CASE WHEN ({count_subquery}) > {history_n} THEN '-' || substr(({inner_history_sql}), -{history_str_len}) ELSE ({inner_history_sql}) END)"
+
+      # Build a HAVING clause to exclude groups where ANY grouping parameter is empty
+      # (These "ghost" groups would be "stuck" separately on the table, since they are not valid runs)
+      # This string effectively hides rows where the primary keys are missing/invalid from the table
+      having_clauses = [f'"{k.replace(" ", "_")}" <> \'\'' for k in parameters]
+      having_str = "HAVING " + " AND ".join(having_clauses) if having_clauses else ""
+
+      # Description of the overview table
       tables.append({'table': { 'name': f'cb_{combined_name}_overview',
                                 'options': {
                                             'update': {
@@ -1177,8 +1214,11 @@ class BenchRepo:
                                 SUM(CASE WHEN "_status" <> 'F' THEN 1 ELSE 0 END),
                                 MIN("ts"), MAX("ts")
                                 {params_str}{select_metrics_str}
-                        FROM (SELECT * FROM "cb_{combined_name}_data" ORDER BY "ts" ASC)
-                        GROUP by {groupby_params_str};
+                        FROM (
+                            SELECT * FROM "cb_{combined_name}_data" ORDER BY "ts" ASC
+                        ) AS T1
+                        GROUP by {groupby_params_str}
+                        {having_str};
 """.strip(),
                                                                     },
                                                       },
@@ -1199,8 +1239,14 @@ class BenchRepo:
 
     # After processing all tabs, create the intermediate timestamp tables for each benchmark
     for benchname in benchmarks_processed:
-      full_hist_sql = "GROUP_CONCAT(_status, '-')"
-      history_expr_global = f"CASE WHEN COUNT(_status) > {history_n} THEN '-' || SUBSTR({full_hist_sql}, -{history_str_len}) ELSE {full_hist_sql} END"
+      # Subquery to get one status per timestamp (F wins over S, so we use MIN) for the global timeline
+      # No match_expr needed here because we are aggregating the whole benchmark table.
+      inner_history_sql_global = f"SELECT GROUP_CONCAT(daily_stat, '-') FROM (SELECT MIN(\"_status\") as daily_stat FROM \"cb_{benchname}_timestamps\" GROUP BY \"ts\" ORDER BY \"ts\" ASC)"
+      
+      # Subquery to count UNIQUE runs for the dash logic
+      count_subquery_global = f"SELECT COUNT(DISTINCT \"ts\") FROM \"cb_{benchname}_timestamps\""
+
+      history_expr_global = f"(CASE WHEN ({count_subquery_global}) > {history_n} THEN '-' || substr(({inner_history_sql_global}), -{history_str_len}) ELSE ({inner_history_sql_global}) END)"
 
       tables.append({'table': {
                                 'name': f"cb_{benchname}_timestamps",
@@ -1213,10 +1259,10 @@ class BenchRepo:
                           INSERT INTO "cb_benchmarks" ("name", "count", "valid_count", "min_ts", "max_ts", "_status")
                                     SELECT "{benchname}",
                                           COUNT("ts"),
-                                          SUM(CASE WHEN _status <> 'F' THEN 1 ELSE 0 END),
+                                          SUM(CASE WHEN "_status" <> 'F' THEN 1 ELSE 0 END),
                                           MIN("ts"), MAX("ts"),
                                           {history_expr_global}
-                                    FROM (SELECT * FROM "cb_{benchname}_timestamps" ORDER BY "ts" ASC);
+                                    FROM "cb_{benchname}_timestamps";
 """.strip(),
                                                                     },
                                                       },
@@ -1263,7 +1309,7 @@ class BenchRepo:
         'description': config.get('description',''),
         'ref': [ 'datatable' ],
         'data': {
-          'default_columns': [ 'Name', 'Timings', 'Parameters', '#Runs', 'Status' ],
+          'default_columns': [ 'Name', 'Timings', 'Parameters', '#Points', 'Status' ],
           'info': [{'Benchmark' : benchname}]
           }
       }
@@ -1287,7 +1333,7 @@ class BenchRepo:
       else:
         # --- This is a standalone page (no tabs) ---
         # Add the page's name to its content
-        content_definition['name'] = benchname.replace(" ","_")
+        content_definition['name'] = benchname
         content_definition['section'] = f'cb_{benchname.replace(" ","_")}'
         
         # Store it directly under its benchmark name
@@ -1335,30 +1381,30 @@ class BenchRepo:
           {
             'field': "min_ts",
             'headerName': "Date of First Run", 
-            'headerTooltip': "Minimum timestamp of the benchmark",
+            'headerTooltip': "Minimum timestamp on the benchmark",
             'cellDataType': "text",
           },
           {
             'field': "max_ts",
             'headerName': "Date of Last Run", 
-            'headerTooltip': "Maximum timestamp of the benchmark",
+            'headerTooltip': "Maximum timestamp on the benchmark",
             'cellDataType': "text",
           },
         ]
       },
       {
-        'headerName': "#Runs",
-        'groupId': "#Runs",
+        'headerName': "#Points",
+        'groupId': "#Points",
         'children': [
           {
             'field': "count",
             'headerName': "Total", 
-            'headerTooltip': "Total number of runs",
+            'headerTooltip': "Total number of points",
           },
           {
             'field': "valid_count",
             'headerName': "Valid", 
-            'headerTooltip': "Number of valid runs",
+            'headerTooltip': "Number of valid points",
           },
         ]
       },
@@ -1856,10 +1902,17 @@ class BenchRepo:
         if include and not self.search_patterns(include,unit):
           to_remove.add(unit)
       elements -= to_remove
-    if isinstance(elements,list):
+    elif isinstance(elements,list):
       # When elements is a list (e.g. 'metrics' list, containing a list of dicts)
       # Check if each of the elements of the list contains the patterns
       for idx,unit in enumerate(elements):
+
+        # We want to preserve Failed runs to be able to set correctly the status history
+        # If the unit (row) is marked as FAILED, we skip all filtering logic.
+        # This ensures the failed run is kept in the list regardless of missing data.
+        if isinstance(unit, dict) and unit.get('_status') == 'F':
+            continue 
+        
         if exclude and self.check_unit(idx,unit,exclude,text="excluded"):
           to_remove.add(idx)
         if include and not self.check_unit(idx,unit,include,text="included"):
@@ -2278,6 +2331,9 @@ def main():
       log.critical(f"Config {args.config} does not exist!\n")
       parser.print_help()
       exit(1)
+    if not isinstance(config, dict):
+      log.error(f"Config file {args.config} must contain a dictionary/mapping.\n")
+      exit(1)
   else:
     log.critical("Config file not given!\n")
     parser.print_help()
@@ -2290,6 +2346,9 @@ def main():
     if os.path.isfile(args.tsfile):
       with open(args.tsfile, 'r') as file:
         lastts = yaml.safe_load(file)
+      if not isinstance(lastts, dict):
+        # If the file does not return a dict, it's either empty or wrong. Restart the lastts dict here.
+        lastts={}
     else:
       log.warning(f"'ts' file {args.tsfile} does not exist! Getting all results...\n")
 
@@ -2300,7 +2359,7 @@ def main():
     start_time = time.time()
 
     # Looping over outer entries, that should represent repositories
-    for repo_name,repo_config in config.items():
+    for repo_name, repo_config in config.items():
       log.info(f"Processing '{repo_name}'\n")
 
       # Getting credentials for the current server
@@ -2314,16 +2373,31 @@ def main():
         common_config = {key:value for key,value in repo_config.items() if key !="tabs"}
         # Distributing common configuration for all internal tabs (rewriting specific configuration with the most internal one)
         for tab in repo_config['tabs'].keys():
-          repo_config['tabs'][tab] = common_config | repo_config['tabs'][tab]
+          # Start with a deep copy of the common config
+          merged_config = deepcopy(common_config)
+          
+          # Deep update it with the specific tab config
+          # This ensures keys like 'plot_settings' get merged, not overwritten.
+          BenchRepo.deep_update(merged_config, repo_config['tabs'][tab])
+          
+          # Store the result
+          repo_config['tabs'][tab] = merged_config
 
       # Normalizing the tabs or single page for loop
       group = repo_config['tabs'] if internal_tabs else {repo_name: repo_config}
+
+      # This object will collect data from ALL tabs within this repository
+      repo_bench = BenchRepo(name=repo_name) 
+
+      # Start repo timer
+      repo_start_time = time.time()
 
       # Loop over tabs (if existing) or single page
       # (group points to either the tabs or to the single page)
       for group_name,group_config in group.items():
         sources = group_config.get('sources') or {}
         group = 'tab' if internal_tabs else 'repository'
+        # combined_name is used for logging and tracking specific tabs
         combined_name = f"{repo_name}:{group_name}" if internal_tabs else repo_name
 
         # Checking if something is to be done on current repo
@@ -2361,14 +2435,11 @@ def main():
             # Update the list in-place so downstream code sees the full config
             plot_list[i] = merged_plot
 
-        # Start repo timer
-        repo_start_time = time.time()
-
         log.info(f"Collecting data for '{combined_name}'...\n")
 
         # Initializing new object of type given in config
         # This object is given per page or per internal tab (in case tabs are given)
-        bench = BenchRepo(
+        tab_bench = BenchRepo(
           name=repo_name,
           tab=group_name if internal_tabs else None,
           config=group_config,
@@ -2376,53 +2447,61 @@ def main():
           skipupdate=args.skipupdate,
         )
 
-        success = bench.get_or_update_repo(folder=args.repofolder if args.repofolder else './')
+        success = tab_bench.get_or_update_repo(folder=args.repofolder if args.repofolder else './')
         if not success:
           log.error(f"Error cloning or updating repository of '{combined_name}'. Skipping...\n")
           continue
 
-        success = bench.get_metrics()
+        success = tab_bench.get_metrics()
         if not success:
-          log.error(f"Error collecting metrics. Skipping...\n")
+          log.error(f"Error collecting metrics for '{combined_name}'. Skipping...\n")
           continue
 
-        # End repo timer
+        # Update lastts for this specific tab/combined_name
+        lastts[combined_name] = tab_bench.lastts
+
+        # This combines the _data (metrics, raw, etc.) and _dict (LML output)
+        repo_bench += tab_bench
+
+      # When no single LML is used (an output per repo), the LML and configurations are generated for each of them
+      if (not args.singleLML):
         repo_end_time = time.time()
-        lastts[combined_name] = bench.lastts
-        log.debug(f"Gathering '{combined_name}' information took {repo_end_time - repo_start_time:.4f}s\n")
+        log.debug(f"Gathering '{repo_name}' information took {repo_end_time - repo_start_time:.4f}s\n")
 
-        # When there's an object per entry, the LML and configurations are generated for each of them
-        if (not args.singleLML):
+        # Outputing the different LMLs (that must be added to the DBupdate workflow on LLview)
+        if repo_bench.empty():
+          log.warning(f"Object for '{repo_name}' is empty, output will include only timings...\n")
 
-          # Outputing the different LMLs (that must be added to the DBupdate workflow on LLview)
-          if bench.empty():
-            log.warning(f"Object for '{combined_name}' is empty, output will include only timings...\n")
+        # Add timing key for the whole repo
+        timing = {}
+        name = f'get{repo_name.replace(" ","_")}'
+        timing[name] = {}
+        timing[name]['startts'] = repo_start_time
+        timing[name]['datats'] = repo_start_time
+        timing[name]['endts'] = repo_end_time
+        timing[name]['duration'] = repo_end_time - repo_start_time
+        timing[name]['nelems'] = len(repo_bench)
+        timing[name]['__nelems_benchmark'] = len(repo_bench)
+        timing[name]['__type'] = 'pstat'
+        timing[name]['__id'] = f'pstat_get{repo_name.replace(" ","_")}'
+        repo_bench.add(timing)
 
-          # Add timing key for each 
-          timing = {}
-          name = f'get{combined_name.replace(" ","_")}'
-          timing[name] = {}
-          timing[name]['startts'] = repo_start_time
-          timing[name]['datats'] = repo_start_time
-          timing[name]['endts'] = repo_end_time
-          timing[name]['duration'] = repo_end_time - repo_start_time
-          timing[name]['nelems'] = len(bench)
-          # The __nelems_{type} is used to indicate to DBupdate the number of elements - important when the file is empty
-          timing[name][f"__nelems_benchmark"] = len(bench)
-          timing[name]['__type'] = 'pstat'
-          timing[name]['__id'] = f'pstat_get{combined_name.replace(" ","_")}'
-          bench.add(timing)
+        # Generate One LML file for the whole Repo
+        repo_bench.to_LML(
+          os.path.join(args.outfolder if args.outfolder else './',f"{repo_name.replace(" ","_")}_LML.xml"),
+          prefix=repo_name
+        )
 
-          bench.to_LML(os.path.join(args.outfolder if args.outfolder else './',f"{combined_name.replace(" ","_")}_LML.xml"))
-
-          # Creating configuration files
-          success = bench.gen_configs(folder=(args.outconfigfolder if args.outconfigfolder else ''),history_n=args.statuspoints)
-          if not success:
-            log.error(f"Error generating configuration files for '{combined_name}'!\n")
-            continue
-        else:
-          # Accumulating for a single LML
-          unique = unique + bench
+        # Generate One Set of Configs for the whole Repo
+        # Since repo_bench contains data for ALL tabs, gen_configs will iterate
+        # through them and generate the correct merged or separate config entries.
+        success = repo_bench.gen_configs(folder=(args.outconfigfolder if args.outconfigfolder else ''),history_n=args.statuspoints)
+        if not success:
+          log.error(f"Error generating configuration files for '{repo_name}'!\n")
+          continue
+      else:
+        # Accumulating for a single LML
+        unique = unique + repo_bench
 
     # End generic timer
     end_time = time.time()

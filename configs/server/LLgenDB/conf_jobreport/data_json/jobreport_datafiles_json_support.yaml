@@ -224,6 +224,7 @@
     format:         'csv'
     columns:        'name,min_ts,max_ts,count,valid_count,_status'
     column_convert: 'min_ts->todate_std_hhmm,max_ts->todate_std_hhmm'
+    order:          'name ASC'
 
 # %include "../../conf_cb/tablecsv_cb.yaml"
 # %include "../../conf_cb/csv_cb.yaml"
