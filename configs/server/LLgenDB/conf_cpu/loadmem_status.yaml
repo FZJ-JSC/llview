@@ -20,7 +20,7 @@
                                   load_max, used_cores_avg, used_cores_min, used_cores_max,
                                   total_cores_avg, used_mem_avg, used_mem_min, used_mem_max,
                                   total_mem_avg)
-                                              SELECT ts, feat||status||substatus, feat, status, substatus, count(*),
+                                              SELECT ts, feat||status||substatus, feat, status, substatus, count(DISTINCT nodeid),
                                                      AVG(load),       MIN(load),       MAX(load),
                                                      AVG(used_cores), MIN(used_cores), MAX(used_cores), AVG(total_cores),
                                                      AVG(used_mem),   MIN(used_mem),   MAX(used_mem),   AVG(total_mem)
@@ -31,7 +31,7 @@
                                   load_max, used_cores_avg, used_cores_min, used_cores_max,
                                   total_cores_avg, used_mem_avg, used_mem_min, used_mem_max,
                                   total_mem_avg)
-                                              SELECT ts, feat||status||"ALL",  feat, status, "ALL", count(*),
+                                              SELECT ts, feat||status||"ALL",  feat, status, "ALL", count(DISTINCT nodeid),
                                                      AVG(load),       MIN(load),       MAX(load),
                                                      AVG(used_cores), MIN(used_cores), MAX(used_cores), AVG(total_cores),
                                                      AVG(used_mem),   MIN(used_mem),   MAX(used_mem),   AVG(total_mem)
@@ -42,7 +42,7 @@
                                   load_max, used_cores_avg, used_cores_min, used_cores_max,
                                   total_cores_avg, used_mem_avg, used_mem_min, used_mem_max,
                                   total_mem_avg)
-                                              SELECT ts, "ALL"||status||substatus, "ALL", status, substatus, count(*),
+                                              SELECT ts, "ALL"||status||substatus, "ALL", status, substatus, count(DISTINCT nodeid),
                                                      AVG(load),       MIN(load),       MAX(load),
                                                      AVG(used_cores), MIN(used_cores), MAX(used_cores), AVG(total_cores),
                                                      AVG(used_mem),   MIN(used_mem),   MAX(used_mem),   AVG(total_mem)
@@ -53,7 +53,7 @@
                                   load_max, used_cores_avg, used_cores_min, used_cores_max,
                                   total_cores_avg, used_mem_avg, used_mem_min, used_mem_max,
                                   total_mem_avg)
-                                              SELECT ts, "ALL"||status||"ALL", "ALL", status, "ALL", count(*),
+                                              SELECT ts, "ALL"||status||"ALL", "ALL", status, "ALL", count(DISTINCT nodeid),
                                                      AVG(load),       MIN(load),       MAX(load),
                                                      AVG(used_cores), MIN(used_cores), MAX(used_cores), AVG(total_cores),
                                                      AVG(used_mem),   MIN(used_mem),   MAX(used_mem),   AVG(total_mem)
@@ -64,7 +64,7 @@
                                   load_max, used_cores_avg, used_cores_min, used_cores_max,
                                   total_cores_avg, used_mem_avg, used_mem_min, used_mem_max,
                                   total_mem_avg)
-                                              SELECT ts, "ALL"||"ALL"||"ALL", "ALL", "ALL", "ALL", count(*),
+                                              SELECT ts, "ALL"||"ALL"||"ALL", "ALL", "ALL", "ALL", count(DISTINCT nodeid),
                                                      AVG(load),       MIN(load),       MAX(load),
                                                      AVG(used_cores), MIN(used_cores), MAX(used_cores), AVG(total_cores),
                                                      AVG(used_mem),   MIN(used_mem),   MAX(used_mem),   AVG(total_mem)
