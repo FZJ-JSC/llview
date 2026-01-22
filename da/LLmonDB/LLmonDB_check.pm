@@ -59,8 +59,23 @@ sub checkDB {
 
     # get tables in DB
     my $tables_in_DB_ref = $dbobj->query_tables();
+    
+    # Helper map for case-insensitive lookup
+    my %tables_in_db_lc; 
+
     if($tables_in_DB_ref) {
-      %tables_in_db = map { $_ => 1 } @{$tables_in_DB_ref};
+      # Build standard map (including the safe quoting fix we discussed)
+      %tables_in_db = map { 
+        my $t = $_; $t =~ s/^"|"$//g; 
+        $t => 1 
+      } @{$tables_in_DB_ref};
+
+      # Build lowercase map for robust matching
+      foreach my $t (@{$tables_in_DB_ref}) {
+        my $clean_t = $t; 
+        $clean_t =~ s/^"|"$//g;
+        $tables_in_db_lc{lc($clean_t)} = $clean_t;
+      }
     }
     
     # check tables from config
@@ -77,9 +92,28 @@ sub checkDB {
       printf("  LLmonDB:  -> check $db table $table\n") if($debug>=3);
       my $configcoldefs=$self->{CONFIG}->get_columns_defs($db,$table);
 
-      if(exists($tables_in_db{$clean_table}) || exists($tables_in_db{$table})) {
+      # Check existence using lowercase map to find mismatches like "table" vs "TABLE"
+      my $db_table_match = $tables_in_db_lc{lc($clean_table)};
+
+      if(defined($db_table_match) || exists($tables_in_db{$clean_table}) || exists($tables_in_db{$table})) {
         
-        my $dbcoldefs=$dbobj->query_columns($table); 
+        # Use the name actually found in the DB (e.g. "table")
+        my $real_db_table_name = $db_table_match || $clean_table;
+
+        # Check if the casing is different
+        if($real_db_table_name ne $clean_table) {
+          $found++;
+          printf("  LLmonDB:     CHECK: table name casing changed ('$real_db_table_name' to '$clean_table')\n");
+          
+          if(!$dryrun) {
+            $do_recreate_table=1;
+          } else {
+            printf("  LLmonDB:     [DRY: rename/recreate table $clean_table ]\n");
+          }
+        }
+
+        # Query columns using the REAL name so the DB driver finds it
+        my $dbcoldefs=$dbobj->query_columns($real_db_table_name);
         
         # Create a normalized lookup for config columns
         my %clean_config_lookup;
@@ -135,7 +169,8 @@ sub checkDB {
         if($do_recreate_table) {
           printf("  LLmonDB:     CHECK: re-create table $table in DB due to modification of columns, data of existing columns will be copied\n");
           if(!$dryrun) {
-            $dbobj->recreate_table($table,$configcoldefs);
+            $dbobj->recreate_table($clean_table,$configcoldefs); # Note: Use clean_table here as discussed
+            $done++;
           } else {
             $found++;
             printf("  LLmonDB:     [DRY: re-create database table ($db,$table)]\n");

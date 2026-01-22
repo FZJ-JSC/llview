@@ -451,15 +451,27 @@ sub query_tables {
   my $sql = "SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%' ORDER BY 1";
 
   my $sth = $self->{DBH}->prepare($sql);
+  
+  if(!$sth) {
+      # Add standard error logging
+      my $db_error = $self->{DBH}->errstr;
+      printf(STDERR "[query_tables] ERROR: %s\n", $db_error);
+      return(undef);
+  }
+
   my $rc=$sth->execute();
   $self->LOGREPORT($self->{DBNAME},"E:query_tables",caller(),$DBI::errstr) if(!defined($rc));
 
   while(@data = $sth->fetchrow_array()) {
-    push(@{$values_ref},$ data[0] );
+    my $clean_name = $data[0];
+    
+    # Normalize the name by stripping potential quotes
+    $clean_name =~ s/^"|"$//g;
+    
+    push(@{$values_ref}, $clean_name);
   }
   return($values_ref);
 }
-
 
 # return pointer to array of columns names
 sub query_columns {
