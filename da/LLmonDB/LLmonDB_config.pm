@@ -335,8 +335,8 @@ sub get_columns_defs {
 }
 
 
-# returns for a givrn table a list of index lists
-# (data structure of result is a list of list)
+# returns for a given table a list of index definitions
+# (data structure of result is a list of HASH references)
 sub get_index_columns {
   my($self) = shift;
   my($db,$table)=@_;
@@ -349,19 +349,41 @@ sub get_index_columns {
   }
 
   return($result) if(!exists($tableref->{options}));
-  return($result) if(!exists($tableref->{options}->{index}));
 
-  if(ref($tableref->{options}->{index})) {
-      if(ref($tableref->{options}->{index}) eq "ARRAY") {
-        foreach my $il (@{$tableref->{options}->{index}}) {
-          push(@{$result},[split(/\s*,\s*/,$il)]);
+  # Process standard 'index' key
+  if(exists($tableref->{options}->{index})) {
+    my $idx_opt = $tableref->{options}->{index};
+    if(ref($idx_opt)) {
+      if(ref($idx_opt) eq "ARRAY") {
+        foreach my $il (@{$idx_opt}) {
+          # Push a hash ref with columns AND unique=0
+          push(@{$result}, { cols => [split(/\s*,\s*/,$il)], unique => 0 });
         }
       } else {
         print STDERR "LLmonDB_config: WARNING: unknown index data structure for table $db, $table\n";
       }
-  } else {
-      push(@{$result},[split(/\s*,\s*/,$tableref->{options}->{index})]);
+    } else {
+      push(@{$result}, { cols => [split(/\s*,\s*/,$idx_opt)], unique => 0 });
+    }
   }
+
+  # Process new 'unique_index' key
+  if(exists($tableref->{options}->{unique_index})) {
+    my $uidx_opt = $tableref->{options}->{unique_index};
+    if(ref($uidx_opt)) {
+      if(ref($uidx_opt) eq "ARRAY") {
+        foreach my $il (@{$uidx_opt}) {
+          # Push a hash ref with columns AND unique=1
+          push(@{$result}, { cols => [split(/\s*,\s*/,$il)], unique => 1 });
+        }
+      } else {
+        print STDERR "LLmonDB_config: WARNING: unknown unique_index data structure for table $db, $table\n";
+      }
+    } else {
+      push(@{$result}, { cols => [split(/\s*,\s*/,$uidx_opt)], unique => 1 });
+    }
+  }
+
   return($result);
 }
 

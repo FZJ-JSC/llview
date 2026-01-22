@@ -362,7 +362,11 @@ class BenchRepo:
     If not given, use current working directory
     (Env vars are expanded)
     """
-    folder = os.path.expandvars(os.path.join(folder,self._name))
+    # Determine unique folder name
+    # If tab exists, folder becomes ./Bench_Tab, otherwise ./Bench
+    repo_dir_name = f"{self._name}_{self._tab}" if self._tab else self._name
+    folder = os.path.expandvars(os.path.join(folder, repo_dir_name))
+
     # Storing folder to use later when getting sources
     benchmark_data = self._get_benchmark_data(self._name, self._tab)
     config = benchmark_data['config']
@@ -427,13 +431,17 @@ class BenchRepo:
     for stype,source_list in config['sources'].items():
       if stype == 'folders':
         # Looping through all given folders, check if it exists, 
-        # and if so, get all files inside them into 'sources' set
+        # and if so, get all files inside them (RECURSIVELY) into 'sources' set
         for folder in source_list:
-          current_folder = os.path.join(config['folder'],folder)
+          current_folder = os.path.join(config['folder'], folder)
           if not os.path.isdir(current_folder):
             self.log.error(f"Folder '{current_folder}' does not exist! Skipping...\n")
             continue
-          sources.update(os.path.join(current_folder, fn) for fn in next(os.walk(current_folder))[2])
+          # Walk the directory tree to find all files recursively
+          for root, _, files in os.walk(current_folder):
+            # Construct full paths for all files in this directory at once
+            # and add them to the set in one go.
+            sources.update(os.path.join(root, fn) for fn in files)
       elif stype == 'files':
         # Looping through all given files, check if it exists, 
         # and if so, add them into 'sources' set
@@ -714,6 +722,12 @@ class BenchRepo:
           if not match:
             self.log.error(f"'{metric_name}' could not be matched using regex '{spec['regex']}' on filename '{source}'! Skipping...\n")
             continue
+          
+          # Check if the regex captured a group
+          if not match.groups():
+            self.log.error(f"Regex '{spec['regex']}' matched '{source}' but did not capture any value (missing parentheses?). Skipping '{metric_name}'...\n")
+            continue
+
           # Use the helper function to get the typed value
           raw_value = match.group(1)
           typed_value, value_type = self._type_cast_value(raw_value, spec, metric_name)
@@ -1937,12 +1951,21 @@ class BenchRepo:
     Returns True if of the pattern is found
     """
     if isinstance(patterns,str): # If rule is a simple string
-      return bool(re.search(patterns, unit))
+      try:
+        return bool(re.search(patterns, unit))
+      except re.error as e:
+        self.log.error(f"Invalid Regex pattern '{patterns}': {e}\n")
+        return False
+
     elif isinstance(patterns,list): # If list of rules
       for pattern in patterns: # loop over list - that can be strings or dictionaries
-        if isinstance(pattern,str): # If item in list is a simple string
-          if re.search(pattern, unit):
-            return True # Returns True if a pattern is found
+        if isinstance(pattern,str):  # If item in list is a simple string
+          try:
+            if re.search(pattern, unit):
+              return True # Returns True if a pattern is found
+          except re.error as e:
+            self.log.error(f"Invalid Regex pattern '{pattern}': {e}\n")
+            continue
     #     elif isinstance(pattern,dict): # If item in list is a dictionary
     #       for key,value in pat.items():
     #         if isinstance(value,str): # if dictionary value is a simple string

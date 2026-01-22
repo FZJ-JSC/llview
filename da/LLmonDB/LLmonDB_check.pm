@@ -218,7 +218,7 @@ sub checkDB {
     if($index_in_DB_ref) {
       %index_in_db = map { $_ => 1 } @{$index_in_DB_ref};
     }
-        
+
     foreach my $t (@{$self->{CONFIGDATA}->{databases}->{$db}->{tables}}) {
       my $tableref=$t->{table};
       $table=$tableref->{name};
@@ -227,11 +227,23 @@ sub checkDB {
 
       my $indexdefs=$self->{CONFIG}->get_index_columns($db,$table);
       my $icount=0;
-      foreach my $indexcoldefs (@{$indexdefs}) {
+      
+      # Loop over the structure of indexdefs (list of hashrefs including index and unique flag)
+      foreach my $indexdef (@{$indexdefs}) {
+        # Extract columns and unique flag
+        my $indexcoldefs = $indexdef->{cols};
+        my $is_unique    = $indexdef->{unique};
+
         if($#{$indexcoldefs}>=0) {
           $icount++;
-          $indextable=sprintf("%s_idx",$clean_table) if($icount==1);
-          $indextable=sprintf("%s_%d_idx",$clean_table,$icount) if($icount>1);
+          
+          # Naming convention: _idx for standard, _uidx for unique
+          # This change ensures we automatically clean up old standard indexes
+          # if we switch to unique in the config.
+          my $suffix = $is_unique ? "uidx" : "idx";
+
+          $indextable=sprintf("%s_%s",$clean_table,$suffix) if($icount==1);
+          $indextable=sprintf("%s_%d_%s",$clean_table,$icount,$suffix) if($icount>1);
           $indextables_in_config{$indextable}=1;
 
           printf("  LLmonDB:  -> check $db indextable $indextable\n") if($debug>=3);
@@ -249,7 +261,7 @@ sub checkDB {
                 
                 # Get and clean DB column
                 my $clean_db_col = $dbcoldefs->{collist}->[$c];
-                $clean_db_col =~ s/^"|"$//g;  # Remove surrounding quotes from DB result too
+                $clean_db_col =~ s/^"|"$//g;  # Remove surrounding quotes
 
                 # Compare cleaned versions
                 if($clean_idx_col ne $clean_db_col) {
@@ -263,7 +275,8 @@ sub checkDB {
               printf("  LLmonDB:     CHECK: indextable for table $table has different columns  (DB:@{$dbcoldefs->{collist}}) != (Config:@{$indexcoldefs}), recreate index table\n");
               if(!$dryrun) {
                 $dbobj->remove_index($indextable);
-                $dbobj->create_index($table,$indextable,$indexcoldefs);
+                # Pass unique flag to create_index
+                $dbobj->create_index($table,$indextable,$indexcoldefs,$is_unique);
                 $done++;
               } else {
                 printf("  LLmonDB:     [DRY: re-create database index ($db,$indextable)]\n");
@@ -273,7 +286,8 @@ sub checkDB {
             $found++; 
             printf("  LLmonDB:     CHECK: indextable for table $table does not exists in DB, create indextable\n");
             if(!$dryrun) {
-              $dbobj->create_index($table,$indextable,$indexcoldefs);
+              # Pass unique flag to create_index
+              $dbobj->create_index($table,$indextable,$indexcoldefs,$is_unique);
               $done++;
             } else {
               printf("  LLmonDB:     [DRY: create database index ($db,$indextable)]\n");

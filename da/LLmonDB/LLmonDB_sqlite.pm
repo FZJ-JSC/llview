@@ -365,7 +365,7 @@ sub remove_table {
 # create a new index table
 sub create_index {
   my($self) = shift;
-  my($table, $indextable, $colsref) = @_;
+  my($table, $indextable, $colsref, $unique) = @_;
 
   # Clean and Quote Table Name
   my $clean_table = $table;
@@ -386,16 +386,47 @@ sub create_index {
   } @{$colsref};
 
   # Build SQL
-  my $sql = "CREATE INDEX $safe_indextable ON $safe_table (";
+  # Determine if we need UNIQUE INDEX or just INDEX
+  my $type = $unique ? "UNIQUE INDEX" : "INDEX";
+  
+  my $sql = "CREATE $type $safe_indextable ON $safe_table (";
   $sql .= join(",", @safe_cols);
   $sql .= ")";
-  
-  $self->{DBH}->do($sql)
-    or die "CREATE INDEX FAILED!\nSQL: $sql\nError: " . $self->{DBH}->errstr;
+
+  # Execute inside an eval block to catch errors gracefully
+  eval {
+    $self->{DBH}->do($sql);
+  };
+
+  # Check for errors
+  if ($@ || $self->{DBH}->err) {
+    my $err_msg = $self->{DBH}->errstr;
     
+    # Check if this is specifically a UNIQUE constraint error
+    # SQLite typically returns: "UNIQUE constraint failed: ..."
+    if ($unique && $err_msg =~ /UNIQUE constraint/i) {
+      
+      # Build the deduplication command dynamically
+      # to suggest the user how to fix the error by deleting duplicated data on the table
+      my $col_list = join(", ", @safe_cols);
+      my $fix_sql = "DELETE FROM $safe_table WHERE rowid NOT IN (SELECT MIN(rowid) FROM $safe_table GROUP BY $col_list);";
+
+      print STDERR "\n" . ("!" x 80) . "\n";
+      print STDERR "  LLmonDB_sqlite: CRITICAL ERROR: Duplicate data detected while creating UNIQUE INDEX.\n";
+      print STDERR "  LLmonDB_sqlite: The database contains duplicate rows for columns: $col_list\n";
+      print STDERR "  LLmonDB_sqlite: To fix this, you must run the following SQL command to clean the data:\n";
+      print STDERR "\n  $fix_sql\n\n";
+      print STDERR "  LLmonDB_sqlite: After running this, try running checkDB again.\n";
+      print STDERR ("!" x 80) . "\n\n";
+    }
+
+    # Pass the death up the chain
+    die "CREATE INDEX FAILED!\nSQL: $sql\nError: " . $err_msg;
+  }
+
   $self->mycommit();
 
-  print "\t   LLmonDB_sqlite: created index $safe_indextable for $self->{FNAME} ($sql)\n";
+  print "\t   LLmonDB_sqlite: created $type $safe_indextable for $self->{FNAME} ($sql)\n";
   
   return();
 }
