@@ -48,6 +48,7 @@ stages:
     - pip3 install plotly
     - pip3 install plotly -U
     - pip3 install cmcrameri
+    - pip3 install pytz
     # Installing Liberation fonts
     - ls ~/.local/share/fonts/Liberation* || exit_status=$?
     - |
