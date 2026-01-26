@@ -43,6 +43,7 @@ import Nodelist
 import msg
 import GenerateHTML
 from PlotlyFigs import CreateUnifiedPlotlyFig
+from ReportDataManager import ReportDataManager
 
 def check_shutdown():
   """
@@ -124,6 +125,9 @@ def _ProcessReport(njob,total_jobs,job,config):
   with open(job) as json_file:
     data = json.load(json_file)
 
+  # Starting a data manager for this report
+  data_manager = ReportDataManager()
+
   # Getting timezonegap
   config['appearance']['timezonegap'] = timezone(config['appearance']['timezone']).localize(datetime.datetime.strptime(data["job"]["starttime"],'%Y-%m-%d %H:%M:%S')).utcoffset().seconds
 
@@ -148,10 +152,9 @@ def _ProcessReport(njob,total_jobs,job,config):
       if(data['gpu']['gpulist']=="0"):
         log.warning("No GPU information yet - report skipped!")
         return    # skip job without the GPU list
-      data['gpu']['gpu_util_avg'] = float(data['gpu']['gpu_util_avg'])
+      data['gpu']['gpu_util_avg'] = float(data['gpu'].get('gpu_util_avg',0))
       if 'gpu_active_avg' in data['gpu']:
-        data['gpu']['gpu_active_avg'] = float(data['gpu']['gpu_active_avg'])
-      data['gpu']['usage_avg'] = 0.0
+        data['gpu']['gpu_active_avg'] = float(data['gpu'].get('gpu_active_avg',0))
   except (ValueError,KeyError):
     data['job']['numgpus'] = 0
     num_gpus = 0
@@ -778,19 +781,19 @@ def _ProcessReport(njob,total_jobs,job,config):
     ############################################################################
     # First page:
     # Also gets min and max date from average plot of first page
-    first_page_html,overview_fig,navbar,nodelist_html = FirstPage.FirstPage(pdf,data,config,df_overview,time_range,page_num,tocentries,num_cpus,num_gpus,gpus,nl_config,nodedict,error_nodes)
+    first_page_html,overview_fig,navbar,nodelist_html = FirstPage.FirstPage(pdf,data,config,df_overview,time_range,page_num,tocentries,num_cpus,num_gpus,gpus,nl_config,nodedict,error_nodes,data_manager)
 
     ############################################################################
     # Graphs
     for report in to_plot.values():
       figs.setdefault(report['type'].replace("\\",""),{})
-      figs[report['type'].replace("\\","")].update(CreateReports.CreateFullReport(pdf,data,config,page_num,report,files,time_range))
+      figs[report['type'].replace("\\","")].update(CreateReports.CreateFullReport(pdf,data,config,page_num,report,files,time_range,data_manager))
 
     ############################################################################
     # Custom graphs (User-defined)
     for section in to_plot_extra.values():
       figs.setdefault(section['type'].replace("\\",""),{})
-      figs[section['type'].replace("\\","")].update(CreateReports.CreateFullReport(pdf,data,config,page_num,section,files,time_range))
+      figs[section['type'].replace("\\","")].update(CreateReports.CreateFullReport(pdf,data,config,page_num,section,files,time_range,data_manager))
       figs[section['type'].replace("\\","")].update(CreateUnifiedPlotlyFig(data,config,section,files,time_range))
 
     ############################################################################
@@ -814,6 +817,7 @@ def _ProcessReport(njob,total_jobs,job,config):
                             nodelist=nodelist_html,
                             timeline=timeline_html,
                             system_report=system_report_html,
+                            data_manager=data_manager,
                             filename=output_html)
   # Moving files to final folder
   if config['move']:

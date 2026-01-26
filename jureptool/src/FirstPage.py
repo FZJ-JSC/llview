@@ -32,7 +32,7 @@ def AverageUsageBar(x,y,str,fig,config,avg):
   return
 
 
-def FirstPage(pdf,data,config,df_overview,time_range,page_num,tocentries,num_cpus,num_gpus,gpus,nl_config,nodedict,error_nodes):
+def FirstPage(pdf,data,config,df_overview,time_range,page_num,tocentries,num_cpus,num_gpus,gpus,nl_config,nodedict,error_nodes,data_manager):
   """
   Creates first page in job report
   """
@@ -336,7 +336,7 @@ def FirstPage(pdf,data,config,df_overview,time_range,page_num,tocentries,num_cpu
         page.ax1.set_xlim(time_range)
         page.ax1.xaxis.set_major_formatter(DateFormatter('%d/%m/%y\n%H:%M:%S'))
         if config['html'] or config['gzip']:
-          overview_fig = CreateOverviewFig(config,data,time_range,df_overview,gpus)
+          overview_fig = CreateOverviewFig(config,data,time_range,df_overview,gpus,data_manager)
     
     # Table of contents
     posy = 0.330

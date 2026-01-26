@@ -10,15 +10,18 @@
 #    Matthias Lapu (CEA)
 
 from tools import format_float_string,replace_vars
+import json
+import plotly.utils
 
 def CreateHTML( config,
                 figs,
-                navbar="",
-                first="",
-                overview="",
-                nodelist="",
-                timeline="",
-                system_report="",
+                navbar=None,
+                first=None,
+                overview=None,
+                nodelist=None,
+                timeline=None,
+                system_report=None,
+                data_manager=None,
                 filename="report.html"):
   """
   Collects together various html snippets from separate figures into a single html report page
@@ -440,10 +443,16 @@ def CreateHTML( config,
   var timeline = null;
   var catch_scroll = true;
   var repeat;
+  // Global variable to hold the shared data
+  // This will be populated by Python injection at the top of the file
+  var REPORT_SHARED_DATA = {};
+
 """
   html += f"""
   var sections ={{{', '.join([f'{section.replace(f"$","").replace(" ","_")}: null' for section in figs.keys()]) }}};
 """
+  if data_manager: html += f"  REPORT_SHARED_DATA = {data_manager.get_json_payload()};"
+
   html += """
   var lockzoom = null;
 
@@ -734,6 +743,106 @@ def CreateHTML( config,
     }
   }
 
+  // Helper to copy link
+  function copyLink(id) {
+    navigator.clipboard.writeText(window.location.href.split('#')[0] + '#' + id);
+  }
+
+  // Helper to open help
+  function openHelp() {
+    window.open('https://apps.fz-juelich.de/jsc/llview/docu/jobreport/metrics_list/', '_blank').focus();
+  }
+
+  // Helper to download data
+  // Modified to include Z axis data for heatmaps
+  function downloadPlotData(gd, filename) {
+    // Filter for scatter (lines/points) and heatmap trace types
+    const traces = gd.data.filter(t => t.type === 'scatter' || t.type === 'scattergl' || t.type === 'heatmap');
+    
+    // Construct a simplified object containing only the relevant data vectors
+    const dataToSave = traces.map(t => ({
+      name: t.name,
+      x: t.x,
+      y: t.y,
+      z: t.z // Include Z data (will be undefined for scatter plots, which is fine)
+    }));
+    
+    // Create a blob and trigger the download
+    const blob = new Blob([JSON.stringify(dataToSave)], {type: "application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  // Generates the custom modebar buttons
+  // Now accepts helpTitle to customize the help button description per graph
+  function getCustomModeBarButtons(divId, filename, helpTitle) {
+    return [[
+      {
+        name: 'Copy link to this graph',
+        icon: {
+          width: 1634,
+          height: 1634,
+          path: 'M 1441 434 q 0 40 -28 68 l -208 208 q -28 28 -68 28 q -42 0 -72 -32 q 3 -3 19 -18.5 t 21.5 -21.5 t 15 -19 t 13 -25.5 t 3.5 -27.5 q 0 -40 -28 -68 t -68 -28 q -15 0 -27.5 3.5 t -25.5 13 t -19 15 t -21.5 21.5 t -18.5 19 q -33 -31 -33 -73 q 0 -40 28 -68 l 206 -207 q 27 -27 68 -27 q 40 0 68 26 l 147 146 q 28 28 28 67 z M 738 1139 q 0 40 -28 68 l -206 207 q -28 28 -68 28 q -39 0 -68 -27 l -147 -146 q -28 -28 -28 -67 q 0 -40 28 -68 l 208 -208 q 27 -27 68 -27 q 42 0 72 31 q -3 3 -19 18.5 t -21.5 21.5 t -15 19 t -13 25.5 t -3.5 27.5 q 0 40 28 68 t 68 28 q 15 0 27.5 -3.5 t 25.5 -13 t 19 -15 t 21.5 -21.5 t 18.5 -19 q 33 31 33 73 z M 1633 434 q 0 -120 -85 -203 l -147 -146 q -83 -83 -203 -83 q -121 0 -204 85 l -206 207 q -83 83 -83 203 q 0 123 88 209 l -88 88 q -86 -88 -208 -88 q -120 0 -204 84 l -208 208 q -84 84 -84 204 t 85 203 l 147 146 q 83 83 203 83 q 121 0 204 -85 l 206 -207 q 83 -83 83 -203 q 0 -123 -88 -209 l 88 -88 q 86 88 208 88 q 120 0 204 -84 l 208 -208 q 84 -84 84 -204 z'
+        },
+        click: function() { copyLink(divId); }
+      },
+      {
+        name: helpTitle,
+        icon: {
+          width: 512,
+          height: 512,
+          path: 'M256 0C114.6 0 0 114.6 0 256s114.6 256 256 256s256-114.6 256-256S397.4 0 256 0zM256 464c-114.7 0-208-93.31-208-208S141.3 48 256 48s208 93.31 208 208S370.7 464 256 464zM256 336c-18 0-32 14-32 32s13.1 32 32 32c17.1 0 32-14 32-32S273.1 336 256 336zM289.1 128h-51.1C199 128 168 159 168 198c0 13 11 24 24 24s24-11 24-24C216 186 225.1 176 237.1 176h51.1C301.1 176 312 186 312 198c0 8-4 14.1-11 18.1L244 251C236 256 232 264 232 272V288c0 13 11 24 24 24S280 301 280 288V286l45.1-28c21-13 34-36 34-60C360 159 329 128 289.1 128z'
+        },
+        click: function() { openHelp(); }
+      },
+      "zoom2d", "pan2d", "zoomIn2d", "zoomOut2d", "resetScale2d", 
+      {
+        name: 'Download data',
+        icon: {
+          width: 514,
+          height: 514,
+          path: 'M216 0h80c13.3 0 24 10.7 24 24v168h87.7c17.8 0 26.7 21.5 14.1 34.1L269.7 378.3c-7.5 7.5-19.8 7.5-27.3 0L90.1 226.1c-12.6-12.6-3.7-34.1 14.1-34.1H192V24c0-13.3 10.7-24 24-24zm296 376v112c0 13.3-10.7 24-24 24H24c-13.3 0-24-10.7-24-24V376c0-13.3 10.7-24 24-24h146.7l49 49c20.1 20.1 52.5 20.1 72.6 0l49-49H488c13.3 0 24 10.7 24 24zm-124 88c0-11-9-20-20-20s-20 9-20 20 9 20 20 20 20-9 20-20zm64 0c0-11-9-20-20-20s-20 9-20 20 9 20 20 20 20-9 20-20z'
+        },
+        attr: 'download',
+        click: function(gd) { downloadPlotData(gd, filename); }
+      }
+    ]];
+  }
+
+  // Main rendering function to be called for each graph
+  function renderOptimizedGraph(divId, plotData, layout, filename, helpTitle) {
+    // Rehydrate the data from the shared storage
+    // We iterate over the trace definitions (scatter, heatmap, etc.)
+    plotData.forEach(trace => {
+      // Check if the trace has a 'meta' object containing references
+      if(trace.meta) {
+        // If x_ref is present, pull the X array from global storage
+        if(trace.meta.x_ref) trace.x = REPORT_SHARED_DATA[trace.meta.x_ref];
+        // If y_ref is present, pull the Y array from global storage
+        if(trace.meta.y_ref) trace.y = REPORT_SHARED_DATA[trace.meta.y_ref];
+        // If z_ref is present (Heatmaps), pull the Z matrix from global storage
+        if(trace.meta.z_ref) trace.z = REPORT_SHARED_DATA[trace.meta.z_ref];
+        // If text_ref is present (Hover info), pull the Text array/matrix
+        if(trace.meta.text_ref) trace.text = REPORT_SHARED_DATA[trace.meta.text_ref];
+      }
+    });
+
+    // Configure buttons dynamically
+    const config = {
+      displaylogo: false,
+      responsive: true,
+      modeBarButtons: getCustomModeBarButtons(divId, filename, helpTitle)
+    };
+
+    // Create the Plotly graph in the specified div
+    Plotly.newPlot(divId, plotData, layout, config);
+  }
+
   /**
    * Wait for an element before resolving a promise
    * Adapted from https://stackoverflow.com/a/34863951/3142385
@@ -859,90 +968,72 @@ def CreateHTML( config,
 
   # Overview figure:
   if overview:
+    # Extract config
+    fig_dict = overview.to_dict()
+    datafile = f"{config['appearance']['system']}-{config['appearance']['jobid']}-overview.json"
+
+    # Define the Help Title for this specific graph
+    help_title = "1-min average CPU and GPU usage, averaged over all the nodes/GPUs"
+
     html += f"""
     <section class="block" id="overview" style="margin-top:50px;">
-"""
-    copy_link = { 'name': 'Copy link to this graph',
-                    'icon': { 'width': 1634,
-                              'height': 1634,
-                              'path': 'M 1441 434 q 0 40 -28 68 l -208 208 q -28 28 -68 28 q -42 0 -72 -32 q 3 -3 19 -18.5 t 21.5 -21.5 t 15 -19 t 13 -25.5 t 3.5 -27.5 q 0 -40 -28 -68 t -68 -28 q -15 0 -27.5 3.5 t -25.5 13 t -19 15 t -21.5 21.5 t -18.5 19 q -33 -31 -33 -73 q 0 -40 28 -68 l 206 -207 q 27 -27 68 -27 q 40 0 68 26 l 147 146 q 28 28 28 67 z M 738 1139 q 0 40 -28 68 l -206 207 q -28 28 -68 28 q -39 0 -68 -27 l -147 -146 q -28 -28 -28 -67 q 0 -40 28 -68 l 208 -208 q 27 -27 68 -27 q 42 0 72 31 q -3 3 -19 18.5 t -21.5 21.5 t -15 19 t -13 25.5 t -3.5 27.5 q 0 40 28 68 t 68 28 q 15 0 27.5 -3.5 t 25.5 -13 t 19 -15 t 21.5 -21.5 t 18.5 -19 q 33 31 33 73 z M 1633 434 q 0 -120 -85 -203 l -147 -146 q -83 -83 -203 -83 q -121 0 -204 85 l -206 207 q -83 83 -83 203 q 0 123 88 209 l -88 88 q -86 -88 -208 -88 q -120 0 -204 84 l -208 208 q -84 84 -84 204 t 85 203 l 147 146 q 83 83 203 83 q 121 0 204 -85 l 206 -207 q 83 -83 83 -203 q 0 -123 -88 -209 l 88 -88 q 86 88 208 88 q 120 0 204 -84 l 208 -208 q 84 -84 84 -204 z',
-                          },
-                    'attr': 'help',
-                    'click': "function() { navigator.clipboard.writeText(`${window.location.href.split('#')[0]}#overview`);}" ,
-                    }
-    help_button = { 'name': '1-min average CPU and GPU usage, averaged over all the nodes/GPUs',
-                    'icon': { 'width': 512,
-                              'height': 512,
-                              'path': 'M256 0C114.6 0 0 114.6 0 256s114.6 256 256 256s256-114.6 256-256S397.4 0 256 0zM256 464c-114.7 0-208-93.31-208-208S141.3 48 256 48s208 93.31 208 208S370.7 464 256 464zM256 336c-18 0-32 14-32 32s13.1 32 32 32c17.1 0 32-14 32-32S273.1 336 256 336zM289.1 128h-51.1C199 128 168 159 168 198c0 13 11 24 24 24s24-11 24-24C216 186 225.1 176 237.1 176h51.1C301.1 176 312 186 312 198c0 8-4 14.1-11 18.1L244 251C236 256 232 264 232 272V288c0 13 11 24 24 24S280 301 280 288V286l45.1-28c21-13 34-36 34-60C360 159 329 128 289.1 128z',
-                          },
-                    'attr': 'help',
-                    'click': "function() { window.open('https://apps.fz-juelich.de/jsc/llview/docu/jobreport/metrics_list/', '_blank').focus();}" ,
-                    }
-    datafile=f"{config['appearance']['system']}-{config['appearance']['jobid']}-overview.json"
-    download_data_button = {'name': 'Download data',
-                            'icon': { 'width': 514,
-                                      'height': 514,
-                                      'path': 'M216 0h80c13.3 0 24 10.7 24 24v168h87.7c17.8 0 26.7 21.5 14.1 34.1L269.7 378.3c-7.5 7.5-19.8 7.5-27.3 0L90.1 226.1c-12.6-12.6-3.7-34.1 14.1-34.1H192V24c0-13.3 10.7-24 24-24zm296 376v112c0 13.3-10.7 24-24 24H24c-13.3 0-24-10.7-24-24V376c0-13.3 10.7-24 24-24h146.7l49 49c20.1 20.1 52.5 20.1 72.6 0l49-49H488c13.3 0 24 10.7 24 24zm-124 88c0-11-9-20-20-20s-20 9-20 20 9 20 20 20 20-9 20-20zm64 0c0-11-9-20-20-20s-20 9-20 20 9 20 20 20 20-9 20-20z',
-                                  },
-                            'attr': 'download',
-                            'click': "function(gd) { download('"+datafile+"', [(({ name, x, y }) => ({ name, x, y }))(gd.data[1]), (({ name, x, y }) => ({ name, x, y }))(gd.data[3])] );}" ,
-                            }
-    html += overview.to_html( include_plotlyjs=False,
-                              full_html=False,
-                              config={'displaylogo': False,
-                                      # 'displayModeBar': True,
-                                      'modeBarButtons': [ [copy_link, help_button, "zoom2d", "pan2d", "zoomIn2d", "zoomOut2d", "resetScale2d",download_data_button] ],
-                                      },
-                              div_id='overview_plot').replace('"function','function').replace(';}"}','; }}') #.replace('"function(gd)','function(gd)').replace('(gd.data[3])] );}"','(gd.data[3])] );}')
-    html += f"""
+      <div id="overview_plot" class="plotly-graph-div" style="height:300px; width:100%;"></div>
+      <script type="text/javascript">
+        renderOptimizedGraph(
+            "overview_plot", 
+            {json.dumps(fig_dict['data'], cls=plotly.utils.PlotlyJSONEncoder)}, 
+            {json.dumps(fig_dict['layout'], cls=plotly.utils.PlotlyJSONEncoder)}, 
+            "{datafile}",
+            {json.dumps(help_title)} // json.dumps escape characters correctly
+        );
+      </script>
     </section>
 """
 
-  # Plots
+  # Iterate over System Types and Sections
   for systype, section in figs.items():
     stype = systype.replace("$","").replace(" ","_")
     html += f"""
     <hr class="no-print">
     <section id="{stype}"> </section>
 """
+    # Iterate over individual graphs in the section
     for title, graph in section.items():
       id = f"{stype}_{title.replace(' ','_')}"
       html += f"""
       <section class="block" id="{id}">
 """
-      copy_link = { 'name': 'Copy link to this graph',
-                      'icon': { 'width': 1634,
-                                'height': 1634,
-                                'path': 'M 1441 434 q 0 40 -28 68 l -208 208 q -28 28 -68 28 q -42 0 -72 -32 q 3 -3 19 -18.5 t 21.5 -21.5 t 15 -19 t 13 -25.5 t 3.5 -27.5 q 0 -40 -28 -68 t -68 -28 q -15 0 -27.5 3.5 t -25.5 13 t -19 15 t -21.5 21.5 t -18.5 19 q -33 -31 -33 -73 q 0 -40 28 -68 l 206 -207 q 27 -27 68 -27 q 40 0 68 26 l 147 146 q 28 28 28 67 z M 738 1139 q 0 40 -28 68 l -206 207 q -28 28 -68 28 q -39 0 -68 -27 l -147 -146 q -28 -28 -28 -67 q 0 -40 28 -68 l 208 -208 q 27 -27 68 -27 q 42 0 72 31 q -3 3 -19 18.5 t -21.5 21.5 t -15 19 t -13 25.5 t -3.5 27.5 q 0 40 28 68 t 68 28 q 15 0 27.5 -3.5 t 25.5 -13 t 19 -15 t 21.5 -21.5 t 18.5 -19 q 33 31 33 73 z M 1633 434 q 0 -120 -85 -203 l -147 -146 q -83 -83 -203 -83 q -121 0 -204 85 l -206 207 q -83 83 -83 203 q 0 123 88 209 l -88 88 q -86 -88 -208 -88 q -120 0 -204 84 l -208 208 q -84 84 -84 204 t 85 203 l 147 146 q 83 83 203 83 q 121 0 204 -85 l 206 -207 q 83 -83 83 -203 q 0 -123 -88 -209 l 88 -88 q 86 88 208 88 q 120 0 204 -84 l 208 -208 q 84 -84 84 -204 z',
-                            },
-                      'attr': 'help',
-                      'click': f"function() {{ navigator.clipboard.writeText(`${{window.location.href.split('#')[0]}}#{id}`);}}" ,
-                      }
-      help_button = { 'name': config['plots'][systype.replace("$",r"\$")][title]['description'],
-                      'icon': { 'width': 512,
-                                'height': 512,
-                                'path': 'M256 0C114.6 0 0 114.6 0 256s114.6 256 256 256s256-114.6 256-256S397.4 0 256 0zM256 464c-114.7 0-208-93.31-208-208S141.3 48 256 48s208 93.31 208 208S370.7 464 256 464zM256 336c-18 0-32 14-32 32s13.1 32 32 32c17.1 0 32-14 32-32S273.1 336 256 336zM289.1 128h-51.1C199 128 168 159 168 198c0 13 11 24 24 24s24-11 24-24C216 186 225.1 176 237.1 176h51.1C301.1 176 312 186 312 198c0 8-4 14.1-11 18.1L244 251C236 256 232 264 232 272V288c0 13 11 24 24 24S280 301 280 288V286l45.1-28c21-13 34-36 34-60C360 159 329 128 289.1 128z',
-                            },
-                      'attr': 'help',
-                      'click': "function() { window.open('https://apps.fz-juelich.de/jsc/llview/docu/jobreport/metrics_list/', '_blank').focus();}" ,
-                      }
+      # Prepare Datafile Name for download
+      div_id_suffix = '_time_plot' if graph['x']=='ts' else '_plot'
+      final_div_id = id + div_id_suffix
+      datafile = f"{config['appearance']['system']}-{config['appearance']['jobid']}-{id.lower()}.json"
+      
+      # Prepare Help Description for the help button
+      # Uses safe retrieval, defaulting to the title if no description exists
+      help_desc = config['plots'][systype.replace("$",r"\$")][title].get('description', title)
 
-      datafile=f"{config['appearance']['system']}-{config['appearance']['jobid']}-{id.lower()}.json"
-      download_data_button = {'name': 'Download data',
-                              'icon': { 'width': 514,
-                                        'height': 514,
-                                        'path': 'M216 0h80c13.3 0 24 10.7 24 24v168h87.7c17.8 0 26.7 21.5 14.1 34.1L269.7 378.3c-7.5 7.5-19.8 7.5-27.3 0L90.1 226.1c-12.6-12.6-3.7-34.1 14.1-34.1H192V24c0-13.3 10.7-24 24-24zm296 376v112c0 13.3-10.7 24-24 24H24c-13.3 0-24-10.7-24-24V376c0-13.3 10.7-24 24-24h146.7l49 49c20.1 20.1 52.5 20.1 72.6 0l49-49H488c13.3 0 24 10.7 24 24zm-124 88c0-11-9-20-20-20s-20 9-20 20 9 20 20 20 20-9 20-20zm64 0c0-11-9-20-20-20s-20 9-20 20 9 20 20 20 20-9 20-20z',
-                                    },
-                              'attr': 'download',
-                              'click': "function(gd) { download('"+datafile+"', [(({ name, x, y, z }) => ({ name, x, y, z }))(gd.data[2])] );}" ,
-                              }
-      html += graph['graph'].to_html( include_plotlyjs=False,
-                                      full_html=False,
-                                      config={'displaylogo': False,
-                                              # 'displayModeBar': True,
-                                              'modeBarButtons': [ [copy_link, help_button, "zoom2d", "pan2d", "zoomIn2d", "zoomOut2d", "resetScale2d",download_data_button] ],
-                                              },
-                                      div_id=id+('_time_plot' if graph['x']=='ts' else '_plot')).replace('"function','function').replace(';}"}','; }}')
+      # Extract Figure Dictionary
+      # This pulls the 'data' (with meta tags) and 'layout' from the figure object
+      # created by CreatePlotlyFig.
+      fig_dict = graph['graph'].to_dict()
+
+      # Inject HTML and Script
+      # We create the container DIV first.
+      # Then we call 'renderOptimizedGraph' with the JSON data, layout, filename, and help text.
+      # json.dumps ensures all strings and objects are safely encoded for JavaScript.
+      # plotly.utils.PlotlyJSONEncoder ensures that any remaining NumPy types or NaNs are handled.
+      html += f"""
+      <div id="{final_div_id}" class="plotly-graph-div" style="height:500px; width:100%;"></div>
+      <script type="text/javascript">
+        renderOptimizedGraph(
+            "{final_div_id}", 
+            {json.dumps(fig_dict['data'], cls=plotly.utils.PlotlyJSONEncoder)}, 
+            {json.dumps(fig_dict['layout'], cls=plotly.utils.PlotlyJSONEncoder)}, 
+            "{datafile}",
+            {json.dumps(help_desc)}
+        );
+      </script>
+      """
       html += f"""
       </section>
 """

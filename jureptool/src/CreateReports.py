@@ -30,7 +30,7 @@ def _annotate(ax, x, y):
   X, Y = np.meshgrid(x, y)
   ax.plot(X.flat, Y.flat, 'o',ms=1, color='k')
 
-def CreateFullReport(pdf,data,config,page_num,report,files,time_range):
+def CreateFullReport(pdf,data,config,page_num,report,files,time_range,data_manager):
   """
   Creates page with full reports including:
   bottom,0: time and node dependent-colorplot,
@@ -354,6 +354,7 @@ def CreateFullReport(pdf,data,config,page_num,report,files,time_range):
                                                                   errmax_node,
                                                                   min_value,
                                                                   avg_value,
-                                                                  max_value)
+                                                                  max_value,
+                                                                  data_manager)
 
   return figs
