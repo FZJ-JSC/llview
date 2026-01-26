@@ -255,7 +255,7 @@ def CreateOverviewFig(config, data, time_range, df_overview, gpus, data_manager)
   return fig
 
 
-def CreateTimeline(config,timeline_df,time_range):
+def CreateTimeline(config, timeline_df, time_range, data_manager):
   # General layout options
   layout = dict(legend=dict(
                       yanchor="top",
@@ -278,10 +278,11 @@ def CreateTimeline(config,timeline_df,time_range):
                     plot_bgcolor='whitesmoke',
                     modebar=dict(orientation='h',
                     ),
-                    # legend_title_font_color="green"
                   )
   # Creating figure  
   fig = go.Figure(layout=layout).set_subplots(rows=1, cols=1)
+  
+  # Generate hovertext
   hovertext = []
   for index, row in timeline_df.iterrows():
     delta_comp = row['duration'].components
@@ -290,18 +291,47 @@ def CreateTimeline(config,timeline_df,time_range):
       hovertext.append(f"<b>{'Step '+str(row['step'])+': '+str(row['st'])+'</b><br />Name: '+str(row['name']) if str(row['step'])!='job' else 'Job '+str(row['name'])+': '+str(row['st'])+'</b>'}<br />#Nodes: {row['nnodes']} ({row['nodelist'][:27] + '...' if len(row['nodelist'])>30 else row['nodelist']})<br />{'#Tasks: '+str(row['ntasks'])+', ' if row['ntasks'] > 0 else ''}#CPUS: {row['ncpus']}<br />Start time: {row['start_time']}<br />End time: {row['end_time']}<br />Duration: {delta}<br />Return Code: {row['rc']}<br />Signal: {row['sig']}")
     else:
           hovertext.append(f"<b>Step {row['step']}: {row['st']}</b><br />Executable: {row['name']}<br />Start time: {row['start_time']}<br />End time: {row['end_time']}<br />Duration: {delta}<br />Return Code: {row['rc']}<br />Signal: {row['sig']}")
-  fig.add_trace(go.Bar( x=timeline_df['duration']/1000000,
-                        base=timeline_df['start_time'],
-                        y=timeline_df['step'],
+  
+  # Register Data with Manager
+  # X axis: Duration (converted to seconds/units)
+  x_ref = data_manager.register(timeline_df['duration']/1000000, 'timeline_duration')
+  
+  # Base: Start Time. DataManager handles datetime -> string conversion automatically.
+  base_ref = data_manager.register(timeline_df['start_time'], 'timeline_start')
+  
+  # Y axis: Steps
+  y_ref = data_manager.register(timeline_df['step'], 'timeline_step')
+  
+  # Hover Text
+  text_ref = data_manager.register(hovertext, 'timeline_hover')
+  
+  # Colors (Arrays)
+  color_ref = data_manager.register(timeline_df['colorhtml'], 'timeline_color')
+  edge_ref = data_manager.register(timeline_df['edgecolorhtml'], 'timeline_edge')
+
+  # Create Bar Trace with Empty Data and Meta References
+  fig.add_trace(go.Bar( x=[], # Empty
+                        base=[], # Empty
+                        y=[], # Empty
                         name = 'Timeline',
                         orientation='h',
                         hoverinfo='text',
-                        hovertext=hovertext,
+                        hovertext=[], # Empty
                         marker=dict(
-                              color=timeline_df['colorhtml'],
-                              line=dict(color=timeline_df['edgecolorhtml']),
+                              color=[], # Empty (filled via JS)
+                              line=dict(color=[]), # Empty (filled via JS)
                           ),
+                        # Meta tags to link shared data
+                        meta={
+                            'x_ref': x_ref,
+                            'base_ref': base_ref,
+                            'y_ref': y_ref,
+                            'text_ref': text_ref,
+                            'color_ref': color_ref,
+                            'line_color_ref': edge_ref
+                        }
                           ))
+  
   fig['layout']['yaxis'].update(dict( title=f'Step',
                                       range=[config['timeline']['nsteps']-0.5,-0.5],
                                       ))
@@ -310,32 +340,15 @@ def CreateTimeline(config,timeline_df,time_range):
                                       range=time_range,
                                       ))
 
-  # fig.add_annotation( text = "<b>Average<br>CPU Usage</b>",
-  #                     x = 0.0,
-  #                     y = 100,
-  #                     xanchor='center',
-  #                     yanchor='bottom',
-  #                     yshift=10,
-  #                     xref = "x",
-  #                     yref = "y",
-  #                     align="center",
-  #                     valign="middle",
-  #                     showarrow = False,
-  #                     font = {
-  #                         "family": "'Liberation Sans','Arial',sans-serif",
-  #                         "size": 14,
-  #                     })
   frame = dict( mirror=True,
                 ticks='inside',
                 linecolor='black',
                 showgrid=False,
-                # showline=True,
                 )
   fig['layout'][f'yaxis'].update(frame)
   fig['layout'][f'xaxis'].update(frame)
 
   return fig
-
 
 
 def CreatePlotlyFig(config,

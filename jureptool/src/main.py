@@ -803,7 +803,7 @@ def _ProcessReport(njob,total_jobs,job,config):
 
     ############################################################################
     # Last pages:
-    timeline_html,system_report_html = LastPages.LastPages(pdf,data,config,page_num,timeline_df,time_range,error_lines)
+    timeline_html,system_report_html = LastPages.LastPages(pdf,data,config,page_num,timeline_df,time_range,error_lines,data_manager)
 
   ############################################################################
   if config['html'] or config['gzip']:
