@@ -47,7 +47,7 @@ def write_error_line(page,error_line,posy,i,config):
   return posy, i
 
 
-def LastPages(pdf,data,config,page_num,timeline_df,time_range,error_lines):
+def LastPages(pdf,data,config,page_num,timeline_df,time_range,error_lines,data_manager):
   """
   Creates Last pages (Finalization, Error messages)
   """
@@ -105,7 +105,7 @@ def LastPages(pdf,data,config,page_num,timeline_df,time_range,error_lines):
   
   timeline_html = ""
   if (config['html'] or config['gzip']) and not timeline_df.empty:
-    timeline_html = CreateTimeline(config,timeline_df,time_range)
+    timeline_html = CreateTimeline(config,timeline_df,time_range,data_manager)
 
   # Add remaining error pages, if needed
   while error_lines:
