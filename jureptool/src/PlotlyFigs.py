@@ -12,7 +12,7 @@ import plotly.graph_objs as go
 import numpy as np
 import pandas as pd
 
-def CreateOverviewFig(config,data,time_range,df_overview,gpus):
+def CreateOverviewFig(config, data, time_range, df_overview, gpus, data_manager):
   # General layout options
   layout = dict(legend=dict(
                       yanchor="top",
@@ -35,18 +35,18 @@ def CreateOverviewFig(config,data,time_range,df_overview,gpus):
                     plot_bgcolor='whitesmoke',
                     modebar=dict(orientation='h',
                     ),
-                    # legend_title_font_color="green"
                   )
+  
   # Creating figure  
   fig = go.Figure(layout=layout).set_subplots(rows=1, cols=3, 
                                               horizontal_spacing=0.1, 
-                                              # vertical_spacing=0.1, 
                                               shared_xaxes=False, 
                                               shared_yaxes=False,
                                               column_widths=[0.03,0.94,0.03],
                                               specs=[[{"secondary_y": False}, {"secondary_y": True,"r":-0.06},{"secondary_y": False,"l":0.06,"r":-0.06}]],
-                                              # row_heights=[0.3, 0.7]
                                               )
+  
+  # Heatmap 1 (CPU Visual Bar)
   int_usage = int(data['cpu']['usage'])
   img = np.arange(int_usage).reshape((int_usage, 1))
   fig.add_trace(go.Heatmap(z=img, 
@@ -56,17 +56,11 @@ def CreateOverviewFig(config,data,time_range,df_overview,gpus):
                           zmax=100.0,
                           hoverinfo='skip',
                           colorscale=["#d62728","gold","#2ca02c"],
-                          # colorbar=dict(outlinewidth=0.5,
-                          #               outlinecolor='black',
-                          #               len=0.5,
-                          #               thickness=0.02,
-                          #               thicknessmode='fraction',
-                          #               ticks='inside',
-                          #               yanchor='bottom',
-                          #               x=0.2) , 
                           ), 1, 1)
+
   fig['layout']['xaxis'].update(dict(zeroline=False, showgrid=False, range=[-0.5,0.5], tickmode='array',tickvals=[], fixedrange=True, showticklabels=False))
   fig['layout']['yaxis'].update(dict(zeroline=False, showgrid=False, range=[0.0,100.0], tickmode='array',tickvals=[], fixedrange=True ,showticklabels=False))
+  
   fig.add_annotation( text = "<b>Average<br>CPU Usage</b>",
                       x = 0.0,
                       y = 100,
@@ -108,14 +102,6 @@ def CreateOverviewFig(config,data,time_range,df_overview,gpus):
                             zmax=100.0,
                             hoverinfo='skip',
                             colorscale=["#d62728","gold","#2ca02c"],
-                            # colorbar=dict(outlinewidth=0.5,
-                            #               outlinecolor='black',
-                            #               len=0.5,
-                            #               thickness=0.02,
-                            #               thicknessmode='fraction',
-                            #               ticks='inside',
-                            #               yanchor='bottom',
-                            #               x=0.8) , 
                             ), 1, 3)
     fig['layout']['xaxis3'].update(dict(zeroline=False, showgrid=False, range=[-0.5,0.5], tickmode='array',tickvals=[], fixedrange=True, showticklabels=False))
     fig['layout']['yaxis4'].update(dict(zeroline=False, showgrid=False, range=[0.0,100.0], tickmode='array',tickvals=[], fixedrange=True ,showticklabels=False))
@@ -150,69 +136,100 @@ def CreateOverviewFig(config,data,time_range,df_overview,gpus):
                             "size": 12,
                         })
 
+  # LEFT PLOT (CPU Lines)
   if 'left' in df_overview and df_overview['left']:
     color = tuple(255*x for x in config['appearance']['colors_cmap'][7])
 
     for x,y,legend in zip(df_overview['left']['x'],df_overview['left']['y'],df_overview['left']['legend']):
+      
+      # Register data columns with the manager
+      # Pass x directly (it contains timestamps/strings).
+      # The manager will convert them to string format.
+      x_ref = data_manager.register(x, 'time')
+      y_ref = data_manager.register(y, 'cpu_val')
+
+      # Create hovertext
       hovertext = []
       for time,value in zip(x,y):
         delta_comp = (time - time_range[0]).components
         delta = f"{(str(delta_comp.hours)+'h:') if delta_comp.hours > 0 else ''}{delta_comp.minutes:02d}m:{delta_comp.seconds:02d}s"
         hovertext.append(f"Time: {time} ({delta})<br />{legend}: {value:.2f}")
+      
+      text_ref = data_manager.register(hovertext, 'hover')
 
-      fig.add_trace(go.Scatter( x=x,
-                                y=y, 
+      fig.add_trace(go.Scatter( x=[], 
+                                y=[], 
                                 name = legend,
                                 legendgroup = 'left',
                                 line = {"shape": 'hvh', "color": f"rgb{color}"},
                                 mode="lines+markers",
                                 hoverinfo='text',
-                                text=hovertext,
-                                # mode = 'markers',
+                                text=[], 
                                 marker=dict(
                                       size=5,
                                       color=f"rgb{color}",
                                   ),
+                                meta = {
+                                  'x_ref': x_ref,
+                                  'y_ref': y_ref,
+                                  'text_ref': text_ref
+                                }
                                 ), 1, 2)
+    
     if '_label' in config['plots']['_overview']['left']:
       fig['layout']['yaxis2'].update(dict( 
         title=config['plots']['_overview']['left']['_label'],
         color = f"rgb{color}",
         tickcolor = f"rgb{color}",
       ))
-    # Defining range
     if '_range' in config['plots']['_overview']['left']:
       fig['layout']['yaxis2'].update(dict( 
         range=config['plots']['_overview']['left']['_range'],
       ))
+    
+    # Update x-axis 
+    # NOTE: Plotly.js auto-detects date strings.
+    # We do NOT use 'type': 'date' explicitly here just to be safe, 
+    # but usually Plotly handles ISO strings automatically.
     fig['layout']['xaxis2'].update(dict( 
       tickformat=('%d/%m/%y\n%H:%M:%S'),
       range=time_range,
     ))
 
+  # RIGHT PLOT (GPU Lines)
   if 'right' in df_overview and df_overview['right']:
     color = tuple(255*x for x in config['appearance']['colors_cmap'][0])
 
     for x,y,legend in zip(df_overview['right']['x'],df_overview['right']['y'],df_overview['right']['legend']):
+      
+      x_ref = data_manager.register(x, 'time')
+      y_ref = data_manager.register(y, 'gpu_val')
+
       hovertext = []
       for time,value in zip(x,y):
         delta_comp = (time - time_range[0]).components
         delta = f"{(str(delta_comp.hours)+'h:') if delta_comp.hours > 0 else ''}{delta_comp.minutes:02d}m:{delta_comp.seconds:02d}s"
         hovertext.append(f"Time: {time} ({delta})<br />{legend}: {value:.2f}")
 
-      fig.add_trace(go.Scatter( x=x,
-                                y=y, 
+      text_ref = data_manager.register(hovertext, 'hover')
+
+      fig.add_trace(go.Scatter( x=[], 
+                                y=[], 
                                 name = legend,
                                 legendgroup = 'gpu',
                                 line = {"shape": 'hvh', "color":f"rgb{color}"},
                                 mode="lines+markers",
                                 hoverinfo='text',
-                                text=hovertext,
-                                # mode = 'markers',
+                                text=[], 
                                 marker=dict(
                                       size=5,
                                       color=f"rgb{color}",
                                   ),
+                                meta = {
+                                  'x_ref': x_ref,
+                                  'y_ref': y_ref,
+                                  'text_ref': text_ref
+                                }
                                 ), 1, 2, secondary_y=True)
     if '_label' in config['plots']['_overview']['right']:
       fig['layout']['yaxis3'].update(dict( 
@@ -220,7 +237,6 @@ def CreateOverviewFig(config,data,time_range,df_overview,gpus):
         color = f"rgb{color}",
         tickcolor = f"rgb{color}",
       ))
-    # Defining range
     if '_range' in config['plots']['_overview']['right']:
       fig['layout']['yaxis3'].update(dict( 
         range=config['plots']['_overview']['right']['_range'],
@@ -231,7 +247,6 @@ def CreateOverviewFig(config,data,time_range,df_overview,gpus):
                   ticks='inside',
                   linecolor='black',
                   showgrid=False,
-                  # showline=True,
                   )
     fig['layout'][f'yaxis{i}'].update(frame)
     if i == 4: continue
@@ -340,7 +355,8 @@ def CreatePlotlyFig(config,
                     errmax_node,
                     min_value,
                     avg_value,
-                    max_value):
+                    max_value,
+                    data_manager): # Added data_manager argument to handle data registration
   """
   This function generates a 2x2 figure using plotly
   (to be exported to html later)
@@ -355,10 +371,7 @@ def CreatePlotlyFig(config,
                       groupclick='toggleitem',
                       bgcolor='rgba(0,0,0,0)',
                       ),
-                    # xaxis=dict(showgrid=False),
-                    # yaxis=dict(showgrid=False),
                     margin=dict(l=20, r=20, t=50, b=50),
-                    # width=1000,
                     height=500,
                     font_family="'Liberation Sans','Arial',sans-serif",
                     title_font_family="'Liberation Sans','Arial',sans-serif",
@@ -368,7 +381,6 @@ def CreatePlotlyFig(config,
                     plot_bgcolor='whitesmoke',
                     modebar=dict(orientation='h',
                     ),
-                    # legend_title_font_color="green"
                   )
   # Creating figure  
   fig = go.Figure(layout=layout).set_subplots(rows=2, cols=2, 
@@ -385,10 +397,10 @@ def CreatePlotlyFig(config,
                   ticks='inside',
                   linecolor='black',
                   showgrid=False,
-                  # showline=True,
                   )
     fig['layout'][f'xaxis{i}'].update(frame)
     fig['layout'][f'yaxis{i}'].update(frame)
+  
   if report['headers'][graph] == 'gpu_clkr':
     # Filtering NaN values to avoid weird min/max plots
     x_time = x[errmax_time.notna()]
@@ -402,8 +414,8 @@ def CreatePlotlyFig(config,
     y_nodes = nodes
 
   annotations = []
-  # Add dropdown menus
   button_y = 0.683
+  
   # Colorscale definitions due to possible bug on the potly library
   # See: https://github.com/plotly/plotly.py/issues/3860
   # Hawaii and lajolla from https://www.fabiocrameri.ch/colourmaps/
@@ -412,6 +424,8 @@ def CreatePlotlyFig(config,
   colorscales['lajolla'] = [[0.0,"#1A1A01"],[0.1111111111111111,"#422818"],[0.2222222222222222,"#73382F"],[0.3333333333333333,"#A54742"],[0.4444444444444444,"#D2624D"],[0.5555555555555556,"#E48751"],[0.6666666666666666,"#ECA855"],[0.7777777777777778,"#F4CC68"],[0.8888888888888888,"#FFFFCC"],[1.0,"#fcffa4"]]
   colorscales['Reds'] = [[0.0,"rgb(103,0,13)"],[0.125,"rgb(165,15,21)"],[0.25,"rgb(203,24,29)"],[0.375,"rgb(239,59,44)"],[0.5,"rgb(251,106,74)"],[0.625,"rgb(252,146,114)"],[0.75,"rgb(252,187,161)"],[0.875,"rgb(254,224,210)"],[1.0,"rgb(255,245,240)"]]
   colorscales['RdBu'] = [[0.0,"rgb(103,0,31)"],[0.1,"rgb(178,24,43)"],[0.2,"rgb(214,96,77)"],[0.3,"rgb(244,165,130)"],[0.4,"rgb(253,219,199)"],[0.5,"rgb(247,247,247)"],[0.6,"rgb(209,229,240)"],[0.7,"rgb(146,197,222)"],[0.8,"rgb(67,147,195)"],[0.9,"rgb(33,102,172)"],[1.0,"rgb(5,48,97)"]]
+  
+  # Dropdown menu configuration for color scales and reverse logic
   dropdown_buttons = [
           dict(
               buttons=list([
@@ -490,7 +504,8 @@ def CreatePlotlyFig(config,
               yanchor="middle"
           ),
       ]
-  # if ([min_value,max_value] != report['lim'][graph]):
+  
+  # Additional dropdown logic for System vs Job limits
   if (not 0.95*report['lim'][graph][0] < min_value < 1.05*report['lim'][graph][0]) and (not 0.95*report['lim'][graph][1] < max_value < 1.05*report['lim'][graph][1]):
     dropdown_buttons.append(dict(
               buttons=list([
@@ -542,15 +557,27 @@ def CreatePlotlyFig(config,
   fig.update_layout(updatemenus=dropdown_buttons)
 
   #(1,1) - NODE-AVERAGE PER TIME
-  fig.add_trace(go.Scatter( x=pd.concat([x_time,x_time.reindex(index=x_time.index[::-1])]),
-                            y=pd.concat([ errmax_time,errmin_time.reindex(index=errmin_time.index[::-1]) ]), 
+  # Prepare the polygon data for Min/Max shading
+  x_poly = pd.concat([x_time,x_time.reindex(index=x_time.index[::-1])])
+  y_poly = pd.concat([ errmax_time,errmin_time.reindex(index=errmin_time.index[::-1]) ])
+  
+  # Register the polygon arrays with data_manager
+  x_poly_ref = data_manager.register(x_poly, 'x_time_poly')
+  y_poly_ref = data_manager.register(y_poly, 'y_time_poly')
+
+  fig.add_trace(go.Scatter( x=[], # Empty: data filled via JS
+                            y=[], # Empty: data filled via JS
                             name = 'min/max',
                             legendgroup = 'time',
                             line = {"shape": 'hvh', "color": config['appearance']['minmax_color']},
                             fillcolor = config['appearance']['minmax_color'],
                             mode="none",
                             fill='toself',
+                            # Use custom meta to link the trace to the shared data
+                            meta = {'x_ref': x_poly_ref, 'y_ref': y_poly_ref}
                               ), 1, 1)
+  
+  # Prepare Hover Text for the Average Line
   hovertext = []
   delta = []
   if report['x'][graph] == 'ts':
@@ -574,23 +601,33 @@ def CreatePlotlyFig(config,
         else:
           hovertext.append(f"{report['xlabel'][graph]}: {xval}<br />Avg. per {report['xlabel'][graph]}: {value:.2f}")
 
-  fig.add_trace(go.Scatter( x=x,
-                            y=df_avg_time, 
+  # Register Avg Line data
+  x_ref = data_manager.register(x, 'x_axis')
+  y_avg_ref = data_manager.register(df_avg_time, 'y_avg_time')
+  text_ref = data_manager.register(hovertext, 'hover_avg_time')
+  
+  # Calculate colors for markers
+  color_data = (np.log2(df_avg_time) if report['log'][graph] else df_avg_time)
+
+  fig.add_trace(go.Scatter( x=[],
+                            y=[], 
                             name = f"Avg. per {report['xlabel'][graph] if report['xlabel'][graph] else 'time'}      ",
                             legendgroup = 'time',
                             line = {"shape": 'hvh', "color":"black"},
                             mode="lines+markers",
-                            # mode = 'markers',
                             hoverinfo='text',
-                            text=hovertext,
+                            text=[],
+                            # Meta references
+                            meta = {'x_ref': x_ref, 'y_ref': y_avg_ref, 'text_ref': text_ref},
                             marker=dict(
                                   size=5,
                                   cmin=(np.log2(report['lim'][graph][0]) if report['log'][graph] else report['lim'][graph][0]),
                                   cmax=(np.log2(report['lim'][graph][1]) if report['log'][graph] else report['lim'][graph][1]),
-                                  color=(np.log2(df_avg_time) if report['log'][graph] else df_avg_time),
+                                  color=color_data, # Color data is embedded for now as it maps directly to colorscale
                                   colorscale=colorscales[report['cmap'][graph].replace('cmc.','').replace('_r','')] if report['cmap'][graph].replace('cmc.','').replace('_r','') in colorscales else report['cmap'][graph],
                               ),
                               ), 1, 1)
+                              
   fig['layout'][f'xaxis1'].update(dict(showticklabels=False,range=time_range if report['x'][graph] == 'ts' else [x.min(),x.max()]))
   fig['layout'][f'yaxis1'].update(dict(title=f"{report['unit'][graph]}", range=report['lim'][graph]))
   if report['log'][graph]:
@@ -687,17 +724,14 @@ def CreatePlotlyFig(config,
                         )
                       ])
   fig['layout']['annotations'] = annotations
-  #(2,1) - COLORPLOT
+  
+  #(2,1) - COLORPLOT (Heatmap)
   fig['layout'][f'xaxis3'].update(dict( matches='x', tickformat=('%d/%m/%y\n%H:%M:%S')) if report['x'][graph] == 'ts' else dict( matches='x' ))
   fig['layout'][f'yaxis3'].update(dict( matches='y4', 
                                         title=report['ylabel'][graph],
                                         nticks = 16,
                                         tickmode = 'auto',
-                                        # tickfont={"family":"'Liberation Sans','Arial',sans-serif"},
-                                        # tickvals = y,
-                                        # ticktext = nodes,
                                         ))
-  # Adding x label, when present
   if report['xlabel'][graph]:
     fig['layout'][f'xaxis3'].update(dict( title=report['xlabel'][graph] ))
 
@@ -714,6 +748,7 @@ def CreatePlotlyFig(config,
     colorbar = dict(**colorbar,tickvals=np.log2(cticks),ticktext=cticks)
 
   hovertext = []
+  # Construct the 2D hovertext matrix for the heatmap
   if report['x'][graph] == 'ts':
     for yi, yy in enumerate(nodes):
       hovertext.append([])
@@ -737,31 +772,54 @@ def CreatePlotlyFig(config,
           else:
             hovertext[-1].append(f"{report['xlabel'][graph]}: {xx}<br />{report['ylabel'][graph]}: {yy}<br />Value: {z[yi][xi]:.2f}")
 
-  fig.add_trace(go.Heatmap( x=x,
-                            y=nodes,
-                            z=(np.log2(z) if report['log'][graph] else z),
+  # Register Heatmap Data
+  # We register nodes (Y axis) and the Z matrix and the Text matrix
+  # X axis is already registered as 'x_axis' from previous traces, but we can register it again to get the same ID
+  y_nodes_ref = data_manager.register(nodes, 'nodes_y')
+  
+  # Process Z data (Log scaling if needed)
+  z_processed = (np.log2(z) if report['log'][graph] else z)
+  z_ref = data_manager.register(z_processed, 'heatmap_z')
+  
+  # Register Hover Text
+  text_matrix_ref = data_manager.register(hovertext, 'heatmap_hover')
+
+  fig.add_trace(go.Heatmap( x=[], # Empty
+                            y=[], # Empty
+                            z=[], # Empty
                             showscale=True, 
                             connectgaps=False, 
                             zmin=(np.log2(report['lim'][graph][0]) if report['log'][graph] else report['lim'][graph][0]),
                             zmax=(np.log2(report['lim'][graph][1]) if report['log'][graph] else report['lim'][graph][1]),
                             name=f"{report['graphs'][graph]}",
                             hoverinfo='text',
-                            text=hovertext,
-                            # zsmooth='best',
+                            text=[],
                             colorbar=colorbar, 
-                            colorscale=colorscales[report['cmap'][graph].replace('cmc.','').replace('_r','')] if report['cmap'][graph].replace('cmc.','').replace('_r','') in colorscales else report['cmap'][graph]), 2, 1)
-                            # colorscale=["#d62728","gold","#2ca02c"]), 2, 1)
+                            colorscale=colorscales[report['cmap'][graph].replace('cmc.','').replace('_r','')] if report['cmap'][graph].replace('cmc.','').replace('_r','') in colorscales else report['cmap'][graph],
+                            # Meta tags linking to shared data
+                            meta = {'x_ref': x_ref, 'y_ref': y_nodes_ref, 'z_ref': z_ref, 'text_ref': text_matrix_ref}
+                            ), 2, 1)
 
   #(2,2) - TIME-AVERAGE PER NODE
-  fig.add_trace(go.Scatter( x=pd.concat([errmax_node,errmin_node.reindex(index=errmin_node.index[::-1])]), 
-                            y=np.hstack([y_nodes,y_nodes[::-1]]),
+  # Prepare Polygon data
+  x_poly_node = pd.concat([errmax_node,errmin_node.reindex(index=errmin_node.index[::-1])])
+  y_poly_node = np.hstack([y_nodes,y_nodes[::-1]])
+  
+  x_poly_node_ref = data_manager.register(x_poly_node, 'x_node_poly')
+  y_poly_node_ref = data_manager.register(y_poly_node, 'y_node_poly')
+
+  fig.add_trace(go.Scatter( x=[],
+                            y=[],
                             name = 'min/max',
                             legendgroup = 'node',
                             line = {"shape": 'vhv', "color": config['appearance']['minmax_color']},
                             fillcolor = config['appearance']['minmax_color'],
                             mode="none",
                             fill='toself',
+                            meta = {'x_ref': x_poly_node_ref, 'y_ref': y_poly_node_ref}
                               ), 2, 2)
+  
+  # Prepare Hover Text for Node Average Line
   hovertext = []
   for node,value in zip(nodes,df_avg_node):
     if np.isnan(value):
@@ -772,23 +830,32 @@ def CreatePlotlyFig(config,
       else:
         hovertext.append(f"{report['ylabel'][graph]}: {node}<br />Avg. per {report['ylabel'][graph]}: {value:.2f}")
 
-  fig.add_trace(go.Scatter( x=df_avg_node,
-                            y=nodes,
+  x_avg_node_ref = data_manager.register(df_avg_node, 'x_avg_node')
+  text_node_ref = data_manager.register(hovertext, 'hover_avg_node')
+  
+  color_node = (np.log2(df_avg_node) if report['log'][graph] else df_avg_node)
+
+  fig.add_trace(go.Scatter( x=[],
+                            y=[],
                             name = f"Avg. per {report['ylabel'][graph]}",
                             legendgroup = 'node',
                             line = {"shape": 'vhv', "color":"black"},
                             mode="lines+markers",
                             hoverinfo='text',
-                            text=hovertext,
+                            text=[],
                             marker=dict(
                                 size=5,
                                 cmin=(np.log2(report['lim'][graph][0]) if report['log'][graph] else report['lim'][graph][0]),
                                 cmax=(np.log2(report['lim'][graph][1]) if report['log'][graph] else report['lim'][graph][1]),
-                                color=(np.log2(df_avg_node) if report['log'][graph] else df_avg_node),
+                                color=color_node,
                                 colorscale=colorscales[report['cmap'][graph].replace('cmc.','').replace('_r','')] if report['cmap'][graph].replace('cmc.','').replace('_r','') in colorscales else report['cmap'][graph],
-                              )), 2, 2)
+                              ),
+                            # Meta references
+                            meta = {'x_ref': x_avg_node_ref, 'y_ref': y_nodes_ref, 'text_ref': text_node_ref}
+                              ), 2, 2)
+  
   fig['layout'][f'xaxis4'].update(dict(title=f"{report['unit'][graph]}", range=report['lim'][graph]))
-  fig['layout'][f'yaxis4'].update(dict(showticklabels=False,range=[y.min()-0.5,y.max()+0.5]))
+  fig['layout'][f'yaxis4'].update(dict(showticklabels=False,range=[y.min()-0.5,y.max()+0.5] if isinstance(y, (np.ndarray, pd.Series)) else [0, 1])) 
   if report['log'][graph]:
     fig['layout'][f'xaxis4'].update(dict(type="log", dtick=np.log10(report['log'][graph]), range=[np.log10(i) for i in report['lim'][graph]], tickvals=cticks))
 
