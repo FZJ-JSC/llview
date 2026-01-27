@@ -492,18 +492,20 @@ class BenchRepo:
 
     # Set to store metrics that are strictly required for plots (to not add default values)
     plot_metrics = set()
+    x_axis_metrics = set() # Track X-axis metrics
 
     # Add metrics from the table parameters
     used_metrics.update(config.get('table', []))
     # Add metrics from all plots
     for tab_name, plot_config in self._iter_plots(config):
       # Add the x and y axes if they are defined
-      if plot_config.get('x'):
-        used_metrics.add(plot_config['x'])
-        plot_metrics.add(plot_config['x'])
-      if plot_config.get('y'):
-        used_metrics.add(plot_config['y'])
-        plot_metrics.add(plot_config['y'])
+      if x := plot_config.get('x'):
+        used_metrics.add(x)
+        plot_metrics.add(x)
+        x_axis_metrics.add(x)
+      if y := plot_config.get('y'):
+        used_metrics.add(y)
+        plot_metrics.add(y)
       
       # Add all metrics used for plot curves/traces and annotations
       group_by_cols = plot_config.get('group_by', [])
@@ -651,16 +653,25 @@ class BenchRepo:
           self.log.error(f"Required keys {keys_str} not found in file header of source {source}. Skipping...\n")
           continue
 
-        # Identify the CSV header that corresponds to 'ts' (if it exists in the file)
-        ts_csv_header = next((k for k, v in headers.items() if v == 'ts'), None)
+        # Identify CSV headers that correspond to ANY required X-axis metric
+        # We need to map Internal Name -> CSV Header
+        # headers dict is {CSV_Header: Internal_Name}
+        # We want a list of CSV Headers where Internal_Name is in x_axis_metrics
+        required_x_headers = [h_csv for h_csv, h_int in headers.items() if h_int in x_axis_metrics]
 
         # Getting data from file (CSV or JSON)
         for line in data:
 
-          # Check if 'ts' is present if it is required from content
-          if ts_csv_header:
-            if not str(line.get(ts_csv_header, '')).strip():
-              self.log.debug(f"Skipping line due to empty 'ts' value.\n")
+          # Check if ALL required X-axis metrics present in the content are valid
+          # If any required X metric is empty, skip the line.
+          skip_line = False
+          for x_header in required_x_headers:
+            if not str(line.get(x_header, '')).strip():
+              self.log.debug(f"Skipping line due to empty x-axis value for '{headers[x_header]}'.\n")
+              skip_line = True
+              break
+          
+          if skip_line:
               continue
 
           # Use .get(key_old, '') to safely handle missing keys or empty values without skipping
@@ -751,9 +762,10 @@ class BenchRepo:
       # Adding 'common_data' to all entries of 'current_data'
       current_data[:] = [(data|common_data) for data in current_data]
 
-      # If current_data is not empty but 'ts' is not found
-      if current_data and 'ts' not in current_data[0]:
-        self.log.error(f"'ts' could not be obtained for '{combined_name}'.\n")
+      # If current_data is not empty but no x_axis_metrics are given, we can't plot
+      missing_x = [x for x in x_axis_metrics if x not in current_data[0]]
+      if current_data and missing_x:
+        self.log.error(f"x-axis metric(s) {missing_x} could not be obtained for '{combined_name}'.\n")
         return False # Abort processing
 
       # Perform validation (to set the _status) and default-setting on each line
@@ -798,6 +810,26 @@ class BenchRepo:
         # Set the final, determined status for the line
         line['_status'] = run_status
 
+      # Before filtering the data, we capture a "stub" record
+      # containing ONLY the metadata (common_data) + status + timestamp.
+      # We will use this if all data rows are filtered out.
+      stub_record = None
+      if current_data:
+        # Start with common data (System, Experiment, etc.)
+        stub_record = common_data.copy()
+        
+        # Add the status from the first validated row (which reflects metadata health)
+        stub_record['_status'] = current_data[0]['_status']
+
+        # Initialize all content metrics to None, except for x-axis metrics
+        # We must preserve x so the point exists on the graph axis
+        for m in list(headers.values()) + list(calc_headers.keys()): 
+          if m not in x_axis_metrics: 
+            stub_record[m] = None
+          elif m in current_data[0]:
+            # Preserve the x value from the first row if it's not in common_data
+            stub_record[m] = current_data[0][m]
+
       # Applying filters 'exclude' and/or 'include' for each metric, when present
       # (This must be done before collecting the unique graph parameters
       # to remove unwanted values, but should be done after the validation for the status
@@ -808,16 +840,25 @@ class BenchRepo:
                           include=to_include
                         )
 
+      # If data was filtered down to nothing, but we started with valid data (stub exists),
+      # assume we want to keep the metadata record.
+      if not current_data and stub_record:
+        current_data.append(stub_record)
+
       # Converting data obtained from file content and multiplying by factor, when present
       # (Here we skip failed lines, since they don't have valid values)
       for key in list(headers.values())+list(calc_headers.keys()):
         # Getting the type of the metric
         mtype = metrics_types[key]
         for data in current_data:
+          val = data.get(key)
+
+          # Skip if value is missing or None (should be already handled by validation or stub)
+          if val is None:
+            continue
           
           # Skip conversion if the line is already marked as FAILED (except for strings, which might be partial data)
-          # OR if the value itself is None (was set to None by validation)
-          if data.get('_status') == 'F' and data.get(key) is None:
+          if data.get('_status') == 'F' and mtype != 'str':
             continue
           
           if mtype == 'str':
@@ -826,12 +867,12 @@ class BenchRepo:
             convert = metrics_section[key].get('factor')
           try:
             data[key] = self.convert_data(
-                                          data[key],
+                                          val,
                                           vtype='ts' if key == 'ts' else mtype,
                                           factor=convert,
                                           )
           except ValueError:
-            self.log.debug(f"Cannot convert value '{data[key]}' for '{key}' in source {source}! Skipping conversion...\n")
+            self.log.debug(f"Cannot convert value '{val}' for '{key}' in source {source}! Skipping conversion...\n")
             continue
 
       # Collecting unique values for graph parameters in current source:
@@ -865,13 +906,17 @@ class BenchRepo:
       # to be written out in LML
       # (This is done at the end to allow the possibility of ts to be added 
       # either from content or from common_data)
-      if self._lastts:
-        current_data[:] = [data for data in current_data if data['ts'] > self._lastts]
+      if  'ts' not in data:
+        # If data does not contain timestamps, there's no way to know what to keep or not, so this is skipped
+        self.log.error(f"Data in '{combined_name}' does not contain 'ts', but 'tsfile' is used. Cannot compare times, so all data will be kept.\n")
+      else:
+        if self._lastts:
+          current_data[:] = [data for data in current_data if data['ts'] > self._lastts]
 
-      # Storing temporary lastts from last timestamp of current data
-      if current_data:
-        # Ensure we don't crash if current_data became empty after filter
-        lastts_temp = max([data['ts'] for data in current_data]+[self._lastts,lastts_temp])
+        # Storing temporary lastts from last timestamp of current data
+        if current_data:
+          # Ensure we don't crash if current_data became empty after filter
+          lastts_temp = max([data['ts'] for data in current_data]+[self._lastts,lastts_temp])
 
       if current_data: # Adding an id to current data, to have an unique identifier for the csv file generation
         self._dict |= {
@@ -923,7 +968,7 @@ class BenchRepo:
         typed_value = not (str(raw_value).lower() in ['false', '0', '']) if isinstance(raw_value, (str, int)) else bool(raw_value)
         value_type = 'bool'
       elif spec['type'] == 'ts':
-        typed_value = time.mktime(dateutil.parser.parse(raw_value).timetuple())
+        typed_value = dateutil.parser.parse(raw_value).timestamp()
         value_type = 'ts' # using type 'ts' for timestamp
       else:
         self.log.error(f"Type '{spec['type']}' for metric '{metric_name}' not recognised! Use 'date', 'str', 'int', 'float', 'bool', or 'ts'. Skipping metric...\n")
@@ -931,7 +976,7 @@ class BenchRepo:
     else:
       # Default type handling
       if metric_name == 'ts': # if type is not given for metric 'ts'
-        typed_value = time.mktime(dateutil.parser.parse(raw_value).timetuple())
+        typed_value = dateutil.parser.parse(raw_value).timestamp()
         value_type = 'ts' # using type 'ts' for timestamp
         # For timestamp 'ts' metric, store it
       else:
