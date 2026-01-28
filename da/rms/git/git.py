@@ -500,7 +500,7 @@ class BenchRepo:
 
     # Set to store metrics that are strictly required for plots (to not add default values)
     plot_metrics = set()
-    x_axis_metrics = set() # Track X-axis metrics
+    x_axis_metrics = set() # Track x-axis metrics
 
     # Add metrics from the table parameters
     used_metrics.update(config.get('table', []))
