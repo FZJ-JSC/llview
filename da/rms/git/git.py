@@ -175,11 +175,11 @@ class BenchRepo:
     }
   }
 
-  def __init__(self,name="",config="",tab=None,lastts=0,skipupdate=False):
+  def __init__(self,name="",config="",tab=None,lastts=None,skipupdate=False):
     self._dict = {}   # Dictionary with modified information (which is output to LML)
     self._name = name # Name of the group (outer key)
     self._tab = tab   # Name of the tab (if that's the case, otherwise None)
-    self._lastts = lastts
+    self._lastts = lastts # Can be None (disabled), 0 (new), or >0 (existing)
     self._data = {}  # Data to be stored on the object
     self._skipupdate = skipupdate # Skip update of repos (when they were already cloned). Good to use when no new points exist (e.g., 2 consecutive runs)
 
@@ -870,10 +870,13 @@ class BenchRepo:
           # Skip if value is missing or None (should be already handled by validation or stub)
           if val is None:
             continue
-          
-          # Skip conversion if the line is already marked as FAILED (except for strings, which might be partial data)
-          if data.get('_status') == 'F' and mtype != 'str':
-            continue
+
+          # Skip if value is the default (already handled)
+          if val == self.default.get(mtype): continue
+
+          # Only skip if it's an empty string that would crash conversion for non-strings
+          if val == '' and mtype != 'str':
+              continue
           
           if mtype == 'str':
             convert = metrics_section[key].get('regex')
@@ -916,21 +919,25 @@ class BenchRepo:
         # Saving all raw data, including all ts, to be able to get all combinations for graphs
         raw_data += current_data
 
-      # Filtering older timestamps when lastts is given and storing in self._dict
+      # Filtering older timestamps if tracking is enabled (not None) and storing in self._dict
       # to be written out in LML
       # (This is done at the end to allow the possibility of ts to be added 
       # either from content or from common_data)
-      if  'ts' not in data:
-        # If data does not contain timestamps, there's no way to know what to keep or not, so this is skipped
-        self.log.error(f"Data in '{combined_name}' does not contain 'ts', but 'tsfile' is used. Cannot compare times, so all data will be kept.\n")
-      else:
-        if self._lastts:
+      if self._lastts is not None:
+
+        # We need 'ts' to filter. Check the first row (if data exists).
+        if current_data and 'ts' not in current_data[0]:
+          self.log.error(f"Data in '{combined_name}' does not contain 'ts', but 'tsfile' tracking is enabled. Cannot filter by time.\n")
+        else:
+          # Filter: Keep only new data
+          # Note: self._lastts defaults to 0, so if new, all data > 0 is kept.
           current_data[:] = [data for data in current_data if data['ts'] > self._lastts]
 
-        # Storing temporary lastts from last timestamp of current data
-        if current_data:
-          # Ensure we don't crash if current_data became empty after filter
-          lastts_temp = max([data['ts'] for data in current_data]+[self._lastts,lastts_temp])
+          # Storing temporary lastts from last timestamp of current data
+          if current_data:
+            # Calculate max of current data, existing max (lastts_temp), and the previous boundary (_lastts)
+            # This ensures _lastts only moves forward.
+            lastts_temp = max([data['ts'] for data in current_data] + [self._lastts, lastts_temp])
 
       if current_data: # Adding an id to current data, to have an unique identifier for the csv file generation
         self._dict |= {
@@ -941,7 +948,8 @@ class BenchRepo:
         }
 
     # Storing new lastts from last timestamp of all data
-    self._lastts = lastts_temp
+    if self._lastts is not None:
+      self._lastts = lastts_temp
     return True
 
   def _format_id_value(self, value):
@@ -1291,8 +1299,9 @@ class BenchRepo:
                                   {'name': 'min_ts',         'type': 'ts_t'},
                                   {'name': 'max_ts',         'type': 'ts_t'},
                                 ]
-                                +[{'name': key.replace(' ', '_'), 'type': f'{metrics[key]}_t'} for key in parameters]
-                                +[{'name': f'{key.replace(' ', '_')}_{suffix}', 'type': f'{metrics[key]}_t'} for key in graph_metrics for suffix in ['min','avg','max']],
+                                +[{'name': key.replace(' ', '_'), 'type': f'{metrics[key]}_t'} for key in parameters] 
+                                # Aggregates (min/avg/max) are ALWAYS floats and can be NULL (in case there are failed runs for all entries of a row)
+                                +[{'name': f'{key.replace(' ', '_')}_{suffix}', 'type': 'float_null_t'} for key in graph_metrics for suffix in ['min','avg','max']],
                               }
                     })
 
@@ -1668,6 +1677,9 @@ class BenchRepo:
           if 'y' not in plot_config: continue
           graphelem = plot_config['y']
 
+          x_metric = plot_config.get('x', 'ts') # Default to ts if missing
+          x_col_name = 'date' if x_metric == 'ts' else x_metric
+
           # CALCULATING VALID COMBINATIONS FOR THIS SPECIFIC PLOT
           # Get the grouping keys (traces)
           current_group_by = plot_config.get('group_by', [])
@@ -1757,9 +1769,15 @@ class BenchRepo:
             # otherwise (traceelem is empty, single curve), generate a simple name without 'where' keys
             if traceelem:
               name_str = '<br>'.join(f"{key}: {traceelem[key]}" for mtype in sorted(self.default.keys(), reverse=True) for key in sorted(traceelem.keys()) if metrics[key] == mtype)
+              # Creating 'where' to update 'ts' to 'date', as we do this change in the csv header
+              where_clause = {}
+              for k, v in traceelem.items():
+                csv_key = 'date' if k == 'ts' else k
+                where_clause[csv_key] = v
+
               update_dict = {
                 'name': name_str,
-                'where': traceelem
+                'where': where_clause
               }
             else:
               # Single curve case: Name matches the Y-axis metric, no 'where' filter
@@ -1793,10 +1811,13 @@ class BenchRepo:
           graph = {
             'graph': {
               'name': graphelem,
-              'xcol': 'date',
+              'xcol': x_col_name,
               'layout': {
                 'yaxis': {
                   'title': graphelem + (f" [{config['metrics'][graphelem]['unit']}]" if "unit" in config.get('metrics', {}).get(graphelem, {}) else "")
+                },
+                'xaxis': {
+                  'title': x_metric if x_metric != 'ts' else None
                 },
                 'legend': {
                   'x': "1.02", 'xanchor': "left", 'y': "0.98", 'yanchor': "top", 'orientation': "v"
@@ -2504,14 +2525,21 @@ def main():
             plot_list[i] = merged_plot
 
         log.info(f"Collecting data for '{combined_name}'...\n")
-
+        
+        # Determine the initial lastts value
+        initial_lastts = None
+        # Only set a numeric value if tracking is enabled via args.tsfile
+        if args.tsfile:
+          # If we have a recorded timestamp, use it. Otherwise, start at 0.
+          initial_lastts = lastts.get(combined_name, 0)
+        
         # Initializing new object of type given in config
         # This object is given per page or per internal tab (in case tabs are given)
         tab_bench = BenchRepo(
           name=repo_name,
           tab=group_name if internal_tabs else None,
           config=group_config,
-          lastts=lastts[combined_name] if combined_name in lastts else 0,
+          lastts=initial_lastts,
           skipupdate=args.skipupdate,
         )
 
@@ -2526,7 +2554,8 @@ def main():
           continue
 
         # Update lastts for this specific tab/combined_name
-        lastts[combined_name] = tab_bench.lastts
+        if args.tsfile:
+          lastts[combined_name] = tab_bench.lastts
 
         # This combines the _data (metrics, raw, etc.) and _dict (LML output)
         repo_bench += tab_bench

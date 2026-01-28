@@ -156,6 +156,8 @@ int_t:
   sql: INT(16) NOT NULL DEFAULT -1
 float_t:
   sql: FLOAT(32) NOT NULL DEFAULT 0
+float_null_t:
+  sql: FLOAT(32) DEFAULT NULL
 primary_key_t:
   sql: INTEGER NOT NULL PRIMARY KEY
 

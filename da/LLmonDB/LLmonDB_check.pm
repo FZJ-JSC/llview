@@ -88,6 +88,7 @@ sub checkDB {
       $clean_table =~ s/^"|"$//g;
 
       my $do_recreate_table=0;
+      my $table_diffs = 0; # Counter for differences found in this table
       
       printf("  LLmonDB:  -> check $db table $table\n") if($debug>=3);
       my $configcoldefs=$self->{CONFIG}->get_columns_defs($db,$table);
@@ -103,6 +104,7 @@ sub checkDB {
         # Check if the casing is different
         if($real_db_table_name ne $clean_table) {
           $found++;
+          $table_diffs++; # Track this difference
           printf("  LLmonDB:     CHECK: table name casing changed ('$real_db_table_name' to '$clean_table')\n");
           
           if(!$dryrun) {
@@ -118,9 +120,9 @@ sub checkDB {
         # Create a normalized lookup for config columns
         my %clean_config_lookup;
         foreach my $k (keys %{$configcoldefs->{coldata}}) {
-            my $ck = $k; 
-            $ck =~ s/^"|"$//g;
-            $clean_config_lookup{$ck} = $k;
+          my $ck = $k; 
+          $ck =~ s/^"|"$//g;
+          $clean_config_lookup{$ck} = $k;
         }
 
         # first, check cols from config file
@@ -131,6 +133,7 @@ sub checkDB {
           if(exists($dbcoldefs->{coldata}->{$clean_col})) {
             if($configcoldefs->{coldata}->{$col}->{sql} ne $dbcoldefs->{coldata}->{$clean_col}->{sql}) {
               $found++;
+              $table_diffs++; # Track specific difference for this table
               printf("  LLmonDB:     CHECK: table column $col changed ('$dbcoldefs->{coldata}->{$clean_col}->{sql}' to '$configcoldefs->{coldata}->{$col}->{sql}')]\n");
               printf("  LLmonDB:     [DRY: alter table column $col ]\n");
               if(!$dryrun) {
@@ -141,10 +144,12 @@ sub checkDB {
             } 
           } else {
             $found++;
+            $table_diffs++;
             printf("  LLmonDB:     CHECK: table column $col missing in DB ('$configcoldefs->{coldata}->{$col}->{sql}')\n");
             if(!$dryrun) {
               $dbobj->add_column($table,$col,$configcoldefs->{coldata}->{$col}->{sql});
               $done++;
+              $table_diffs--; # Decrement because we just fixed it immediately (don't count in recreate)
             } else {
               printf("  LLmonDB:     [DRY: add column $col to table $table ]\n");
             }
@@ -155,11 +160,11 @@ sub checkDB {
         foreach my $col (@{$dbcoldefs->{collist}}) {
           if(!exists($clean_config_lookup{$col})) {
             $found++;$dataloss++;
+            $table_diffs++;
             printf("  LLmonDB:     CHECK: table column $col only in DB ('$dbcoldefs->{coldata}->{$col}->{sql}'), column will be removed\n");
             printf("  LLmonDB:     CHECK: WARNING [data loss], remove column will destroy data in this column !!!\n");
             if(!$dryrun) {
               $do_recreate_table=1;
-              $done++;
             } else {
               printf("  LLmonDB:     [DRY: remove column $col to table $table ]\n");
             }
@@ -169,8 +174,8 @@ sub checkDB {
         if($do_recreate_table) {
           printf("  LLmonDB:     CHECK: re-create table $table in DB due to modification of columns, data of existing columns will be copied\n");
           if(!$dryrun) {
-            $dbobj->recreate_table($clean_table,$configcoldefs); # Note: Use clean_table here as discussed
-            $done++;
+            $dbobj->recreate_table($clean_table,$configcoldefs);
+            $done += $table_diffs; # Adding all pending differences for this table
           } else {
             $found++;
             printf("  LLmonDB:     [DRY: re-create database table ($db,$table)]\n");
