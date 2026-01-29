@@ -30,13 +30,53 @@ from matplotlib.colors import to_hex # Convert RGB to HEX
 from itertools import count,cycle,product
 from copy import deepcopy
 from subprocess import check_output,run,PIPE
-from typing import Dict, Any
+from typing import List, Dict, Any, Union
 
 # Optional: keyring
 try:
   import keyring  # pyright: ignore [reportMissingImports]
 except ImportError:
   keyring = None  # Set to None if not available
+
+def range_validator(values: List[Union[float, int, None]], params: Dict[str, Any]) -> List[bool]:
+  """
+  Checks if values are within [min, max].
+  
+  Args:
+    values: List of numeric values (or None) to check.
+    params: Dictionary containing 'min' and/or 'max' thresholds.
+    
+  Returns:
+    List[bool]: True if valid (or None), False if out of bounds.
+    
+  Raises:
+    ValueError: If validation params are invalid.
+  """
+  min_val = params.get('min')
+  max_val = params.get('max')
+
+  if min_val is None and max_val is None:
+    raise ValueError("range_validator requires 'min' or 'max' parameter.")  
+
+  results = []
+  for val in values:
+    if val is None:
+      results.append(True) # Treat missing data as 'Valid' (ignore), but they should have been already filtered
+      continue
+
+    is_valid = True
+    try:
+      if min_val is not None and val < min_val:
+        is_valid = False
+      elif max_val is not None and val > max_val:
+        is_valid = False
+    except TypeError as e:
+      # If we can't compare, it's a data error. Raise it so the user knows.
+      raise TypeError(f"Cannot compare value '{val}' with thresholds: {e}")
+      
+    results.append(is_valid)
+    
+  return results
 
 # Fixing/improving multiline output and strings with special characters of YAML dump
 def str_presenter(dumper, data):
@@ -498,6 +538,10 @@ class BenchRepo:
     # Getting all metrics that are used:
     used_metrics = set()
 
+    # Always include 'ts' because it is mandatory for DB updates
+    # For that, 'ts' must be defined in the metrics section
+    used_metrics.add('ts') 
+
     # Set to store metrics that are strictly required for plots (to not add default values)
     plot_metrics = set()
     x_axis_metrics = set() # Track x-axis metrics
@@ -814,12 +858,24 @@ class BenchRepo:
             # For the table parameters, annotations, etc. set the default value
             else:
               metric_type = metrics_types.get(metric, 'str')
-              # If a non-string parameter is empty, it's a failure.
-              if metric_type != 'str':
-                run_status = "F"
               
-              # Set the value to its appropriate default for display in the table.
-              line[metric] = self.default.get(metric_type, '')
+              # If the config has a 'default' key, use it
+              specific_default = metrics_section[metric].get('default')
+              
+              if specific_default is not None:
+                # Use the user-defined default
+                line[metric] = specific_default
+                # Note: We do NOT set status to 'F' here, because the user provided a fallback.
+                # So, it is treated as a valid value.
+              
+              else:
+                # Fallback to standard logic (Global Defaults)
+                # If a non-string parameter is empty AND no specific default exists, it's a failure.
+                if metric_type != 'str':
+                  run_status = "F"
+                
+                # Set the value to the global type default.
+                line[metric] = self.default.get(metric_type, '')
 
         # Set the final, determined status for the line
         line['_status'] = run_status
@@ -940,12 +996,17 @@ class BenchRepo:
             lastts_temp = max([data['ts'] for data in current_data] + [self._lastts, lastts_temp])
 
       if current_data: # Adding an id to current data, to have an unique identifier for the csv file generation
-        self._dict |= {
-          f"{combined_name}_{next(self._counter)}": data | {
+        for data in current_data:
+          # Generate a unique ID for self._dict
+          unique_key = f"{combined_name}_{next(self._counter)}"
+          
+          # Store this key in the raw data object so we can use it later for mapping
+          data['__output_key'] = unique_key 
+          
+          # Add to self._dict
+          self._dict[unique_key] = data | {
             'id': '_'.join([self._format_id_value(data.get(key)) for key in parameters])
-          } 
-          for data in current_data
-        }
+          }
 
     # Storing new lastts from last timestamp of all data
     if self._lastts is not None:
@@ -1056,6 +1117,85 @@ class BenchRepo:
       self.log.error(f"Type '{vtype}' not recognised! Use 'datetime', 'str', 'int' or 'float'. Skipping conversion...\n")
     return value
 
+  def validate_metrics(self) -> bool:
+    """
+    Runs configured validation logic on the collected raw data.
+    Returns: True if all validations ran (or were skipped safely), False on critical error.
+    """
+    benchmark_data = self._get_benchmark_data(self._name, self._tab)
+    raw_data = benchmark_data['raw']
+    metrics_section = benchmark_data['config']['metrics']
+    
+    if not raw_data:
+      return True # No data to validate is technically a success
+
+    for metric_name, spec in metrics_section.items():
+      if 'validate' not in spec:
+        continue
+      
+      validators = spec['validate']
+      if not isinstance(validators, list):
+        validators = [validators]
+
+      for v_spec in validators:
+        func_name = v_spec.get('name')
+        module_name = v_spec.get('module')
+
+        validator_func = None
+
+        # Resolving function from module
+        if module_name:
+          try:
+            mod = __import__(module_name, fromlist=[func_name])
+            validator_func = getattr(mod, func_name)
+          except (ImportError, AttributeError) as e:
+            self.log.error(f"Validator '{func_name}' in module '{module_name}' could not be loaded: {e}\n")
+            return False # Critical config error
+        else:
+          # Look in global scope (globals()) for the function
+          if func_name in globals():
+            validator_func = globals()[func_name]
+          else:
+            self.log.error(f"Validator function '{func_name}' not found.\n")
+            return False # Critical config error
+
+        # Preparing data for validation (Extract only the values for this metric)
+        # We pass a copy of values to be safe.
+        # We also need to map the results back to the rows, so order matters.
+        values_to_check = [row.get(metric_name) for row in raw_data]
+
+        # Calling validator function
+        try:
+          # API: func(values_list, params_dict) -> list of booleans
+          validation_results = validator_func(values_to_check, v_spec)
+        except Exception as e:
+          # Catch errors raised by the validator (like the TypeError/ValueError we added)
+          self.log.error(f"Validation failed for metric '{metric_name}' using '{func_name}': {e}\n")
+          return False # Stop processing if validation crashes
+
+        # Processing results
+        if len(validation_results) != len(raw_data):
+          self.log.error(f"Validator '{func_name}' returned {len(validation_results)} results, expected {len(raw_data)}.\n")
+          return False
+
+        for i, is_valid in enumerate(validation_results):
+          if not is_valid:
+            row = raw_data[i]
+
+            # Check if row is already Failed (F)
+            # Update status in the raw data (Internal State)
+            row['_status'] = 'W'
+
+            # Update status to Warning
+            raw_data[i]['_status'] = 'W'
+            # and the output dictionary (fot the LML output)
+            output_key = row.get('__output_key')
+            if output_key and output_key in self._dict:
+              self._dict[output_key]['_status'] = 'W'
+            # self.log.debug(f"Row {i} marked Warning by validator '{func_name}' on '{metric_name}'\n")
+    return True
+
+
   def gen_configs(self,folder="./",history_n=5):
     """
     Generates the different configuration files needed by LLview:
@@ -1154,6 +1294,12 @@ class BenchRepo:
     # Calculate length for N items: (N * 1 char for status) + (N-1 * 1 char for dash)
     history_str_len = (history_n * 2) - 1
 
+    # Define the aggregation logic for status priority: F > W > S
+    # If any row is 'F', the whole timestamp is 'F'.
+    # Else if any row is 'W', the whole timestamp is 'W'.
+    # Else 'S'.
+    status_priority_sql = "CASE WHEN SUM(CASE WHEN \"_status\" = 'F' THEN 1 ELSE 0 END) > 0 THEN 'F' WHEN SUM(CASE WHEN \"_status\" = 'W' THEN 1 ELSE 0 END) > 0 THEN 'W' ELSE 'S' END"
+
     # Looping over all the benchmarks inside this object
     # (It can be done for each benchmark/tab or for all collected ones when singleLML is used)
     for benchname, tabname, benchmark_data in self._iter_all_data():
@@ -1250,10 +1396,11 @@ class BenchRepo:
 
       # Building the History Subquery:
       # - Filter by the current parameters (match_expr)
-      # - Group by "ts" to collapse multiple points into ONE status (MIN: F wins over S)
+      # - Group by "ts" to collapse multiple points into ONE status
+      # - Use status_priority_sql to ensure F > W > S
       # - Order by "ts" ASC
       # - Concatenate the results
-      inner_history_sql = f"SELECT GROUP_CONCAT(daily_stat, '-') FROM (SELECT MIN(\"_status\") as daily_stat FROM \"cb_{combined_name}_data\" AS T2 WHERE {match_expr} GROUP BY \"ts\" ORDER BY \"ts\" ASC)"
+      inner_history_sql = f"SELECT GROUP_CONCAT(daily_stat, '-') FROM (SELECT {status_priority_sql} as daily_stat FROM \"cb_{combined_name}_data\" AS T2 WHERE {match_expr} GROUP BY \"ts\" ORDER BY \"ts\" ASC)"
 
       # We also need a subquery to count the DISTINCT timestamps for the final dash logic (when there are further status points)
       count_subquery = f"SELECT COUNT(DISTINCT \"ts\") FROM \"cb_{combined_name}_data\" AS T2 WHERE {match_expr}"
@@ -1309,8 +1456,8 @@ class BenchRepo:
     for benchname in benchmarks_processed:
       # Subquery to get one status per timestamp (F wins over S, so we use MIN) for the global timeline
       # No match_expr needed here because we are aggregating the whole benchmark table.
-      inner_history_sql_global = f"SELECT GROUP_CONCAT(daily_stat, '-') FROM (SELECT MIN(\"_status\") as daily_stat FROM \"cb_{benchname}_timestamps\" GROUP BY \"ts\" ORDER BY \"ts\" ASC)"
-      
+      inner_history_sql_global = f"SELECT GROUP_CONCAT(daily_stat, '-') FROM (SELECT {status_priority_sql} as daily_stat FROM \"cb_{benchname}_timestamps\" GROUP BY \"ts\" ORDER BY \"ts\" ASC)"
+
       # Subquery to count UNIQUE runs for the dash logic
       count_subquery_global = f"SELECT COUNT(DISTINCT \"ts\") FROM \"cb_{benchname}_timestamps\""
 
@@ -1591,7 +1738,7 @@ class BenchRepo:
 
     format_types = {
       'int': '%d',
-      'float': '%s', # We will use the string output to allow empty values
+      'float': '%s', # We will use the string output to allow empty values without errors on LLview's workflow
       'str': '%s',
       'bool': '%d',
       'date': '%s',
@@ -2551,6 +2698,11 @@ def main():
         success = tab_bench.get_metrics()
         if not success:
           log.error(f"Error collecting metrics for '{combined_name}'. Skipping...\n")
+          continue
+
+        success = tab_bench.validate_metrics()
+        if not success:
+          log.error(f"Error validating metrics for '{combined_name}'. Skipping...\n")
           continue
 
         # Update lastts for this specific tab/combined_name

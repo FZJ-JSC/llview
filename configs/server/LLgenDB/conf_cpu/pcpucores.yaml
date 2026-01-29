@@ -99,6 +99,7 @@ pcpucoresstate:
     # derived tables
     #----------------------------------------------------------------
     # pcpucores_aggr_jobid_nodeid_coreid_avg
+    # For every core a job uses, keep exactly one row that summarizes its usage over the job's lifetime so far.
     # - aggregation over time per job
     # - keep only per job info: min/avg/max of ts and usage
     # - before update of table, the entries for the current jobs will be saved 
@@ -106,8 +107,8 @@ pcpucoresstate:
     #   to compute new aggregated values for existing jobs (see step 3)
     # - steps:
     # 1. remove info about current jobs
-    # 2. compute and insert aggregated values for new jobs
-    # 3. compute and insert aggregated values for existing jobs (join with *-last table)
+    # 2. compute and insert aggregated values for new jobs (pre-grouping to handle multiple timestamps per update)
+    # 3. compute and insert aggregated values for existing jobs (join with *-last table, pre-aggregating current batch)
     #
     # - size: contains aggregated info about jobs which ended in the last 2 hours,
     #          this window could be further reduced (e.g. 15min)
@@ -124,35 +125,36 @@ pcpucoresstate:
                                WHERE jobid IN (select jobid FROM pcpucores_current_jobid);
                    INSERT INTO pcpucores_aggr_jobid_nodeid_coreid_avg
                                (jobid,ts,ts_min,ts_max,nodeid,coreid,cnt1,usage1_min,usage1_avg,usage1_max,cnt2,usage2_min,usage2_avg,usage2_max)
-                               SELECT c.jobid,c.ts,c.ts,c.ts,c.nodeid,c.coreid,1,c.usage1,c.usage1,c.usage1,1,c.usage2,c.usage2,c.usage2
+                               SELECT c.jobid,MAX(c.ts),MIN(c.ts),MAX(c.ts),c.nodeid,c.coreid,
+                                      COUNT(c.usage1),MIN(c.usage1),AVG(c.usage1),MAX(c.usage1),
+                                      COUNT(c.usage2),MIN(c.usage2),AVG(c.usage2),MAX(c.usage2)
                                FROM pcpucores_by_jobid_nodeid_coreid_current c
-                               WHERE c.jobid NOT IN (select DISTINCT jobid FROM pcpucores_aggr_jobid_nodeid_coreid_last_avg);
+                               WHERE c.jobid NOT IN (select DISTINCT jobid FROM pcpucores_aggr_jobid_nodeid_coreid_last_avg)
+                               GROUP BY c.jobid, c.nodeid, c.coreid;
                    INSERT INTO pcpucores_aggr_jobid_nodeid_coreid_avg
                                (jobid,ts,ts_min,ts_max,nodeid,coreid,cnt1,usage1_min,usage1_avg,usage1_max,cnt2,usage2_min,usage2_avg,usage2_max)
-                               SELECT c.jobid,c.ts,l.ts_min,c.ts,c.nodeid,c.coreid,l.cnt1+1,
-                                      CASE WHEN l.usage1_min < c.usage1
-                                      THEN l.usage1_min
-                                      ELSE c.usage1
-                                      END,
-                                      (l.usage1_avg*l.cnt1 + c.usage1)/(l.cnt1+1),
-                                      CASE WHEN l.usage1_max > c.usage1
-                                      THEN l.usage1_max
-                                      ELSE c.usage1
-                                      END,
-                                      l.cnt2+1,
-                                      CASE WHEN l.usage2_min < c.usage2
-                                      THEN l.usage2_min
-                                      ELSE c.usage2
-                                      END,
-                                      (l.usage2_avg*l.cnt2 + c.usage2)/(l.cnt2+1),
-                                      CASE WHEN l.usage2_max > c.usage2
-                                      THEN l.usage2_max
-                                      ELSE c.usage2
-                                      END
-                               FROM pcpucores_by_jobid_nodeid_coreid_current c,
-                                    pcpucores_aggr_jobid_nodeid_coreid_last_avg l
-                               WHERE c.jobid=l.jobid AND c.nodeid=l.nodeid AND c.coreid=l.coreid
-                                     AND c.jobid IN (select DISTINCT jobid FROM pcpucores_aggr_jobid_nodeid_coreid_last_avg);
+                               SELECT cur.jobid, cur.ts_max,
+                                      l.ts_min, cur.ts_max,
+                                      l.nodeid, l.coreid,
+                                      l.cnt1 + cur.cnt1,
+                                      MIN(l.usage1_min, cur.usage1_min),
+                                      (l.usage1_avg * l.cnt1 + cur.usage1_sum) / (l.cnt1 + cur.cnt1),
+                                      MAX(l.usage1_max, cur.usage1_max),
+                                      l.cnt2 + cur.cnt2,
+                                      MIN(l.usage2_min, cur.usage2_min),
+                                      (l.usage2_avg * l.cnt2 + cur.usage2_sum) / (l.cnt2 + cur.cnt2),
+                                      MAX(l.usage2_max, cur.usage2_max)
+                               FROM (
+                                    SELECT jobid, nodeid, coreid,
+                                           MAX(ts) as ts_max,
+                                           COUNT(usage1) as cnt1, MIN(usage1) as usage1_min, MAX(usage1) as usage1_max, SUM(usage1) as usage1_sum,
+                                           COUNT(usage2) as cnt2, MIN(usage2) as usage2_min, MAX(usage2) as usage2_max, SUM(usage2) as usage2_sum
+                                    FROM pcpucores_by_jobid_nodeid_coreid_current
+                                    GROUP BY jobid, nodeid, coreid
+                               ) cur,
+                               pcpucores_aggr_jobid_nodeid_coreid_last_avg l
+                               WHERE cur.jobid=l.jobid AND cur.nodeid=l.nodeid AND cur.coreid=l.coreid
+                                     AND cur.jobid IN (select DISTINCT jobid FROM pcpucores_aggr_jobid_nodeid_coreid_last_avg);
           archive:
             limit: max(ts)-2h
           index: jobid,nodeid,coreid
