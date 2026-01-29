@@ -84,14 +84,17 @@ The `metrics` section defines every data point you want to track. A metric can b
 
 | Option | Description |
 | :------ | :--- |
-| `type` | (Optional) Data type. Options: `str` (default), `int`, `float`, `ts` (timestamp). |
+| `type` | (Optional) Data type. Options: `str` (default), `int`, `float`, `ts` (timestamp), `date`. |
 | `from` | (Optional) Source of data. Options: `content` (default), `filename`, `metadata`, `static`. If containing math operators, it acts as a formula. |
 | `header` | (Optional) The column name in the CSV. Defaults to the metric key name if omitted. |
 | `key` | (Required for `from: metadata`) The key name in the JSON metadata. |
 | `regex` | (Required for `from: filename`) Regular expression to extract data from filenames. |
+| `default` | (Optional) A specific value to use if the metric is missing or empty in the source. If set, missing data will **not** trigger a "Failed" status. |
 | `unit` | (Optional) String to display in graph axis labels (e.g., 'ns/d', 'GB/s'). |
 | `description` | (Recommended) Brief text describing the metric. Used as a tooltip in the table. |
 |  <span style="white-space:nowrap">`include`/`exclude`</span> | (Optional) List of values or Regex patterns to filter specific data rows based on this metric. |
+| `validate` | (Optional) A list of validation rules (e.g., min/max ranges) to flag outliers. See **[Data Validation](#6-data-validation)**. |
+
 
 ## 3. Dashboard Structure & Status
 
@@ -202,4 +205,75 @@ Splits the graphs area into visual tabs. This is useful for organizing many plot
       Runtime:        # Tab Name
         - x: ts
           y: 'Total Runtime'
+```
+
+## 6. Data Validation
+
+LLview also supports an extensible validation framework to automatically flag anomalous data points.
+
+### Configuration
+To enable validation, add a `validate` list to any metric definition. Each item in the list defines a validation step.
+
+```yaml
+metrics:
+  Frequency:
+    type: float
+    header: frequency
+    # Validation List
+    validate:
+      # Use the built-in range validator
+      - name: range_validator
+        min: 30
+        max: 980
+      
+      # Use a custom external validator
+      - name: my_outlier_detector
+        module: my_analysis_package.stats
+        method: z_score
+        threshold: 3
+```
+
+*   **`name`**: The name of the Python function to call.
+*   **`module`**: (Optional) The Python module where the function is defined.
+    *   If omitted, LLview looks for a built-in function (e.g., `range_validator`).
+    *   If provided, the module must be importable (i.e., in your `$PYTHONPATH`).
+*   **Parameters**: Any other keys provided (e.g., `min`, `max`, `threshold`) are passed directly to the validator function.
+
+### How it Works
+1.  **Collection:** LLview collects all data points for the benchmark.
+2.  **Batch Processing:** The full list of values for the metric is passed to the validator function. This allows for statistical analysis (e.g., calculating mean/std dev) across the entire dataset.
+3.  **Status Update:** If the validator returns `False` for a specific data point, its status is updated to **'W' (Warning)**.
+    *   *Note:* Runs that are already marked as **'F' (Failed)** due to missing data are skipped by the validator logic.
+
+### Developer API: Creating Custom Validators
+You can write your own validation logic in Python. The function signature must match the following:
+
+```python
+from typing import List, Dict, Any, Union
+
+def my_custom_validator(values: List[Union[float, int, str, None]], params: Dict[str, Any]) -> List[bool]:
+    """
+    Args:
+        values: A list containing the value of the metric for every run in the dataset.
+                Order matches the internal data rows. Values may be None.
+        params: The dictionary of configuration parameters from the YAML 'validate' entry.
+
+    Returns:
+        A list of booleans with the same length as 'values'.
+        - True: The value is valid.
+        - False: The value is anomalous (Triggers 'Warning' status).
+
+    Raises:
+        ValueError/TypeError: If configuration parameters are invalid. 
+                              This will halt the benchmark processing and log an error.
+    """
+    # Example Logic
+    threshold = params.get('threshold', 10)
+    results = []
+    for v in values:
+        if v is None: 
+            results.append(True) # Ignore missing data
+        else:
+            results.append(v < threshold)
+    return results
 ```

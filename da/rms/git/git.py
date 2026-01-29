@@ -30,13 +30,53 @@ from matplotlib.colors import to_hex # Convert RGB to HEX
 from itertools import count,cycle,product
 from copy import deepcopy
 from subprocess import check_output,run,PIPE
-from typing import Dict, Any
+from typing import List, Dict, Any, Union
 
 # Optional: keyring
 try:
   import keyring  # pyright: ignore [reportMissingImports]
 except ImportError:
   keyring = None  # Set to None if not available
+
+def range_validator(values: List[Union[float, int, None]], params: Dict[str, Any]) -> List[bool]:
+  """
+  Checks if values are within [min, max].
+  
+  Args:
+    values: List of numeric values (or None) to check.
+    params: Dictionary containing 'min' and/or 'max' thresholds.
+    
+  Returns:
+    List[bool]: True if valid (or None), False if out of bounds.
+    
+  Raises:
+    ValueError: If validation params are invalid.
+  """
+  min_val = params.get('min')
+  max_val = params.get('max')
+
+  if min_val is None and max_val is None:
+    raise ValueError("range_validator requires 'min' or 'max' parameter.")  
+
+  results = []
+  for val in values:
+    if val is None:
+      results.append(True) # Treat missing data as 'Valid' (ignore), but they should have been already filtered
+      continue
+
+    is_valid = True
+    try:
+      if min_val is not None and val < min_val:
+        is_valid = False
+      elif max_val is not None and val > max_val:
+        is_valid = False
+    except TypeError as e:
+      # If we can't compare, it's a data error. Raise it so the user knows.
+      raise TypeError(f"Cannot compare value '{val}' with thresholds: {e}")
+      
+    results.append(is_valid)
+    
+  return results
 
 # Fixing/improving multiline output and strings with special characters of YAML dump
 def str_presenter(dumper, data):
@@ -175,11 +215,11 @@ class BenchRepo:
     }
   }
 
-  def __init__(self,name="",config="",tab=None,lastts=0,skipupdate=False):
+  def __init__(self,name="",config="",tab=None,lastts=None,skipupdate=False):
     self._dict = {}   # Dictionary with modified information (which is output to LML)
     self._name = name # Name of the group (outer key)
     self._tab = tab   # Name of the tab (if that's the case, otherwise None)
-    self._lastts = lastts
+    self._lastts = lastts # Can be None (disabled), 0 (new), or >0 (existing)
     self._data = {}  # Data to be stored on the object
     self._skipupdate = skipupdate # Skip update of repos (when they were already cloned). Good to use when no new points exist (e.g., 2 consecutive runs)
 
@@ -498,20 +538,26 @@ class BenchRepo:
     # Getting all metrics that are used:
     used_metrics = set()
 
+    # Always include 'ts' because it is mandatory for DB updates
+    # For that, 'ts' must be defined in the metrics section
+    used_metrics.add('ts') 
+
     # Set to store metrics that are strictly required for plots (to not add default values)
     plot_metrics = set()
+    x_axis_metrics = set() # Track x-axis metrics
 
     # Add metrics from the table parameters
     used_metrics.update(config.get('table', []))
     # Add metrics from all plots
     for tab_name, plot_config in self._iter_plots(config):
       # Add the x and y axes if they are defined
-      if plot_config.get('x'):
-        used_metrics.add(plot_config['x'])
-        plot_metrics.add(plot_config['x'])
-      if plot_config.get('y'):
-        used_metrics.add(plot_config['y'])
-        plot_metrics.add(plot_config['y'])
+      if x := plot_config.get('x'):
+        used_metrics.add(x)
+        plot_metrics.add(x)
+        x_axis_metrics.add(x)
+      if y := plot_config.get('y'):
+        used_metrics.add(y)
+        plot_metrics.add(y)
       
       # Add all metrics used for plot curves/traces and annotations
       group_by_cols = plot_config.get('group_by', [])
@@ -659,16 +705,25 @@ class BenchRepo:
           self.log.error(f"Required keys {keys_str} not found in file header of source {source}. Skipping...\n")
           continue
 
-        # Identify the CSV header that corresponds to 'ts' (if it exists in the file)
-        ts_csv_header = next((k for k, v in headers.items() if v == 'ts'), None)
+        # Identify CSV headers that correspond to ANY required X-axis metric
+        # We need to map Internal Name -> CSV Header
+        # headers dict is {CSV_Header: Internal_Name}
+        # We want a list of CSV Headers where Internal_Name is in x_axis_metrics
+        required_x_headers = [h_csv for h_csv, h_int in headers.items() if h_int in x_axis_metrics]
 
         # Getting data from file (CSV or JSON)
         for line in data:
 
-          # Check if 'ts' is present if it is required from content
-          if ts_csv_header:
-            if not str(line.get(ts_csv_header, '')).strip():
-              self.log.debug(f"Skipping line due to empty 'ts' value.\n")
+          # Check if ALL required X-axis metrics present in the content are valid
+          # If any required X metric is empty, skip the line.
+          skip_line = False
+          for x_header in required_x_headers:
+            if not str(line.get(x_header, '')).strip():
+              self.log.debug(f"Skipping line due to empty x-axis value for '{headers[x_header]}'.\n")
+              skip_line = True
+              break
+          
+          if skip_line:
               continue
 
           # Use .get(key_old, '') to safely handle missing keys or empty values without skipping
@@ -765,9 +820,10 @@ class BenchRepo:
       # Adding 'common_data' to all entries of 'current_data'
       current_data[:] = [(data|common_data) for data in current_data]
 
-      # If current_data is not empty but 'ts' is not found
-      if current_data and 'ts' not in current_data[0]:
-        self.log.error(f"'ts' could not be obtained for '{combined_name}'.\n")
+      # If current_data is not empty but no x_axis_metrics are given, we can't plot
+      missing_x = [x for x in x_axis_metrics if x not in current_data[0]]
+      if current_data and missing_x:
+        self.log.error(f"x-axis metric(s) {missing_x} could not be obtained for '{combined_name}'.\n")
         return False # Abort processing
 
       # Perform validation (to set the _status) and default-setting on each line
@@ -802,15 +858,47 @@ class BenchRepo:
             # For the table parameters, annotations, etc. set the default value
             else:
               metric_type = metrics_types.get(metric, 'str')
-              # If a non-string parameter is empty, it's a failure.
-              if metric_type != 'str':
-                run_status = "F"
               
-              # Set the value to its appropriate default for display in the table.
-              line[metric] = self.default.get(metric_type, '')
+              # If the config has a 'default' key, use it
+              specific_default = metrics_section[metric].get('default')
+              
+              if specific_default is not None:
+                # Use the user-defined default
+                line[metric] = specific_default
+                # Note: We do NOT set status to 'F' here, because the user provided a fallback.
+                # So, it is treated as a valid value.
+              
+              else:
+                # Fallback to standard logic (Global Defaults)
+                # If a non-string parameter is empty AND no specific default exists, it's a failure.
+                if metric_type != 'str':
+                  run_status = "F"
+                
+                # Set the value to the global type default.
+                line[metric] = self.default.get(metric_type, '')
 
         # Set the final, determined status for the line
         line['_status'] = run_status
+
+      # Before filtering the data, we capture a "stub" record
+      # containing ONLY the metadata (common_data) + status + timestamp.
+      # We will use this if all data rows are filtered out.
+      stub_record = None
+      if current_data:
+        # Start with common data (System, Experiment, etc.)
+        stub_record = common_data.copy()
+        
+        # Add the status from the first validated row (which reflects metadata health)
+        stub_record['_status'] = current_data[0]['_status']
+
+        # Initialize all content metrics to None, except for x-axis metrics
+        # We must preserve x so the point exists on the graph axis
+        for m in list(headers.values()) + list(calc_headers.keys()): 
+          if m not in x_axis_metrics: 
+            stub_record[m] = None
+          elif m in current_data[0]:
+            # Preserve the x value from the first row if it's not in common_data
+            stub_record[m] = current_data[0][m]
 
       # Applying filters 'exclude' and/or 'include' for each metric, when present
       # (This must be done before collecting the unique graph parameters
@@ -822,17 +910,29 @@ class BenchRepo:
                           include=to_include
                         )
 
+      # If data was filtered down to nothing, but we started with valid data (stub exists),
+      # assume we want to keep the metadata record.
+      if not current_data and stub_record:
+        current_data.append(stub_record)
+
       # Converting data obtained from file content and multiplying by factor, when present
       # (Here we skip failed lines, since they don't have valid values)
       for key in list(headers.values())+list(calc_headers.keys()):
         # Getting the type of the metric
         mtype = metrics_types[key]
         for data in current_data:
-          
-          # Skip conversion if the line is already marked as FAILED (except for strings, which might be partial data)
-          # OR if the value itself is None (was set to None by validation)
-          if data.get('_status') == 'F' and data.get(key) is None:
+          val = data.get(key)
+
+          # Skip if value is missing or None (should be already handled by validation or stub)
+          if val is None:
             continue
+
+          # Skip if value is the default (already handled)
+          if val == self.default.get(mtype): continue
+
+          # Only skip if it's an empty string that would crash conversion for non-strings
+          if val == '' and mtype != 'str':
+              continue
           
           if mtype == 'str':
             convert = metrics_section[key].get('regex')
@@ -840,12 +940,12 @@ class BenchRepo:
             convert = metrics_section[key].get('factor')
           try:
             data[key] = self.convert_data(
-                                          data[key],
+                                          val,
                                           vtype='ts' if key == 'ts' else mtype,
                                           factor=convert,
                                           )
           except ValueError:
-            self.log.debug(f"Cannot convert value '{data[key]}' for '{key}' in source {source}! Skipping conversion...\n")
+            self.log.debug(f"Cannot convert value '{val}' for '{key}' in source {source}! Skipping conversion...\n")
             continue
 
       # Collecting unique values for graph parameters in current source:
@@ -875,28 +975,42 @@ class BenchRepo:
         # Saving all raw data, including all ts, to be able to get all combinations for graphs
         raw_data += current_data
 
-      # Filtering older timestamps when lastts is given and storing in self._dict
+      # Filtering older timestamps if tracking is enabled (not None) and storing in self._dict
       # to be written out in LML
       # (This is done at the end to allow the possibility of ts to be added 
       # either from content or from common_data)
-      if self._lastts:
-        current_data[:] = [data for data in current_data if data['ts'] > self._lastts]
+      if self._lastts is not None:
 
-      # Storing temporary lastts from last timestamp of current data
-      if current_data:
-        # Ensure we don't crash if current_data became empty after filter
-        lastts_temp = max([data['ts'] for data in current_data]+[self._lastts,lastts_temp])
+        # We need 'ts' to filter. Check the first row (if data exists).
+        if current_data and 'ts' not in current_data[0]:
+          self.log.error(f"Data in '{combined_name}' does not contain 'ts', but 'tsfile' tracking is enabled. Cannot filter by time.\n")
+        else:
+          # Filter: Keep only new data
+          # Note: self._lastts defaults to 0, so if new, all data > 0 is kept.
+          current_data[:] = [data for data in current_data if data['ts'] > self._lastts]
+
+          # Storing temporary lastts from last timestamp of current data
+          if current_data:
+            # Calculate max of current data, existing max (lastts_temp), and the previous boundary (_lastts)
+            # This ensures _lastts only moves forward.
+            lastts_temp = max([data['ts'] for data in current_data] + [self._lastts, lastts_temp])
 
       if current_data: # Adding an id to current data, to have an unique identifier for the csv file generation
-        self._dict |= {
-          f"{combined_name}_{next(self._counter)}": data | {
+        for data in current_data:
+          # Generate a unique ID for self._dict
+          unique_key = f"{combined_name}_{next(self._counter)}"
+          
+          # Store this key in the raw data object so we can use it later for mapping
+          data['__output_key'] = unique_key 
+          
+          # Add to self._dict
+          self._dict[unique_key] = data | {
             'id': '_'.join([self._format_id_value(data.get(key)) for key in parameters])
-          } 
-          for data in current_data
-        }
+          }
 
     # Storing new lastts from last timestamp of all data
-    self._lastts = lastts_temp
+    if self._lastts is not None:
+      self._lastts = lastts_temp
     return True
 
   def _format_id_value(self, value):
@@ -937,7 +1051,7 @@ class BenchRepo:
         typed_value = not (str(raw_value).lower() in ['false', '0', '']) if isinstance(raw_value, (str, int)) else bool(raw_value)
         value_type = 'bool'
       elif spec['type'] == 'ts':
-        typed_value = time.mktime(dateutil.parser.parse(raw_value).timetuple())
+        typed_value = dateutil.parser.parse(raw_value).timestamp()
         value_type = 'ts' # using type 'ts' for timestamp
       else:
         self.log.error(f"Type '{spec['type']}' for metric '{metric_name}' not recognised! Use 'date', 'str', 'int', 'float', 'bool', or 'ts'. Skipping metric...\n")
@@ -945,7 +1059,7 @@ class BenchRepo:
     else:
       # Default type handling
       if metric_name == 'ts': # if type is not given for metric 'ts'
-        typed_value = time.mktime(dateutil.parser.parse(raw_value).timetuple())
+        typed_value = dateutil.parser.parse(raw_value).timestamp()
         value_type = 'ts' # using type 'ts' for timestamp
         # For timestamp 'ts' metric, store it
       else:
@@ -1002,6 +1116,85 @@ class BenchRepo:
     else:
       self.log.error(f"Type '{vtype}' not recognised! Use 'datetime', 'str', 'int' or 'float'. Skipping conversion...\n")
     return value
+
+  def validate_metrics(self) -> bool:
+    """
+    Runs configured validation logic on the collected raw data.
+    Returns: True if all validations ran (or were skipped safely), False on critical error.
+    """
+    benchmark_data = self._get_benchmark_data(self._name, self._tab)
+    raw_data = benchmark_data['raw']
+    metrics_section = benchmark_data['config']['metrics']
+    
+    if not raw_data:
+      return True # No data to validate is technically a success
+
+    for metric_name, spec in metrics_section.items():
+      if 'validate' not in spec:
+        continue
+      
+      validators = spec['validate']
+      if not isinstance(validators, list):
+        validators = [validators]
+
+      for v_spec in validators:
+        func_name = v_spec.get('name')
+        module_name = v_spec.get('module')
+
+        validator_func = None
+
+        # Resolving function from module
+        if module_name:
+          try:
+            mod = __import__(module_name, fromlist=[func_name])
+            validator_func = getattr(mod, func_name)
+          except (ImportError, AttributeError) as e:
+            self.log.error(f"Validator '{func_name}' in module '{module_name}' could not be loaded: {e}\n")
+            return False # Critical config error
+        else:
+          # Look in global scope (globals()) for the function
+          if func_name in globals():
+            validator_func = globals()[func_name]
+          else:
+            self.log.error(f"Validator function '{func_name}' not found.\n")
+            return False # Critical config error
+
+        # Preparing data for validation (Extract only the values for this metric)
+        # We pass a copy of values to be safe.
+        # We also need to map the results back to the rows, so order matters.
+        values_to_check = [row.get(metric_name) for row in raw_data]
+
+        # Calling validator function
+        try:
+          # API: func(values_list, params_dict) -> list of booleans
+          validation_results = validator_func(values_to_check, v_spec)
+        except Exception as e:
+          # Catch errors raised by the validator (like the TypeError/ValueError we added)
+          self.log.error(f"Validation failed for metric '{metric_name}' using '{func_name}': {e}\n")
+          return False # Stop processing if validation crashes
+
+        # Processing results
+        if len(validation_results) != len(raw_data):
+          self.log.error(f"Validator '{func_name}' returned {len(validation_results)} results, expected {len(raw_data)}.\n")
+          return False
+
+        for i, is_valid in enumerate(validation_results):
+          if not is_valid:
+            row = raw_data[i]
+
+            # Check if row is already Failed (F)
+            # Update status in the raw data (Internal State)
+            row['_status'] = 'W'
+
+            # Update status to Warning
+            raw_data[i]['_status'] = 'W'
+            # and the output dictionary (fot the LML output)
+            output_key = row.get('__output_key')
+            if output_key and output_key in self._dict:
+              self._dict[output_key]['_status'] = 'W'
+            # self.log.debug(f"Row {i} marked Warning by validator '{func_name}' on '{metric_name}'\n")
+    return True
+
 
   def gen_configs(self,folder="./",history_n=5):
     """
@@ -1101,6 +1294,12 @@ class BenchRepo:
     # Calculate length for N items: (N * 1 char for status) + (N-1 * 1 char for dash)
     history_str_len = (history_n * 2) - 1
 
+    # Define the aggregation logic for status priority: F > W > S
+    # If any row is 'F', the whole timestamp is 'F'.
+    # Else if any row is 'W', the whole timestamp is 'W'.
+    # Else 'S'.
+    status_priority_sql = "CASE WHEN SUM(CASE WHEN \"_status\" = 'F' THEN 1 ELSE 0 END) > 0 THEN 'F' WHEN SUM(CASE WHEN \"_status\" = 'W' THEN 1 ELSE 0 END) > 0 THEN 'W' ELSE 'S' END"
+
     # Looping over all the benchmarks inside this object
     # (It can be done for each benchmark/tab or for all collected ones when singleLML is used)
     for benchname, tabname, benchmark_data in self._iter_all_data():
@@ -1197,10 +1396,11 @@ class BenchRepo:
 
       # Building the History Subquery:
       # - Filter by the current parameters (match_expr)
-      # - Group by "ts" to collapse multiple points into ONE status (MIN: F wins over S)
+      # - Group by "ts" to collapse multiple points into ONE status
+      # - Use status_priority_sql to ensure F > W > S
       # - Order by "ts" ASC
       # - Concatenate the results
-      inner_history_sql = f"SELECT GROUP_CONCAT(daily_stat, '-') FROM (SELECT MIN(\"_status\") as daily_stat FROM \"cb_{combined_name}_data\" AS T2 WHERE {match_expr} GROUP BY \"ts\" ORDER BY \"ts\" ASC)"
+      inner_history_sql = f"SELECT GROUP_CONCAT(daily_stat, '-') FROM (SELECT {status_priority_sql} as daily_stat FROM \"cb_{combined_name}_data\" AS T2 WHERE {match_expr} GROUP BY \"ts\" ORDER BY \"ts\" ASC)"
 
       # We also need a subquery to count the DISTINCT timestamps for the final dash logic (when there are further status points)
       count_subquery = f"SELECT COUNT(DISTINCT \"ts\") FROM \"cb_{combined_name}_data\" AS T2 WHERE {match_expr}"
@@ -1246,8 +1446,9 @@ class BenchRepo:
                                   {'name': 'min_ts',         'type': 'ts_t'},
                                   {'name': 'max_ts',         'type': 'ts_t'},
                                 ]
-                                +[{'name': key.replace(' ', '_'), 'type': f'{metrics[key]}_t'} for key in parameters]
-                                +[{'name': f'{key.replace(' ', '_')}_{suffix}', 'type': f'{metrics[key]}_t'} for key in graph_metrics for suffix in ['min','avg','max']],
+                                +[{'name': key.replace(' ', '_'), 'type': f'{metrics[key]}_t'} for key in parameters] 
+                                # Aggregates (min/avg/max) are ALWAYS floats and can be NULL (in case there are failed runs for all entries of a row)
+                                +[{'name': f'{key.replace(' ', '_')}_{suffix}', 'type': 'float_null_t'} for key in graph_metrics for suffix in ['min','avg','max']],
                               }
                     })
 
@@ -1255,8 +1456,8 @@ class BenchRepo:
     for benchname in benchmarks_processed:
       # Subquery to get one status per timestamp (F wins over S, so we use MIN) for the global timeline
       # No match_expr needed here because we are aggregating the whole benchmark table.
-      inner_history_sql_global = f"SELECT GROUP_CONCAT(daily_stat, '-') FROM (SELECT MIN(\"_status\") as daily_stat FROM \"cb_{benchname}_timestamps\" GROUP BY \"ts\" ORDER BY \"ts\" ASC)"
-      
+      inner_history_sql_global = f"SELECT GROUP_CONCAT(daily_stat, '-') FROM (SELECT {status_priority_sql} as daily_stat FROM \"cb_{benchname}_timestamps\" GROUP BY \"ts\" ORDER BY \"ts\" ASC)"
+
       # Subquery to count UNIQUE runs for the dash logic
       count_subquery_global = f"SELECT COUNT(DISTINCT \"ts\") FROM \"cb_{benchname}_timestamps\""
 
@@ -1537,7 +1738,7 @@ class BenchRepo:
 
     format_types = {
       'int': '%d',
-      'float': '%s', # We will use the string output to allow empty values
+      'float': '%s', # We will use the string output to allow empty values without errors on LLview's workflow
       'str': '%s',
       'bool': '%d',
       'date': '%s',
@@ -1622,6 +1823,9 @@ class BenchRepo:
         for plot_config in plots_in_tab:
           if 'y' not in plot_config: continue
           graphelem = plot_config['y']
+
+          x_metric = plot_config.get('x', 'ts') # Default to ts if missing
+          x_col_name = 'date' if x_metric == 'ts' else x_metric
 
           # CALCULATING VALID COMBINATIONS FOR THIS SPECIFIC PLOT
           # Get the grouping keys (traces)
@@ -1712,9 +1916,15 @@ class BenchRepo:
             # otherwise (traceelem is empty, single curve), generate a simple name without 'where' keys
             if traceelem:
               name_str = '<br>'.join(f"{key}: {traceelem[key]}" for mtype in sorted(self.default.keys(), reverse=True) for key in sorted(traceelem.keys()) if metrics[key] == mtype)
+              # Creating 'where' to update 'ts' to 'date', as we do this change in the csv header
+              where_clause = {}
+              for k, v in traceelem.items():
+                csv_key = 'date' if k == 'ts' else k
+                where_clause[csv_key] = v
+
               update_dict = {
                 'name': name_str,
-                'where': traceelem
+                'where': where_clause
               }
             else:
               # Single curve case: Name matches the Y-axis metric, no 'where' filter
@@ -1748,10 +1958,13 @@ class BenchRepo:
           graph = {
             'graph': {
               'name': graphelem,
-              'xcol': 'date',
+              'xcol': x_col_name,
               'layout': {
                 'yaxis': {
                   'title': graphelem + (f" [{config['metrics'][graphelem]['unit']}]" if "unit" in config.get('metrics', {}).get(graphelem, {}) else "")
+                },
+                'xaxis': {
+                  'title': x_metric if x_metric != 'ts' else None
                 },
                 'legend': {
                   'x': "1.02", 'xanchor': "left", 'y': "0.98", 'yanchor': "top", 'orientation': "v"
@@ -2459,14 +2672,21 @@ def main():
             plot_list[i] = merged_plot
 
         log.info(f"Collecting data for '{combined_name}'...\n")
-
+        
+        # Determine the initial lastts value
+        initial_lastts = None
+        # Only set a numeric value if tracking is enabled via args.tsfile
+        if args.tsfile:
+          # If we have a recorded timestamp, use it. Otherwise, start at 0.
+          initial_lastts = lastts.get(combined_name, 0)
+        
         # Initializing new object of type given in config
         # This object is given per page or per internal tab (in case tabs are given)
         tab_bench = BenchRepo(
           name=repo_name,
           tab=group_name if internal_tabs else None,
           config=group_config,
-          lastts=lastts[combined_name] if combined_name in lastts else 0,
+          lastts=initial_lastts,
           skipupdate=args.skipupdate,
         )
 
@@ -2480,8 +2700,14 @@ def main():
           log.error(f"Error collecting metrics for '{combined_name}'. Skipping...\n")
           continue
 
+        success = tab_bench.validate_metrics()
+        if not success:
+          log.error(f"Error validating metrics for '{combined_name}'. Skipping...\n")
+          continue
+
         # Update lastts for this specific tab/combined_name
-        lastts[combined_name] = tab_bench.lastts
+        if args.tsfile:
+          lastts[combined_name] = tab_bench.lastts
 
         # This combines the _data (metrics, raw, etc.) and _dict (LML output)
         repo_bench += tab_bench

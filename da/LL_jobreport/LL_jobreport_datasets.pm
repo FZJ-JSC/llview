@@ -682,6 +682,13 @@ sub check_filemapping {
 sub check_fileregister {
   my $self = shift;
   my ($dataset,$varsetref)=@_;
+  
+  # Check if stat_database or stat_table are undefined
+  if (!defined($dataset->{stat_database}) || !defined($dataset->{stat_table})) {
+    my $fpath = defined($dataset->{filepath}) ? $dataset->{filepath} : "unknown file";
+    printf(STDERR "LL_jobreport_datasets: ERROR: stat_database or stat_table missing for dataset file: %s\n", $fpath);
+    return();
+  }
   my $ds=$self->{DATASETSTAT}->{$dataset->{stat_database}}->{$dataset->{stat_table}};
   
   # printf("%s check_fileregister:       start work on %s\n",$self->{INSTNAME},$dataset->{filepath});

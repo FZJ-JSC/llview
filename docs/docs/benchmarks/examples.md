@@ -37,6 +37,7 @@ SimpleBenchmark:
         - Nodes
 ```
 
+
 ## Example 2: Complex Configuration (Multi-Mode Application)
 This example demonstrates a generic Molecular Dynamics application ("MolecDyn") that runs in two distinct modes: **Simulation** (performance measured in ns/day) and **Energy Minimization** (convergence measured in steps). It also demonstrates using **Global Plot Settings**, **Derived Metrics**, and **Tabs**.
 
@@ -61,6 +62,10 @@ MolecDyn_Suite:
           type: float
           unit: 'ns/day'
           description: 'Simulation throughput'
+          # Flag as Warning if performance drops below 50 GFlops
+          validate:
+            - name: range_validator
+              min: 50.0
         Atoms:
           header: num_atoms
           type: int
