@@ -1354,15 +1354,15 @@ class BenchRepo:
                                                           # This SQL first deletes its old entries from the timestamp table,
                                                           # then inserts the new ones, tagging them with its own name as the source.
                                                           # Group by timestamp; MIN(_status) ensures 'F' wins over 'S'
-                                                          'sql': f"""DELETE FROM "cb_{benchname}_timestamps" WHERE source = "{combined_name}";
-              INSERT INTO "cb_{benchname}_timestamps" ("ts", "source", "_status")
+                                                          'sql': f"""DELETE FROM "cb_{benchname.replace(' ','_')}_timestamps" WHERE source = "{combined_name}";
+              INSERT INTO "cb_{benchname.replace(' ','_')}_timestamps" ("ts", "source", "_status")
                         SELECT "ts", "{combined_name}", "_status"
                         FROM "cb_{combined_name}_data";
 """.strip(),
                                                                     },
                                                       },
                                             # This triggers its own overview and the benchmark's timestamp aggregator
-                                            'update_trigger': [f"cb_{combined_name}_data", f"cb_{combined_name}_overview", f"cb_{benchname}_timestamps"]
+                                            'update_trigger': [f"cb_{combined_name}_data", f"cb_{combined_name}_overview", f"cb_{benchname.replace(' ','_')}_timestamps"]
                                           },
                                 'columns': columns,
                               }
@@ -1456,15 +1456,15 @@ class BenchRepo:
     for benchname in benchmarks_processed:
       # Subquery to get one status per timestamp (F wins over S, so we use MIN) for the global timeline
       # No match_expr needed here because we are aggregating the whole benchmark table.
-      inner_history_sql_global = f"SELECT GROUP_CONCAT(daily_stat, '-') FROM (SELECT {status_priority_sql} as daily_stat FROM \"cb_{benchname}_timestamps\" GROUP BY \"ts\" ORDER BY \"ts\" ASC)"
+      inner_history_sql_global = f"SELECT GROUP_CONCAT(daily_stat, '-') FROM (SELECT {status_priority_sql} as daily_stat FROM \"cb_{benchname.replace(' ','_')}_timestamps\" GROUP BY \"ts\" ORDER BY \"ts\" ASC)"
 
       # Subquery to count UNIQUE runs for the dash logic
-      count_subquery_global = f"SELECT COUNT(DISTINCT \"ts\") FROM \"cb_{benchname}_timestamps\""
+      count_subquery_global = f"SELECT COUNT(DISTINCT \"ts\") FROM \"cb_{benchname.replace(' ','_')}_timestamps\""
 
       history_expr_global = f"(CASE WHEN ({count_subquery_global}) > {history_n} THEN '-' || substr(({inner_history_sql_global}), -{history_str_len}) ELSE ({inner_history_sql_global}) END)"
 
       tables.append({'table': {
-                                'name': f"cb_{benchname}_timestamps",
+                                'name': f"cb_{benchname.replace(' ','_')}_timestamps",
                                 # This table's job is to collect all timestamps and trigger the final update
                                 'options': {
                                             'update': {
@@ -1477,7 +1477,7 @@ class BenchRepo:
                                           SUM(CASE WHEN "_status" <> 'F' THEN 1 ELSE 0 END),
                                           MIN("ts"), MAX("ts"),
                                           {history_expr_global}
-                                    FROM "cb_{benchname}_timestamps";
+                                    FROM "cb_{benchname.replace(' ','_')}_timestamps";
 """.strip(),
                                                                     },
                                                       },
@@ -1832,19 +1832,21 @@ class BenchRepo:
           current_group_by = plot_config.get('group_by', [])
 
           # Filter graphparameters to only include keys used in this plot's grouping
-          # This ensures we don't generate combinations for unrelated parameters
-          current_plot_params = {
-            k: v for k, v in graphparameters.items() 
-            if k in current_group_by
-          }
+          # Sort the keys to ensure consistent column order
+          sorted_keys = sorted([k for k in graphparameters.keys() if k in current_group_by])
+          
+          # Sort the values (sets) into lists to ensure consistent product generation
+          sorted_value_lists = [sorted(list(graphparameters[k])) for k in sorted_keys]
 
           valid_combinations = [] 
           # Generating all possible combinations of the graph parameters for this plot
-          if current_plot_params:
-            for combination in product(*current_plot_params.values()):
+          if sorted_keys:
+            # Use the sorted lists
+            for combination in product(*sorted_value_lists):
               valid_combination = True
               # Creating dictionary for current combination
-              current_combination = {key:value for key,value in zip(current_plot_params.keys(),combination)}
+              # Zip with sorted_keys
+              current_combination = {key:value for key,value in zip(sorted_keys, combination)}
               
               for key,value in current_combination.items():
                 # If value is default one, ignore this combination, as it didn't have a valid value
