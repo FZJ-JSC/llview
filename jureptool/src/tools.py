@@ -116,7 +116,7 @@ def round_time(dt=None, date_delta=datetime.timedelta(minutes=1), to='average'):
   """
   round_to = date_delta.total_seconds()
   if dt is None:
-      dt = datetime.now()
+      dt = datetime.datetime.now()
   seconds = (dt - dt.min).seconds
 
   if seconds % round_to == 0 and dt.microsecond == 0:

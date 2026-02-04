@@ -77,6 +77,7 @@ In the current version, the pdfs are (temporarily) written to a local `./results
 * pyyaml
 * plotly
 * cmcrameri
+* pytz
 * python compiled with gzip option (if compressed HTML are to be generated with option `--gzip`)
 
 ### After installation

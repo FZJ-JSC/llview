@@ -11,6 +11,7 @@
 from matplotlib.figure import Figure       # Figure object
 from matplotlib.lines import Line2D        # 2D lines
 from matplotlib.gridspec import GridSpec   # Create and manipulate subplots in grid
+from matplotlib.axes import Axes           # Import the Axes type
 import numpy as np
 
 class AddEmptyPage:
@@ -21,6 +22,8 @@ class AddEmptyPage:
     self.fh = config['appearance']['page_height']
     self.pdf = pdf
     self.page_num = page_num
+    self.ax1: Axes | None = None
+    self.ax2: Axes | None = None
     if first:
       AddEmptyPage.counter = 0
     AddEmptyPage.counter += 1
@@ -150,7 +153,17 @@ class AddAxesPage(AddEmptyPage):
   """
   def __init__(self, pdf, naxes, data, page_num, config, *args, header=False, left=0.080, right=0.920, bottom=0.070, top=0.92, **kwargs):
     super().__init__(pdf, page_num, config, *args, **kwargs)
-    self.axes = self.fig.subplots(naxes,1)
+    # Create subplots
+    axs = self.fig.subplots(naxes, 1)
+
+    # Linter-safe conversion:
+    # 1. Check if it's iterable (an array). If so, flatten it.
+    # 2. If not (it's a single Axes object), wrap it in a list.
+    if isinstance(axs, np.ndarray):
+      self.axes = axs.flatten()
+    else:
+      self.axes = np.array([axs])
+
     self.fig.subplots_adjust(left=left, right=right, bottom=bottom, top=top, hspace=0.12*(naxes-1))
     if header:
       super().add_header(data)
@@ -166,11 +179,15 @@ class AddAxesPage(AddEmptyPage):
     return self
 
   def add_name_to_ax(self, x, y, s, ax, config, **kwargs):
-    self.axes[ax].text(x, y, s, **kwargs, transform=self.fig.transFigure, ha='left',  color='blue', va='center', bbox=dict(lw=0.5, facecolor='none', edgecolor='black', pad=2.0),zorder=1000)
+    current_ax = self.axes[ax]
+    if isinstance(current_ax, Axes):
+      current_ax.text(x, y, s, **kwargs, transform=self.fig.transFigure, ha='left',  color='blue', va='center', bbox=dict(lw=0.5, facecolor='none', edgecolor='black', pad=2.0),zorder=1000)
     return
 
   def add_note_to_ax(self, x, y, s, ax, config, **kwargs):
-    self.axes[ax].text(x, y, s, **kwargs, transform=self.fig.transFigure, ha='center',  color='black', va='center', style='italic', fontsize=config['appearance']['tinyfont'],zorder=10000)
+    current_ax = self.axes[ax]
+    if isinstance(current_ax, Axes):
+      current_ax.text(x, y, s, **kwargs, transform=self.fig.transFigure, ha='center',  color='black', va='center', style='italic', fontsize=config['appearance']['tinyfont'],zorder=10000)
     return
 
 

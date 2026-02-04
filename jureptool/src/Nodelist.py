@@ -21,6 +21,7 @@ def AddRectangles(fig,config,numcpu,numgpu,gpus,nl_config,nodedict,error_nodes):
   # Looping over each node and creating their rectangle and adding information
   patches = []
   idx = 0
+  this_line = 0
   while nodedict:
 
     # Getting row and col index of node

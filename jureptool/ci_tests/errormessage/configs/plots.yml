@@ -13,11 +13,11 @@ _overview:
       - Node: 
         - 'CPU Usage'
   right:
-    _label: 'Avg. GPU Utilization (%)'
+    _label: 'Avg. GPU Active SM (%)'
     _range: [0,100]
     plots:
       - GPU: 
-        - 'Utilization'
+        - 'Active SM'
 Cores:
   _file_header: 'coreusagenodefile'
   _datapoints_header: 'cores_ndps'
