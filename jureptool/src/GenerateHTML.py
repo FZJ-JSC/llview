@@ -15,14 +15,14 @@ import plotly.utils
 
 def CreateHTML( config,
                 figs,
-                navbar=None,
-                first=None,
+                navbar="",
+                first="",
                 overview=None,
-                nodelist=None,
+                nodelist="",
                 timeline=None,
-                system_report=None,
+                system_report="",
                 data_manager=None,
-                filename="report.html"):
+                filename=None):
   """
   Collects together various html snippets from separate figures into a single html report page
   """
@@ -522,10 +522,14 @@ def CreateHTML( config,
   }
 
   function timeline_sync_zoom(ed) {
+    // yaxis from timeline should not be synchronized
+    ed_xaxis = Object.fromEntries(
+      Object.entries(ed).filter(([key]) => !key.startsWith('yaxis'))
+    );
     if (lockzoom.is(':checked')) {
-      relayout(ed, $(overview), "", "2");
+      relayout(ed_xaxis, $(overview), "", "2");
 
-      relayout(ed, time_plots, "", "3");
+      relayout(ed_xaxis, time_plots, "", "3");
     }
   }
 
@@ -1126,15 +1130,15 @@ def CreateHTML( config,
   </html>
 """
 
-
   # Writing to file
-  if config['html']:
-    with open(filename, 'w') as f:
-      f.write(html)
-  if config['gzip']:
-    import gzip
-    with gzip.open(f"{filename}.gz", 'wb') as f:
-      f.write(html.encode())
+  if filename:
+    if config['html']:
+      with open(filename, 'w') as f:
+        f.write(html)
+    if config['gzip']:
+      import gzip
+      with gzip.open(f"{filename}.gz", 'wb') as f:
+        f.write(html.encode())
   return
 
 def CreateNodelist(config,gpus,nl_config,nodedict,error_nodes):

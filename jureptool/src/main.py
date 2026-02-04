@@ -9,20 +9,20 @@
 #    Filipe Guimarães (Forschungszentrum Juelich GmbH)
 #    Matthias Lapu (CEA)
 
-import os                                                  # OS library (files and folders operations)
-import sys                                                 # system variables for stdout and stderr
-import json                                                # JSON library for the outputs
-import glob                                                # Expansion of wildcards on filenames
-from matplotlib.backends.backend_pdf import PdfPages       # Multi-Page PDF library
-from matplotlib import rcParams                            # Configuration of figures, axis and plots
-from matplotlib import colormaps                           # Get cmap from colors
-from matplotlib.colors import LinearSegmentedColormap      # Create Colormap
-from cycler import cycler                                  # Cycler for colors
-from math import ceil                                      # Ceiling for float to integer conversion
-import numpy as np                                         # Numerical library
-import pandas as pd                                        # Database Library
-import re                                                  # Regular Expression library
-import multiprocessing as mp                               # Multi-processing library for parallel jobs
+import os                                                               # OS library (files and folders operations)
+import sys                                                              # system variables for stdout and stderr
+import json                                                             # JSON library for the outputs
+import glob                                                             # Expansion of wildcards on filenames
+from matplotlib.backends.backend_pdf import PdfPages                    # Multi-Page PDF library
+from matplotlib import rcParams                                         # Configuration of figures, axis and plots
+from matplotlib import colormaps                                        # Get cmap from colors
+from matplotlib.colors import LinearSegmentedColormap, ListedColormap   # Create Colormap
+from cycler import cycler                                               # Cycler for colors
+from math import ceil                                                   # Ceiling for float to integer conversion
+import numpy as np                                                      # Numerical library
+import pandas as pd                                                     # Database Library
+import re                                                               # Regular Expression library
+import multiprocessing as mp                                            # Multi-processing library for parallel jobs
 import logging
 from logging.handlers import QueueHandler, QueueListener, TimedRotatingFileHandler
 import traceback
@@ -129,7 +129,15 @@ def _ProcessReport(njob,total_jobs,job,config):
   data_manager = ReportDataManager()
 
   # Getting timezonegap
-  config['appearance']['timezonegap'] = timezone(config['appearance']['timezone']).localize(datetime.datetime.strptime(data["job"]["starttime"],'%Y-%m-%d %H:%M:%S')).utcoffset().seconds
+  # Create the aware datetime object first
+  dt_aware = timezone(config['appearance']['timezone']).localize(
+    datetime.datetime.strptime(data["job"]["starttime"], '%Y-%m-%d %H:%M:%S')
+  )
+  # Get the offset
+  offset = dt_aware.utcoffset()
+  # Check if offset is not None and use total_seconds
+  config['appearance']['timezonegap'] = int(offset.total_seconds()) if offset else 0
+
 
   # Removing sensitive data in demo mode
   if config['demo']:
@@ -553,7 +561,7 @@ def _ProcessReport(njob,total_jobs,job,config):
         for (fh,graphs),legend in zip(cols.items(),legends):
           # Skipping plot if no data is present
           if files[fh]['data'] is None: continue
-          if x_header_overview == 'ts': x_header = 'datetime'
+          x_header = 'datetime' if x_header_overview == 'ts' else x_header_overview
           df_temp = files[fh]['data'][list(graphs)].groupby([x_header], as_index=False).mean()
           # # Transforming timestamps (with timezone) to datetime
           # if x_header_overview == 'ts':
@@ -659,9 +667,9 @@ def _ProcessReport(njob,total_jobs,job,config):
     steps = []
 
   # Storing information of different steps separately
-  step_details = {}
   rows = []
   for step in steps:
+    step_details = {}
     # Separating information of each step (name, rc, start, end, state)
     step_info=re.findall('(.+?)(:{2}|$)', step)
     # if step_info[0][0] =="job": continue # skipping step "job"
@@ -673,7 +681,7 @@ def _ProcessReport(njob,total_jobs,job,config):
       else:
         # Getting step information
         step_details[details[0][0]] = details[0][1]
-    rows.append(list(step_details.values()))
+    rows.append(step_details)
   # Defining default values (for when when 'stepspec' is not present)
   config['timeline'] = {}
   config['timeline']['npages'] = 0
@@ -683,7 +691,7 @@ def _ProcessReport(njob,total_jobs,job,config):
   nsteps_last = 0
   # If data for steps is present
   if rows:
-    timeline_df = pd.DataFrame(rows, columns=step_details.keys()).fillna(0)
+    timeline_df = pd.DataFrame(rows).fillna(0)
     timeline_df[['beg','end','nnodes','ntasks','ncpus']] = timeline_df[['beg','end','nnodes','ntasks','ncpus']].apply(pd.to_numeric)
     if 'ntasks' in timeline_df:
       timeline_df['ntasks'] = timeline_df['ntasks'].fillna(0).astype('int')
@@ -767,9 +775,12 @@ def _ProcessReport(njob,total_jobs,job,config):
 
   # Output files:
   # output = f"{folder}/python_{data['files']['pdffile']}"
-  output_pdf = f"{config['outfolder']}/{data['files']['pdffile']}"
-  if config['html'] or config['gzip']:
-    output_html = f"{config['outfolder']}/{data['files']['htmlfile']}"
+  try:
+    output_pdf = f"{config['outfolder']}/{data['files']['pdffile']}"
+    output_html = f"{config['outfolder']}/{data['files']['htmlfile']}" if config['html'] or config['gzip'] else None
+  except:
+    log.error(f"Output folder or filenames not given! Skipping this report...")
+    return
 
   # Getting time range of the job:
   time_range = [datetime.datetime.strptime(data['job']['starttime'], '%Y-%m-%d %H:%M:%S'),datetime.datetime.strptime(data['job']['updatetime'], '%Y-%m-%d %H:%M:%S')]
@@ -822,8 +833,9 @@ def _ProcessReport(njob,total_jobs,job,config):
   # Moving files to final folder
   if config['move']:
     shutil.move(output_pdf, f"{folder}/{data['files']['pdffile']}")
-    if config['html']: shutil.move(output_html, f"{folder}/{data['files']['htmlfile']}")
-    if config['gzip']: shutil.move(f"{output_html}.gz", f"{folder}/{data['files']['htmlfile']}.gz")
+    if output_html:
+      if config['html']: shutil.move(output_html, f"{folder}/{data['files']['htmlfile']}")
+      if config['gzip']: shutil.move(f"{output_html}.gz", f"{folder}/{data['files']['htmlfile']}.gz")
 
   finish_job = time.time()
 
@@ -1059,7 +1071,16 @@ def main():
   # Report appearance
   config['appearance'] = parse_config_yaml(f"{args.configfolder}/config.yml",expand_envvars=True)
   config['appearance']['color_cycler'] = None # Initializing
-  config['appearance']['colors_cmap'] = colormaps[config['appearance']['colors']].colors
+  # Retrieve the colormap object
+  current_cmap = colormaps[config['appearance']['colors']]
+  # Check type and extract colors
+  if isinstance(current_cmap, ListedColormap):
+    config['appearance']['colors_cmap'] = current_cmap.colors
+  else:
+    # Fallback for LinearSegmentedColormap (Gradient)
+    # Sample 8 points to convert the gradient into a list of colors 
+    # We use it on the Overview and in color cyclers (e.g., for Nodelist boxes), and we don't need many colors
+    config['appearance']['colors_cmap'] = current_cmap(np.linspace(0, 1, 8))
   config['appearance']['gradient'] = np.outer(np.arange(0, 1, 0.01), np.ones(1))
   config['appearance']['traffic_light_cmap'] = LinearSegmentedColormap.from_list("", ["tab:red","gold","tab:green"])
   config['appearance']['maxsec'] = args.maxsec

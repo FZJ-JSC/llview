@@ -148,14 +148,18 @@ def CreateOverviewFig(config, data, time_range, df_overview, gpus, data_manager)
       x_ref = data_manager.register(x, 'time')
       y_ref = data_manager.register(y, 'cpu_val')
 
+      # The hover text is generated for each point, and for larger jobs this
+      # increases the job size in orders of magnitude, so although it could include more information
+      # we will use hovertemplate instead
+
       # Create hovertext
-      hovertext = []
-      for time,value in zip(x,y):
-        delta_comp = (time - time_range[0]).components
-        delta = f"{(str(delta_comp.hours)+'h:') if delta_comp.hours > 0 else ''}{delta_comp.minutes:02d}m:{delta_comp.seconds:02d}s"
-        hovertext.append(f"Time: {time} ({delta})<br />{legend}: {value:.2f}")
+      # hovertext = []
+      # for time,value in zip(x,y):
+      #   delta_comp = (time - time_range[0]).components
+      #   delta = f"{(str(delta_comp.hours)+'h:') if delta_comp.hours > 0 else ''}{delta_comp.minutes:02d}m:{delta_comp.seconds:02d}s"
+      #   hovertext.append(f"Time: {time} ({delta})<br />{legend}: {value:.2f}")
       
-      text_ref = data_manager.register(hovertext, 'hover')
+      # text_ref = data_manager.register(hovertext, 'hover')
 
       fig.add_trace(go.Scatter( x=[], 
                                 y=[], 
@@ -163,8 +167,10 @@ def CreateOverviewFig(config, data, time_range, df_overview, gpus, data_manager)
                                 legendgroup = 'left',
                                 line = {"shape": 'hvh', "color": f"rgb{color}"},
                                 mode="lines+markers",
-                                hoverinfo='text',
-                                text=[], 
+                                # hoverinfo='text',
+                                # text=[], 
+                                hoverinfo='y+x+name', # Fallback
+                                hovertemplate = "<b>Time:</b> %{x|%d/%m %H:%M:%S}<br><b>%{data.name}:</b> %{y:.2f}<extra></extra>",
                                 marker=dict(
                                       size=5,
                                       color=f"rgb{color}",
@@ -172,7 +178,7 @@ def CreateOverviewFig(config, data, time_range, df_overview, gpus, data_manager)
                                 meta = {
                                   'x_ref': x_ref,
                                   'y_ref': y_ref,
-                                  'text_ref': text_ref
+                                  # 'text_ref': text_ref
                                 }
                                 ), 1, 2)
     
@@ -205,13 +211,13 @@ def CreateOverviewFig(config, data, time_range, df_overview, gpus, data_manager)
       x_ref = data_manager.register(x, 'time')
       y_ref = data_manager.register(y, 'gpu_val')
 
-      hovertext = []
-      for time,value in zip(x,y):
-        delta_comp = (time - time_range[0]).components
-        delta = f"{(str(delta_comp.hours)+'h:') if delta_comp.hours > 0 else ''}{delta_comp.minutes:02d}m:{delta_comp.seconds:02d}s"
-        hovertext.append(f"Time: {time} ({delta})<br />{legend}: {value:.2f}")
+      # hovertext = []
+      # for time,value in zip(x,y):
+      #   delta_comp = (time - time_range[0]).components
+      #   delta = f"{(str(delta_comp.hours)+'h:') if delta_comp.hours > 0 else ''}{delta_comp.minutes:02d}m:{delta_comp.seconds:02d}s"
+      #   hovertext.append(f"Time: {time} ({delta})<br />{legend}: {value:.2f}")
 
-      text_ref = data_manager.register(hovertext, 'hover')
+      # text_ref = data_manager.register(hovertext, 'hover')
 
       fig.add_trace(go.Scatter( x=[], 
                                 y=[], 
@@ -219,8 +225,10 @@ def CreateOverviewFig(config, data, time_range, df_overview, gpus, data_manager)
                                 legendgroup = 'gpu',
                                 line = {"shape": 'hvh', "color":f"rgb{color}"},
                                 mode="lines+markers",
-                                hoverinfo='text',
-                                text=[], 
+                                # hoverinfo='text',
+                                # text=[], 
+                                hoverinfo='y+x+name',
+                                hovertemplate = "<b>Time:</b> %{x|%d/%m %H:%M:%S}<br><b>%{data.name}:</b> %{y:.2f}<extra></extra>",
                                 marker=dict(
                                       size=5,
                                       color=f"rgb{color}",
@@ -228,7 +236,7 @@ def CreateOverviewFig(config, data, time_range, df_overview, gpus, data_manager)
                                 meta = {
                                   'x_ref': x_ref,
                                   'y_ref': y_ref,
-                                  'text_ref': text_ref
+                                  # 'text_ref': text_ref
                                 }
                                 ), 1, 2, secondary_y=True)
     if '_label' in config['plots']['_overview']['right']:
@@ -589,35 +597,48 @@ def CreatePlotlyFig(config,
                             # Use custom meta to link the trace to the shared data
                             meta = {'x_ref': x_poly_ref, 'y_ref': y_poly_ref}
                               ), 1, 1)
-  
+
+  # The hover text is generated for each point, and for larger jobs this
+  # increases the job size in orders of magnitude, so although it could include more information
+  # we will use hovertemplate instead
+
   # Prepare Hover Text for the Average Line
-  hovertext = []
-  delta = []
+  # hovertext = []
+  # delta = []
+  # if report['x'][graph] == 'ts':
+  #   for time,value in zip(x,df_avg_time):
+  #     delta_comp = (time - x[0]).components
+  #     delta.append(f"{(str(delta_comp.hours)+'h:') if delta_comp.hours > 0 else ''}{delta_comp.minutes:02d}m:{delta_comp.seconds:02d}s")
+  #     if np.isnan(value):
+  #       hovertext.append("")
+  #     else:
+  #       if report['log'][graph]:
+  #         hovertext.append(f"Time: {time} ({delta[-1]})<br />Avg. per time: {int(value)}")
+  #       else:
+  #         hovertext.append(f"Time: {time} ({delta[-1]})<br />Avg. per time: {value:.2f}")
+  # else:
+  #   for xval,value in zip(x,df_avg_time):
+  #     if np.isnan(value):
+  #       hovertext.append("")
+  #     else:
+  #       if report['log'][graph]:
+  #         hovertext.append(f"{report['xlabel'][graph]}: {xval}<br />Avg. per {report['xlabel'][graph]}: {int(value)}")
+  #       else:
+  #         hovertext.append(f"{report['xlabel'][graph]}: {xval}<br />Avg. per {report['xlabel'][graph]}: {value:.2f}")
+
+  # Define Template based on X-axis type
   if report['x'][graph] == 'ts':
-    for time,value in zip(x,df_avg_time):
-      delta_comp = (time - x[0]).components
-      delta.append(f"{(str(delta_comp.hours)+'h:') if delta_comp.hours > 0 else ''}{delta_comp.minutes:02d}m:{delta_comp.seconds:02d}s")
-      if np.isnan(value):
-        hovertext.append("")
-      else:
-        if report['log'][graph]:
-          hovertext.append(f"Time: {time} ({delta[-1]})<br />Avg. per time: {int(value)}")
-        else:
-          hovertext.append(f"Time: {time} ({delta[-1]})<br />Avg. per time: {value:.2f}")
+    # Time format
+    ht_template = "<b>Time:</b> %{x|%d/%m %H:%M:%S}<br><b>Avg:</b> %{y:.2f}<extra></extra>"
   else:
-    for xval,value in zip(x,df_avg_time):
-      if np.isnan(value):
-        hovertext.append("")
-      else:
-        if report['log'][graph]:
-          hovertext.append(f"{report['xlabel'][graph]}: {xval}<br />Avg. per {report['xlabel'][graph]}: {int(value)}")
-        else:
-          hovertext.append(f"{report['xlabel'][graph]}: {xval}<br />Avg. per {report['xlabel'][graph]}: {value:.2f}")
+    # Linear/Label format
+    xlabel = report['xlabel'][graph] if report['xlabel'][graph] else 'x'
+    ht_template = f"<b>{xlabel}:</b> %{{x}}<br><b>Avg:</b> %{{y:.2f}}<extra></extra>"
 
   # Register Avg Line data
   x_ref = data_manager.register(x, 'x_axis')
   y_avg_ref = data_manager.register(df_avg_time, 'y_avg_time')
-  text_ref = data_manager.register(hovertext, 'hover_avg_time')
+  # text_ref = data_manager.register(hovertext, 'hover_avg_time')
   
   # Calculate colors for markers
   color_data = (np.log2(df_avg_time) if report['log'][graph] else df_avg_time)
@@ -628,10 +649,16 @@ def CreatePlotlyFig(config,
                             legendgroup = 'time',
                             line = {"shape": 'hvh', "color":"black"},
                             mode="lines+markers",
-                            hoverinfo='text',
-                            text=[],
+                            # hoverinfo='text',
+                            # text=[],
+                            hoverinfo='y+x',
+                            hovertemplate=ht_template,
                             # Meta references
-                            meta = {'x_ref': x_ref, 'y_ref': y_avg_ref, 'text_ref': text_ref},
+                            meta = {
+                              'x_ref': x_ref, 
+                              'y_ref': y_avg_ref, 
+                              # 'text_ref': text_ref
+                              },
                             marker=dict(
                                   size=5,
                                   cmin=(np.log2(report['lim'][graph][0]) if report['log'][graph] else report['lim'][graph][0]),
@@ -760,30 +787,41 @@ def CreatePlotlyFig(config,
   if report['log'][graph]:
     colorbar = dict(**colorbar,tickvals=np.log2(cticks),ticktext=cticks)
 
-  hovertext = []
-  # Construct the 2D hovertext matrix for the heatmap
+  # hovertext = []
+  # # Construct the 2D hovertext matrix for the heatmap
+  # if report['x'][graph] == 'ts':
+  #   for yi, yy in enumerate(nodes):
+  #     hovertext.append([])
+  #     for xi, xx in enumerate(x):
+  #       if np.isnan(z[yi][xi]):
+  #         hovertext[-1].append("")
+  #       else:
+  #         if report['log'][graph]:
+  #           hovertext[-1].append(f"Time: {xx} ({delta[xi]})<br />{report['ylabel'][graph]}: {yy}<br />Value: {int(z[yi][xi])}")
+  #         else:
+  #           hovertext[-1].append(f"Time: {xx} ({delta[xi]})<br />{report['ylabel'][graph]}: {yy}<br />Value: {z[yi][xi]:.2f}")
+  # else:
+  #   for yi, yy in enumerate(nodes):
+  #     hovertext.append([])
+  #     for xi, xx in enumerate(x):
+  #       if np.isnan(z[yi][xi]):
+  #         hovertext[-1].append("")
+  #       else:
+  #         if report['log'][graph]:
+  #           hovertext[-1].append(f"{report['xlabel'][graph]}: {xx}<br />{report['ylabel'][graph]}: {yy}<br />Value: {int(z[yi][xi])}")
+  #         else:
+  #           hovertext[-1].append(f"{report['xlabel'][graph]}: {xx}<br />{report['ylabel'][graph]}: {yy}<br />Value: {z[yi][xi]:.2f}")
+
+  # Define Heatmap Template
+  # Determine label: If log scale is ON, we show "Log2(Value)", otherwise "Value"
+  val_label = "Log2(Value)" if report['log'][graph] else "Value"
+
   if report['x'][graph] == 'ts':
-    for yi, yy in enumerate(nodes):
-      hovertext.append([])
-      for xi, xx in enumerate(x):
-        if np.isnan(z[yi][xi]):
-          hovertext[-1].append("")
-        else:
-          if report['log'][graph]:
-            hovertext[-1].append(f"Time: {xx} ({delta[xi]})<br />{report['ylabel'][graph]}: {yy}<br />Value: {int(z[yi][xi])}")
-          else:
-            hovertext[-1].append(f"Time: {xx} ({delta[xi]})<br />{report['ylabel'][graph]}: {yy}<br />Value: {z[yi][xi]:.2f}")
+    # Using val_label in the template
+    ht_template = f"<b>Time:</b> %{{x|%d/%m %H:%M:%S}}<br><b>{report['ylabel'][graph]}:</b> %{{y}}<br><b>{val_label}:</b> %{{z:.2f}}<extra></extra>"
   else:
-    for yi, yy in enumerate(nodes):
-      hovertext.append([])
-      for xi, xx in enumerate(x):
-        if np.isnan(z[yi][xi]):
-          hovertext[-1].append("")
-        else:
-          if report['log'][graph]:
-            hovertext[-1].append(f"{report['xlabel'][graph]}: {xx}<br />{report['ylabel'][graph]}: {yy}<br />Value: {int(z[yi][xi])}")
-          else:
-            hovertext[-1].append(f"{report['xlabel'][graph]}: {xx}<br />{report['ylabel'][graph]}: {yy}<br />Value: {z[yi][xi]:.2f}")
+    xlabel = report['xlabel'][graph] if report['xlabel'][graph] else 'X'
+    ht_template = f"<b>{xlabel}:</b> %{{x}}<br><b>{report['ylabel'][graph]}:</b> %{{y}}<br><b>{val_label}:</b> %{{z:.2f}}<extra></extra>"
 
   # Register Heatmap Data
   # We register nodes (Y axis) and the Z matrix and the Text matrix
@@ -795,7 +833,7 @@ def CreatePlotlyFig(config,
   z_ref = data_manager.register(z_processed, 'heatmap_z')
   
   # Register Hover Text
-  text_matrix_ref = data_manager.register(hovertext, 'heatmap_hover')
+  # text_matrix_ref = data_manager.register(hovertext, 'heatmap_hover')
 
   fig.add_trace(go.Heatmap( x=[], # Empty
                             y=[], # Empty
@@ -805,12 +843,19 @@ def CreatePlotlyFig(config,
                             zmin=(np.log2(report['lim'][graph][0]) if report['log'][graph] else report['lim'][graph][0]),
                             zmax=(np.log2(report['lim'][graph][1]) if report['log'][graph] else report['lim'][graph][1]),
                             name=f"{report['graphs'][graph]}",
-                            hoverinfo='text',
-                            text=[],
+                            # hoverinfo='text',
+                            # text=[],
+                            hoverinfo='z+x+y',
+                            hovertemplate=ht_template,
                             colorbar=colorbar, 
                             colorscale=colorscales[report['cmap'][graph].replace('cmc.','').replace('_r','')] if report['cmap'][graph].replace('cmc.','').replace('_r','') in colorscales else report['cmap'][graph],
                             # Meta tags linking to shared data
-                            meta = {'x_ref': x_ref, 'y_ref': y_nodes_ref, 'z_ref': z_ref, 'text_ref': text_matrix_ref}
+                            meta = {
+                              'x_ref': x_ref, 
+                              'y_ref': y_nodes_ref, 
+                              'z_ref': z_ref, 
+                              # 'text_ref': text_matrix_ref
+                              }
                             ), 2, 1)
 
   #(2,2) - TIME-AVERAGE PER NODE
@@ -833,18 +878,21 @@ def CreatePlotlyFig(config,
                               ), 2, 2)
   
   # Prepare Hover Text for Node Average Line
-  hovertext = []
-  for node,value in zip(nodes,df_avg_node):
-    if np.isnan(value):
-      hovertext.append("")
-    else:
-      if report['log'][graph]:
-        hovertext.append(f"{report['ylabel'][graph]}: {node}<br />Avg. per {report['ylabel'][graph]}: {int(value)}")
-      else:
-        hovertext.append(f"{report['ylabel'][graph]}: {node}<br />Avg. per {report['ylabel'][graph]}: {value:.2f}")
+  # hovertext = []
+  # for node,value in zip(nodes,df_avg_node):
+  #   if np.isnan(value):
+  #     hovertext.append("")
+  #   else:
+  #     if report['log'][graph]:
+  #       hovertext.append(f"{report['ylabel'][graph]}: {node}<br />Avg. per {report['ylabel'][graph]}: {int(value)}")
+  #     else:
+  #       hovertext.append(f"{report['ylabel'][graph]}: {node}<br />Avg. per {report['ylabel'][graph]}: {value:.2f}")
+
+  # Define Template (Note: For this scatter plot, X is Value, Y is Node)
+  ht_template = f"<b>{report['ylabel'][graph]}:</b> %{{y}}<br><b>Avg:</b> %{{x:.2f}}<extra></extra>"
 
   x_avg_node_ref = data_manager.register(df_avg_node, 'x_avg_node')
-  text_node_ref = data_manager.register(hovertext, 'hover_avg_node')
+  # text_node_ref = data_manager.register(hovertext, 'hover_avg_node')
   
   color_node = (np.log2(df_avg_node) if report['log'][graph] else df_avg_node)
 
@@ -854,8 +902,10 @@ def CreatePlotlyFig(config,
                             legendgroup = 'node',
                             line = {"shape": 'vhv', "color":"black"},
                             mode="lines+markers",
-                            hoverinfo='text',
-                            text=[],
+                            # hoverinfo='text',
+                            # text=[],
+                            hoverinfo='x+y',
+                            hovertemplate=ht_template,
                             marker=dict(
                                 size=5,
                                 cmin=(np.log2(report['lim'][graph][0]) if report['log'][graph] else report['lim'][graph][0]),
@@ -864,7 +914,11 @@ def CreatePlotlyFig(config,
                                 colorscale=colorscales[report['cmap'][graph].replace('cmc.','').replace('_r','')] if report['cmap'][graph].replace('cmc.','').replace('_r','') in colorscales else report['cmap'][graph],
                               ),
                             # Meta references
-                            meta = {'x_ref': x_avg_node_ref, 'y_ref': y_nodes_ref, 'text_ref': text_node_ref}
+                            meta = {
+                              'x_ref': x_avg_node_ref, 
+                              'y_ref': y_nodes_ref, 
+                              # 'text_ref': text_node_ref
+                              }
                               ), 2, 2)
   
   fig['layout'][f'xaxis4'].update(dict(title=f"{report['unit'][graph]}", range=report['lim'][graph]))

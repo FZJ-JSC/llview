@@ -1448,7 +1448,7 @@ class BenchRepo:
                                 ]
                                 +[{'name': key.replace(' ', '_'), 'type': f'{metrics[key]}_t'} for key in parameters] 
                                 # Aggregates (min/avg/max) are ALWAYS floats and can be NULL (in case there are failed runs for all entries of a row)
-                                +[{'name': f'{key.replace(' ', '_')}_{suffix}', 'type': 'float_null_t'} for key in graph_metrics for suffix in ['min','avg','max']],
+                                +[{'name': f"{key.replace(' ', '_')}_{suffix}", 'type': 'float_null_t'} for key in graph_metrics for suffix in ['min','avg','max']],
                               }
                     })
 
@@ -1674,7 +1674,7 @@ class BenchRepo:
       # Columns to be included in the csv file: all that are not table parameters (which will be in the filename)
       # Graph metrics/measurements (y) including 'ts', parameters for different traces (graphparameters), and annotations
       columns = [key for key in parameters.keys()]
-      columns_str = [f'"{key.replace(' ','_')}"' for key in columns]
+      columns_str = [f'"{key.replace(" ","_")}"' for key in columns]
       dataset = {'dataset': {
         'name': f'cb_{combined_name}_csv',
         'set': 'csv_cb',
@@ -1757,7 +1757,7 @@ class BenchRepo:
       # Columns to be included in the csv file: all that are not table parameters (which will be in the filename)
       # Graph metrics/measurements (y) including 'ts', parameters for different traces (graphparameters), and annotations
       columns = [key for key in metrics.keys() if key not in parameters]
-      columns_str = [f'"{key.replace(' ','_')}"' for key in columns]
+      columns_str = [f'"{key.replace(" ","_")}"' for key in columns]
       dataset = {'dataset': {
         'name':           f'cb_{combined_name}_csv',
         'set':            f'cb_{combined_name}',
@@ -2411,7 +2411,7 @@ def get_credentials(name,config):
     elif config['credentials'] == 'module':
       try: 
         # Internal function
-        from credentials import get_user_pass
+        from credentials import get_user_pass # type: ignore
         username,password = get_user_pass()
       except ModuleNotFoundError:
         log.critical("Credentials was chosen to be obtained via module, but module 'credentials' does not exist!\n")
@@ -2739,7 +2739,7 @@ def main():
 
         # Generate One LML file for the whole Repo
         repo_bench.to_LML(
-          os.path.join(args.outfolder if args.outfolder else './',f"{repo_name.replace(" ","_")}_LML.xml"),
+          os.path.join(args.outfolder if args.outfolder else './',f"{repo_name.replace(' ','_')}_LML.xml"),
           prefix=repo_name
         )
 

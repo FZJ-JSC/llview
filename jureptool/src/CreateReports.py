@@ -123,7 +123,7 @@ def CreateFullReport(pdf,data,config,page_num,report,files,time_range,data_manag
 
         # ADD COLORBAR AXIS, AND ATTACH COLORBAR TO IT
         bbox = page.axes[bottom,0].get_window_extent().transformed(page.fig.transFigure.inverted())
-        cax = page.fig.add_axes([1.32*bbox.x1, bbox.y0, 0.02*(bbox.x1-bbox.x0), (bbox.y1-bbox.y0)])
+        cax = page.fig.add_axes((1.32*bbox.x1, bbox.y0, 0.02*(bbox.x1-bbox.x0), (bbox.y1-bbox.y0)))
         
         page.fig.colorbar(cbar, cax=cax)
         if report['log'][graph]:
@@ -200,7 +200,7 @@ def CreateFullReport(pdf,data,config,page_num,report,files,time_range,data_manag
       mid = pd.Series(np.concatenate((x_time.iloc[0],[(x_time[1:].iloc[i]+x_time[:-1].iloc[i])/2.0 for i in range(len(x_time)-1)],x_time.iloc[-1]),axis=None).astype(np.int32 if x_header == 'ts' else np.float16))
       segments = np.array([mid[:-1], y_time[:], mid[1:], y_time[:]]).T.reshape(-1, 2, 2)
       # Create a continuous norm to map from data points to colors
-      lc = LineCollection(segments, cmap=report['cmap'][graph],norm=norm,zorder=3)
+      lc = LineCollection(list(segments), cmap=report['cmap'][graph],norm=norm,zorder=3)
       # Set the values used for colormapping
       lc.set_array(y_time)
       lc.set_linewidth(1)
@@ -235,6 +235,7 @@ def CreateFullReport(pdf,data,config,page_num,report,files,time_range,data_manag
 
       if report['log'][graph]:
         page.axes[top, 0].set_yscale('log', base=report['log'][graph])
+        formatter = FuncFormatter(lambda y, _: '{:.0f}'.format(y))
         page.axes[top, 0].yaxis.set_major_formatter(formatter)
         if setlim:
           page.axes[top, 0].set_ylim([max(0.9,clim[0]-0.05*diff), clim[1]+0.05*diff]) # Can't use the same, since negative numbers mess with the plot
@@ -264,7 +265,7 @@ def CreateFullReport(pdf,data,config,page_num,report,files,time_range,data_manag
       # needs to be (numlines) x (points per line) x 2 (for x and y)
       segments = np.array([x_node[:], y_node[:]-0.5, x_node[:], y_node[:]+0.5]).T.reshape(-1, 2, 2)
       # Create a continuous norm to map from data points to colors
-      lc = LineCollection(segments, cmap=report['cmap'][graph],norm=norm,zorder=3)
+      lc = LineCollection(list(segments), cmap=report['cmap'][graph],norm=norm,zorder=3)
       # Set the values used for colormapping
       lc.set_array(x_node)
       lc.set_linewidth(1)
@@ -285,6 +286,7 @@ def CreateFullReport(pdf,data,config,page_num,report,files,time_range,data_manag
       if report['log'][graph]:
         # Can't use the same, since negative numbers mess with the plot
         page.axes[bottom, 1].set_xscale('log', base=report['log'][graph])
+        formatter = FuncFormatter(lambda y, _: '{:.0f}'.format(y))
         page.axes[bottom, 1].xaxis.set_major_formatter(formatter)
         if setlim:
           page.axes[bottom, 1].set_xlim([max(0.9, clim[0]-0.05*diff), clim[1]+0.05*diff])
