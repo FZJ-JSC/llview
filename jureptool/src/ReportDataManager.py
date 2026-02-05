@@ -2,6 +2,7 @@ import json
 import pandas as pd
 import numpy as np
 import datetime
+import base64
 
 class ReportDataManager:
   def __init__(self):
@@ -19,32 +20,64 @@ class ReportDataManager:
       # We convert them to Strings to preserve the Server Time (Wall Clock)
       # This ensures the browser displays the exact time found in the logs, ignoring user timezone
       if pd.api.types.is_datetime64_any_dtype(data):
-        data = data.astype(str)
+        data = data.astype(str).tolist()
       
       # Handle object-dtype columns that might contain timestamps mixed with other data
       elif data.dtype == 'object' and len(data) > 0 and isinstance(data.values[0], (pd.Timestamp, datetime.datetime)):
-        data = data.astype(str)
+        data = data.astype(str).tolist()
       
       # Handle Timedelta objects (Durations)
       # Plotly expects numeric values for durations (e.g. milliseconds)
       # json.dumps cannot serialize Timedelta objects, so we convert to float
       elif pd.api.types.is_timedelta64_dtype(data):
         # Use vectorized division to convert to milliseconds
-        data = data / np.timedelta64(1, 'ms')
-
-      data = data.tolist()
+        data = (data / np.timedelta64(1, 'ms')).to_numpy(dtype=np.float32)
+      else:
+        # Keep as numpy/pandas object for now to check for optimization
+        data = data.to_numpy()
     
-    # Handle Numpy arrays
-    elif isinstance(data, np.ndarray):
-      if np.issubdtype(data.dtype, np.datetime64):
-        data = data.astype(str)
-      elif np.issubdtype(data.dtype, np.timedelta64):
-        # Convert numpy timedelta to milliseconds (float)
-        # We divide by a 1ms timedelta to get the float representation
-        data = (data / np.timedelta64(1, 'ms')).tolist()
+    # Binary Encoding for Numerical Arrays:
+    # If it is a numpy array of numbers, encode it
+    if isinstance(data, np.ndarray) and np.issubdtype(data.dtype, np.number):
+      # Filter out NaNs if necessary, or Plotly handles NaNs in Float32Array nicely (as NaN)
       
-      data = data.tolist()
-    
+      # Decide precision: Float32 is usually enough for graphs and saves 50% vs Float64
+      if np.issubdtype(data.dtype, np.floating):
+        data = data.astype(np.float32)
+        dtype_str = "float32"
+      elif np.issubdtype(data.dtype, np.integer):
+        data = data.astype(np.int32)
+        dtype_str = "int32"
+      else:
+        dtype_str = str(data.dtype)
+
+      # Capture the shape before flattening
+      # This is used to reconstruct the for Heatmaps (2D arrays) in JS
+      data_shape = data.shape
+
+      # Create Base64 signature
+      # tobytes() flattens the array (C-order), so we lose dimension info here
+      b64_str = base64.b64encode(data.tobytes()).decode('utf-8')
+      
+      # We construct a special dict object to represent this array
+      # We use a tuple key of the B64 string + shape for deduplication
+      # Casting shape to tuple just to be safe for hashing
+      data_tuple = (dtype_str, b64_str, tuple(data_shape))
+      
+      if data_tuple in self.data_map:
+        return self.data_map[data_tuple]
+      
+      key = f"{prefix}_{self.counter}"
+      self.counter += 1
+      
+      # Store the special object, including shape info
+      self.shared_data[key] = {"_b64": b64_str, "dtype": dtype_str, "shape": data_shape}
+      self.data_map[data_tuple] = key
+      return key
+
+    # Fallback to standard List logic for Strings/Mixed types
+    if isinstance(data, np.ndarray):
+        data = data.tolist()
     # Final safety check to ensure we are working with a list
     if not isinstance(data, list):
       data = list(data)
