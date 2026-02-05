@@ -221,27 +221,58 @@ def CreateHTML( config,
   div.lockzoom {
     visibility: hidden;
   }
-  div.node {
-    margin: 2pt;
-    padding: 5pt;
-    display: inline-block;
-    width: 250px;
+  .nl-box { 
+    display: inline-block; 
+    width: 250px; 
+    margin: 2px; 
+    padding: 5px; 
+    vertical-align: top; /* Aligns boxes to top if heights differ */
     border: 2px solid black; 
-    font-size: 10pt;
     text-align: center;
-  }
-  div.errornode {
-    margin: 2pt;
-    padding: 5pt;
-    display: inline-block;
-    width: 250px;
-    border: 2px solid red; 
     font-size: 10pt;
-    text-align: center;
   }
+  .nl-err { 
+    border-color: red; /* Overrides the black border */
+  }
+  .nl-head { text-align: center; }
+  .nl-idx { float: left; color: dimgray; padding: 0 5px; }
+  .nl-gpu { text-align: center; font-size: 8pt; }
+  .nl-footer { text-align: center; font-size: 10pt; }
   table {
     border: 2px solid black;
     border-collapse: collapse;
+  }
+  /* Style the Summary to look like a Header */
+  details > summary {
+    cursor: pointer;
+    list-style: none; /* Hides default arrow in some browsers */
+    padding: 10px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 1.5em; /* Like H2 */
+    font-weight: bold;
+  }
+
+  /* Add a custom arrow indicator */
+  details > summary::after {
+    content: '+'; 
+    float: right;
+    font-weight: bold;
+  }
+
+  details[open] > summary::after {
+    content: '-';
+  }
+
+  /* Chrome/Safari specific fix to hide default arrow */
+  details > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .section-content {
+    margin-top: 10px;
+    padding-left: 5px;
   }
   td {
     padding: 5px 5px 5px 5px;
@@ -347,6 +378,7 @@ def CreateHTML( config,
     height: 19px;
     width: 60px;
     -webkit-appearance: initial;
+    appearance: initial;
     border-radius: 3px;
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
     outline: none;
@@ -437,6 +469,7 @@ def CreateHTML( config,
   html += """
   <script>
   var wsize = 0;
+  var resizeRequest;
   var plots = null;
   var time_plots = null;
   var overview = null;
@@ -535,200 +568,250 @@ def CreateHTML( config,
 
   function init() {
     wsize = window.innerWidth;
-    // Set navmenu size
-    var nav = document.getElementById("navmenu");
-    var newheight = window.innerHeight - document.getElementById("navbar").offsetHeight - 32;
-    nav.style.height = `${newheight}px`;
+    
+    // Navbar height logic
+    onresize(); 
 
-    // Getting all plotly graphs
+    // Cache jQuery objects
     plots = $('.plotly-graph-div');
-    // Getting all plotly graphs that has time as abscissa 
-    time_plots = $('div[id$="_time_plot"]'); // jQuery object
-    // First one is overview figure
-    overview = $('#overview_plot').get(0); // plots.get(0); // Needs to be the element, not jquery
-    // Last one is timeline
-    timeline = $('#timeline_plot').get(0); // plots.get(-1); // Needs to be the element, not jquery
-    // Getting all graphs per section
+    time_plots = $('div[id$="_time_plot"]');
+    overview = $('#overview_plot').get(0);
+    timeline = $('#timeline_plot').get(0);
+    
     for (const [key, value] of Object.entries(sections)) {
       sections[key] = $(`div[id^="${key}_"]`);
     }
+    
     lockzoom_div = $('.lockzoom');
     lockzoom = $('input[id="lockzoom"]');
+    lockzoom_div.css('visibility', 'visible');
 
+    // Menu toggle listener
     document.getElementById("toggle-menu").addEventListener('change', function() {
-      plots.each((i,div) => {
-        Plotly.Plots.resize(div);
-      });
+      // Defer resizing to avoid blocking UI immediately
+      setTimeout(() => {
+          plots.each((i,div) => { Plotly.Plots.resize(div); });
+      }, 50);
     });
 
-    // "Snake" progress bar, obtained from: https://lab.hakim.se/progress-nav
+    // Setup Snake Bar elements
     var toc = document.querySelector( '.section-toc' );
-    var tocPath = document.querySelector( '.section-toc-marker path' );
-    var tocItems;
-    // Factor of screen size that the element must cross
-    // before it's considered visible
-    var TOP_MARGIN = 0.01,
-      BOTTOM_MARGIN = 0.0;
-    var pathLength;
-    var lastPathStart,
-      lastPathEnd;
-    window.addEventListener( 'resize', drawPath, false );
-    window.addEventListener( 'scroll', sync, false );
+    tocPath = document.querySelector( '.section-toc-marker path' );
+    
+    // Cache the graph blocks for the Hash Scroll logic
+    cachedBlocks = Array.from(document.querySelectorAll('.block'));
 
-    drawPath();
+    // Use the throttled handlers
+    window.addEventListener( 'resize', onresize, false );
+    window.addEventListener( 'scroll', onScrollThrottled, false );
 
-    function drawPath() {
-      tocItems = [].slice.call( toc.querySelectorAll( 'li' ) );
-      // Cache element references and measurements
-      tocItems = tocItems.map( function( item ) {
-        var anchor = item.querySelector( 'a' );
-        var target = document.getElementById( anchor.getAttribute( 'href' ).match(/\'(.*)\'/)[1] );
-        return {
-          listItem: item,
-          anchor: anchor,
-          target: target
-        };
-      } );
-
-      // Remove missing targets
-      tocItems = tocItems.filter( function( item ) {
-        return !!item.target;
-      } );
-
-      var path = [];
-      var pathIndent;
-      tocItems.forEach( function( item, i ) {
-        var x = item.anchor.offsetLeft - 5,
-          y = item.anchor.offsetTop,
-          height = item.anchor.offsetHeight;
-        if( i === 0 ) {
-          path.push( 'M', x, y, 'L', x, y + height );
-          item.pathStart = 0;
-        }
-        else {
-          // Draw an additional line when there's a change in
-          // indent levels
-          if( pathIndent !== x ) path.push( 'L', pathIndent, y );
-          path.push( 'L', x, y );
-          // Set the current path so that we can measure it
-          tocPath.setAttribute( 'd', path.join( ' ' ) );
-          item.pathStart = tocPath.getTotalLength() || 0;
-          path.push( 'L', x, y + height );
-        }
-        pathIndent = x;
-        tocPath.setAttribute( 'd', path.join( ' ' ) );
-        item.pathEnd = tocPath.getTotalLength();
-      } );
-      pathLength = tocPath.getTotalLength();
-      sync();
-    }
-
-    function sync() {
-      var windowHeight = window.innerHeight;
-      var pathStart = pathLength,
-        pathEnd = 0;
-      var visibleItems = 0;
-
-      tocItems.forEach( function( item ) {
-        var targetBounds = item.target.getBoundingClientRect();
-        if( targetBounds.bottom > windowHeight * TOP_MARGIN && targetBounds.top < windowHeight * ( 1 - BOTTOM_MARGIN ) ) {
-          pathStart = Math.min( item.pathStart, pathStart );
-          pathEnd = Math.max( item.pathEnd, pathEnd );
-          visibleItems += 1;
-          item.listItem.classList.add( 'visible' );
-        }
-        else {
-          item.listItem.classList.remove( 'visible' );
-        }
-      } );
-
-      // Specify the visible path or hide the path altogether
-      // if there are no visible items
-      if( visibleItems > 0 && pathStart < pathEnd ) {
-        if( pathStart !== lastPathStart || pathEnd !== lastPathEnd ) {
-          tocPath.setAttribute( 'stroke-dashoffset', '1' );
-          tocPath.setAttribute( 'stroke-dasharray', '1, '+ pathStart +', '+ ( pathEnd - pathStart ) +', ' + pathLength );
-          tocPath.setAttribute( 'opacity', 1 );
-        }
-      }
-      else {
-        tocPath.setAttribute( 'opacity', 0 );
-      }
-      lastPathStart = pathStart;
-      lastPathEnd = pathEnd;
-    }
-
-    /* Timeline click event */
+    // Initial draw
+    drawPath(toc); 
+    
+    // Timeline clicks
     if (timeline) {
       timeline.on("plotly_click", function(ed) { 
-        /* Relayout timeline when clicked on a bar  */
         Plotly.relayout(timeline, { "xaxis.range[0]": ed.points[0].base, "xaxis.range[1]": ed.points[0].value });
       });
     }
 
-    lockzoom_div.css('visibility', 'visible');
-
-    // Synchronize zoom between plots
-    lockzoom.change( function() {
-      if ($(this).is(':checked')) {
-        sync_zoom()
-      } 
-    });
+    // Zoom Sync Listeners
+    lockzoom.change( function() { if ($(this).is(':checked')) sync_zoom(); });
+    
+    // Initial Hash Check
+    // Getting initial position from URL and scrolling to it, if present
+    var currentHash = window.location.hash.substring(1);
+    if (currentHash) scrollIntoView(currentHash);
   }
 
-  // Add scroll event listener to add fragment of current block on URL
-  window.addEventListener( 'scroll', function () {
-    if (!catch_scroll) {return;}
-    let graphs = Array.from(document.querySelectorAll('.block'))
-    let visible = graphs.find((el)=>{return isElementInViewport(el);});
+  // "Snake" progress bar, obtained from: https://lab.hakim.se/progress-nav
+  var tocItems = []; 
+  var tocPath;
+  var pathLength;
+  var lastPathStart, lastPathEnd;
+  var cachedBlocks = []; // Cache the blocks so we don't querySelectorAll on every scroll
+
+  // Throttled Scroll Handler using requestAnimationFrame
+  var isScrolling = false;
+  function onScrollThrottled() {
+    if (!isScrolling) {
+      window.requestAnimationFrame(function() {
+        syncSnake(); // Update snake bar
+        updateUrlHash(); // Update URL fragment
+        isScrolling = false;
+      });
+      isScrolling = true;
+    }
+  }
+
+  function drawPath(toc) {
+    if(!tocPath) return; // Safeguard
+    if(!toc) toc = document.querySelector( '.section-toc' );
+    tocItems = [].slice.call( toc.querySelectorAll( 'li' ) );
+    tocItems = tocItems.map( function( item ) {
+      var anchor = item.querySelector( 'a' );
+      var targetId = anchor.getAttribute( 'href' ).match(/'(.*)'/)[1];
+      var target = document.getElementById( targetId );
+      return { listItem: item, anchor: anchor, target: target };
+    }).filter( function( item ) { return !!item.target; } );
+
+    var path = [];
+    var pathIndent;
+    
+    tocItems.forEach( function( item, i ) {
+      var x = item.anchor.offsetLeft - 5,
+          y = item.anchor.offsetTop,
+          height = item.anchor.offsetHeight;
+      if( i === 0 ) {
+        path.push( 'M', x, y, 'L', x, y + height );
+        item.pathStart = 0;
+      } else {
+        if( pathIndent !== x ) path.push( 'L', pathIndent, y );
+        path.push( 'L', x, y );
+        tocPath.setAttribute( 'd', path.join( ' ' ) );
+        item.pathStart = tocPath.getTotalLength() || 0;
+        path.push( 'L', x, y + height );
+      }
+      pathIndent = x;
+      tocPath.setAttribute( 'd', path.join( ' ' ) );
+      item.pathEnd = tocPath.getTotalLength();
+    });
+    pathLength = tocPath.getTotalLength();
+
+    // Resize SVG container to fit the full scrolling content height
+    // Otherwise the path is visually clipped when scrolling the nav menu
+    if (tocItems.length > 0) {
+      var lastItem = tocItems[tocItems.length - 1];
+      var totalHeight = lastItem.anchor.offsetTop + lastItem.anchor.offsetHeight;
+      // tocPath.parentElement is the <svg> element
+      tocPath.parentElement.style.height = (totalHeight + 20) + "px"; 
+    }
+
+    syncSnake();
+  }
+
+  // Optimized Sync (Snake Bar)
+  function syncSnake() {
+    var windowHeight = window.innerHeight;
+    var pathStart = pathLength, pathEnd = 0;
+    var visibleItems = 0;
+    var TOP_MARGIN = 0.01, BOTTOM_MARGIN = 0.0;
+
+    tocItems.forEach( function( item ) {
+      var rect = item.target.getBoundingClientRect();
+      // Optimization: Only process if element is somewhat near viewport
+      if( rect.bottom > windowHeight * TOP_MARGIN && rect.top < windowHeight * ( 1 - BOTTOM_MARGIN ) ) {
+        pathStart = Math.min( item.pathStart, pathStart );
+        pathEnd = Math.max( item.pathEnd, pathEnd );
+        visibleItems += 1;
+        item.listItem.classList.add( 'visible' );
+      } else {
+        item.listItem.classList.remove( 'visible' );
+      }
+    });
+
+    if( visibleItems > 0 && pathStart < pathEnd ) {
+      if( pathStart !== lastPathStart || pathEnd !== lastPathEnd ) {
+        tocPath.setAttribute( 'stroke-dashoffset', '1' );
+        tocPath.setAttribute( 'stroke-dasharray', '1, '+ pathStart +', '+ ( pathEnd - pathStart ) +', ' + pathLength );
+        tocPath.setAttribute( 'opacity', 1 );
+      }
+    } else {
+      tocPath.setAttribute( 'opacity', 0 );
+    }
+    lastPathStart = pathStart;
+    lastPathEnd = pathEnd;
+  }
+
+  // Optimized URL Hash Updater
+  var currentHash = "";
+  function updateUrlHash() {
+    if (!catch_scroll) return;
+    
+    // Use cached blocks instead of querying DOM
+    let visible = cachedBlocks.find((el) => { 
+      var rect = el.getBoundingClientRect();
+      return ( rect.top > -3 && rect.top <= (window.innerHeight || document.documentElement.clientHeight) );
+    });
+
     if (visible) {
-      let hash = $(visible).attr('id');
-      if (currentHash == hash) {return;}
-      // window.location.hash = hash;
-      // if(history.pushState) { history.pushState(null, null, "#"+hash); } else { window.location.hash = hash; } 
-      history.replaceState(null, null, "#"+hash);
-      currentHash = hash;
+      let hash = visible.id;
+      if (currentHash !== hash) {
+        history.replaceState(null, null, "#"+hash);
+        currentHash = hash;
+      }
     }
-  }, false );
+  }
 
-  // Getting initial position from URL and scrolling to it, if present
-  var currentHash = window.location.hash.substring(1);
-  if (currentHash) scrollIntoView(currentHash);
+  function sync() {
+    var windowHeight = window.innerHeight;
+    var pathStart = pathLength,
+      pathEnd = 0;
+    var visibleItems = 0;
 
-  // Check if element 'el' is visible in viewport
-  function isElementInViewport (el) {
-    if (typeof jQuery === "function" && el instanceof jQuery) {
-        el = el[0];
+    tocItems.forEach( function( item ) {
+      var targetBounds = item.target.getBoundingClientRect();
+      if( targetBounds.bottom > windowHeight * TOP_MARGIN && targetBounds.top < windowHeight * ( 1 - BOTTOM_MARGIN ) ) {
+        pathStart = Math.min( item.pathStart, pathStart );
+        pathEnd = Math.max( item.pathEnd, pathEnd );
+        visibleItems += 1;
+        item.listItem.classList.add( 'visible' );
+      }
+      else {
+        item.listItem.classList.remove( 'visible' );
+      }
+    } );
+
+    // Specify the visible path or hide the path altogether
+    // if there are no visible items
+    if( visibleItems > 0 && pathStart < pathEnd ) {
+      if( pathStart !== lastPathStart || pathEnd !== lastPathEnd ) {
+        tocPath.setAttribute( 'stroke-dashoffset', '1' );
+        tocPath.setAttribute( 'stroke-dasharray', '1, '+ pathStart +', '+ ( pathEnd - pathStart ) +', ' + pathLength );
+        tocPath.setAttribute( 'opacity', 1 );
+      }
     }
-    var rect = el.getBoundingClientRect();
-    // Added small value above the top, otherwise it was changing the fragment to the graph below
-    return ( rect.top > -3 && rect.top <= (window.innerHeight || document.documentElement.clientHeight) );
+    else {
+      tocPath.setAttribute( 'opacity', 0 );
+    }
+    lastPathStart = pathStart;
+    lastPathEnd = pathEnd;
   }
 
   // Scroll to given '#elementid' when it is ready in page. If not present yet, try every second, waiting for it to be ready
   function scrollIntoView(elementid) {
-    if(repeat) clearInterval(repeat); // Stopping previous checks
-    catch_scroll = false;
-    let element = document.getElementById(elementid);
-    // If element is ready, scroll imediately
-    if (element) {
-      waitForElement(element).then(function(){
-        element.scrollIntoView({behavior: "instant"});
-      });
-      catch_scroll = true;
-      return;
-    }
-    // Otherwise, check every second
-    repeat = window.setInterval(function() {
-      element = document.getElementById(elementid);
+    // Clear any existing interval if the user clicks rapidly
+    if (window.scrollInterval) clearInterval(window.scrollInterval);
+    
+    // Catch-all safety: stop trying after 10 seconds
+    var attempts = 0;
+    
+    // Disable Hash updates while auto-scrolling
+    catch_scroll = false; 
+    
+    window.scrollInterval = setInterval(function() {
+      var element = document.getElementById(elementid);
+      attempts++;
+
       if (element) {
-        waitForElement(element).then(function(){
-          element.scrollIntoView({behavior: "instant"});
-        });
+        // Element found! Scroll and stop looking.
+        clearInterval(window.scrollInterval);
+        
+        element.scrollIntoView({behavior: "instant", block: "start"});
+        
+        // Re-enable Hash updates after a moment
+        setTimeout(() => { catch_scroll = true; }, 100);
+
+        // flash the target
+        // element.style.outline = "2px solid red"; 
+        // setTimeout(() => element.style.outline = "none", 1000);
+      } 
+      else if (attempts > 50) { 
+        // Stop looking after ~10 seconds (50 * 200ms) to save resources
+        clearInterval(window.scrollInterval);
         catch_scroll = true;
-        clearInterval(repeat);
       }
-    }, 1000)
+    }, 200); // Check every 200ms
   }
 
   // Activating synchronisation of zoom between graphs within a section
@@ -842,36 +925,82 @@ def CreateHTML( config,
     ]];
   }
 
+  // Base64 Decoder Helper
+  function decodeBase64(entry) {
+    // If it's a standard array, return it
+    if (Array.isArray(entry)) return entry;
+    
+    // If we have already decoded this object, return the cached array (Reference)
+    // This prevents allocating the same memory for shared columns
+    if (entry._decoded) {
+      return entry._decoded;
+    }
+
+    // If it's encoded object
+    if (entry && entry._b64) {
+      const binaryString = window.atob(entry._b64);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      let flatArray;
+      if (entry.dtype === 'float32') {
+        flatArray = new Float32Array(bytes.buffer);
+      } else if (entry.dtype === 'int32') {
+        flatArray = new Int32Array(bytes.buffer);
+      } else {
+        flatArray = entry; // Fallback
+      }
+
+      // Handle Multi-dimensional Arrays (Heatmaps)
+      if (entry.shape && entry.shape.length > 1) {
+        const rows = entry.shape[0];
+        const cols = entry.shape[1];
+        const reshaped = [];
+        for (let r = 0; r < rows; r++) {
+          reshaped.push(flatArray.subarray(r * cols, (r + 1) * cols));
+        }
+        flatArray = reshaped;
+      }
+
+      // Cache the result and delete the string to free RAM
+      entry._decoded = flatArray;
+      delete entry._b64; // Garbage collect the Base64 string
+      
+      return flatArray;
+    }
+    return entry;
+  }
+
   // Main rendering function to be called for each graph
   // Accepts downloadType to handle the specific Timeline case
   function renderOptimizedGraph(divId, plotData, layout, filename, helpTitle, downloadType) {
     // Rehydrate the data from the shared storage
     plotData.forEach(trace => {
       if(trace.meta) {
-        if(trace.meta.x_ref) trace.x = REPORT_SHARED_DATA[trace.meta.x_ref];
-        if(trace.meta.y_ref) trace.y = REPORT_SHARED_DATA[trace.meta.y_ref];
-        if(trace.meta.z_ref) trace.z = REPORT_SHARED_DATA[trace.meta.z_ref];
-        // Support for Hover Text
-        if(trace.meta.text_ref) trace.hovertext = REPORT_SHARED_DATA[trace.meta.text_ref];
+        // Apply decoding to all potential reference fields
+        if(trace.meta.x_ref) trace.x = decodeBase64(REPORT_SHARED_DATA[trace.meta.x_ref]);
+        if(trace.meta.y_ref) trace.y = decodeBase64(REPORT_SHARED_DATA[trace.meta.y_ref]);
+        if(trace.meta.z_ref) trace.z = decodeBase64(REPORT_SHARED_DATA[trace.meta.z_ref]);
         
-        // Support for Bar Chart 'Base' property (Start time)
-        if(trace.meta.base_ref) trace.base = REPORT_SHARED_DATA[trace.meta.base_ref];
+        // Text is usually strings, so no decode needed, but safe to check
+        if(trace.meta.text_ref) trace.text = REPORT_SHARED_DATA[trace.meta.text_ref];
+        if(trace.meta.hovertext) trace.hovertext = REPORT_SHARED_DATA[trace.meta.hovertext]; // For timeline
         
-        // Support for Marker Colors/Lines (Arrays)
+        if(trace.meta.base_ref) trace.base = decodeBase64(REPORT_SHARED_DATA[trace.meta.base_ref]);
+        
         if(trace.meta.color_ref) {
           if(!trace.marker) trace.marker = {};
-          trace.marker.color = REPORT_SHARED_DATA[trace.meta.color_ref];
-        }
-        if(trace.meta.line_color_ref) {
-          if(!trace.marker) trace.marker = {};
-          if(!trace.marker.line) trace.marker.line = {};
-          trace.marker.line.color = REPORT_SHARED_DATA[trace.meta.line_color_ref];
+          trace.marker.color = decodeBase64(REPORT_SHARED_DATA[trace.meta.color_ref]);
         }
       }
     });
 
     // Configure buttons dynamically
     const config = {
+      scrollZoom: false,
       displaylogo: false,
       responsive: true,
       modeBarButtons: getCustomModeBarButtons(divId, filename, helpTitle, downloadType)
@@ -881,50 +1010,39 @@ def CreateHTML( config,
     Plotly.newPlot(divId, plotData, layout, config);
   }
 
-  /**
-   * Wait for an element before resolving a promise
-   * Adapted from https://stackoverflow.com/a/34863951/3142385
-   * @param {Node} element - element to wait for
-   * @param {Integer} timeout - Milliseconds to wait before timing out, or 0 for no timeout
-   */
-  function waitForElement(element, timeout){
-    return new Promise((resolve, reject)=>{
-      var timer = false;
-      if(!!element) return resolve();
-      const observer = new MutationObserver(()=>{
-        if(!!element) {
-          observer.disconnect();
-          if(timer !== false) clearTimeout(timer);
-          return resolve();
-        }
-      });
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true
-      });
-      if(timeout) timer = setTimeout(()=>{
-        observer.disconnect();
-        reject();
-      }, timeout);
-    });
-  }
-
   window.addEventListener('load', init);
 
   /* Check window size to toggle menu and adapt its height */
   function onresize(e) {
-    height = e.target.innerHeight;
-    width = e.target.innerWidth;
-    if (width == wsize) { return; }
-    if (width < 1000)  {
-      document.getElementById("toggle-menu").checked = true; 
-    } else { 
-      document.getElementById("toggle-menu").checked = false;
-    }
-    wsize = width;
-    var nav = document.getElementById("navmenu");
-    var newheight = height - document.getElementById("navbar").offsetHeight - 32;
-    nav.style.height = `${newheight}px`;
+    // Clear any pending frame
+    if (resizeRequest) cancelAnimationFrame(resizeRequest);
+
+    // Schedule the update for the next animation frame
+    resizeRequest = requestAnimationFrame(function() {
+      var height = window.innerHeight;
+      var width = window.innerWidth;
+
+      var nav = document.getElementById("navmenu");
+      var navbar = document.getElementById("navbar");
+      
+      // Calculate Height
+      if (nav && navbar) {
+        var newheight = height - navbar.offsetHeight - 32;
+        nav.style.height = `${newheight}px`;
+      }
+
+      // Calculate Width Logic (Menu Toggling)
+      if (typeof wsize !== 'undefined' && width != wsize) {
+        var toggle = document.getElementById("toggle-menu");
+        if (toggle) {
+          toggle.checked = (width < 1000);
+        }
+        wsize = width;
+      }
+
+      // Update snake path calculations on resize
+      drawPath();
+    });
   }
   window.addEventListener("resize", onresize);
 
@@ -1017,13 +1135,15 @@ def CreateHTML( config,
     <section class="block" id="overview" style="margin-top:50px;">
       <div id="overview_plot" class="plotly-graph-div" style="height:300px; width:100%;"></div>
       <script type="text/javascript">
-        renderOptimizedGraph(
+        setTimeout(function() {{
+          renderOptimizedGraph(
             "overview_plot", 
             {json.dumps(fig_dict['data'], cls=plotly.utils.PlotlyJSONEncoder)}, 
             {json.dumps(fig_dict['layout'], cls=plotly.utils.PlotlyJSONEncoder)}, 
             "{datafile}",
             {json.dumps(help_title)} // json.dumps escape characters correctly
-        );
+          );
+        }}, 0);
       </script>
     </section>
 """
@@ -1039,7 +1159,7 @@ def CreateHTML( config,
     for title, graph in section.items():
       id = f"{stype}_{title.replace(' ','_')}"
       html += f"""
-      <section class="block" id="{id}">
+      <section class="block" id="{id}" style="content-visibility: auto; contain-intrinsic-size: 500px;">
 """
       # Prepare Datafile Name for download
       div_id_suffix = '_time_plot' if graph['x']=='ts' else '_plot'
@@ -1063,13 +1183,15 @@ def CreateHTML( config,
       html += f"""
       <div id="{final_div_id}" class="plotly-graph-div" style="height:500px; width:100%;"></div>
       <script type="text/javascript">
-        renderOptimizedGraph(
+        setTimeout(function() {{
+          renderOptimizedGraph(
             "{final_div_id}", 
             {json.dumps(fig_dict['data'], cls=plotly.utils.PlotlyJSONEncoder)}, 
             {json.dumps(fig_dict['layout'], cls=plotly.utils.PlotlyJSONEncoder)}, 
             "{datafile}",
             {json.dumps(help_desc)}
-        );
+          );
+        }}, 0);
       </script>
       """
       html += f"""
@@ -1081,7 +1203,6 @@ def CreateHTML( config,
     html += f"""
     <hr class="no-print">
     <section class="block" id="nodelist">
-    <h2>Node List</h2>
     {nodelist}
     </section>
 """
@@ -1100,14 +1221,16 @@ def CreateHTML( config,
     <section class="block" id="timeline" style="margin-top:50px;">
       <div id="timeline_plot" class="plotly-graph-div" style="height:{timeline.layout.height}px; width:100%;"></div>
       <script type="text/javascript">
-        renderOptimizedGraph(
+        setTimeout(function() {{
+          renderOptimizedGraph(
             "timeline_plot", 
             {json.dumps(fig_dict['data'], cls=plotly.utils.PlotlyJSONEncoder)}, 
             {json.dumps(fig_dict['layout'], cls=plotly.utils.PlotlyJSONEncoder)}, 
             "{datafile}",
             {json.dumps(help_text)},
             "timeline" 
-        );
+          );
+        }}, 0);
       </script>
     </section>
 """
@@ -1141,42 +1264,140 @@ def CreateHTML( config,
         f.write(html.encode())
   return
 
-def CreateNodelist(config,gpus,nl_config,nodedict,error_nodes):
-  nodelist = ""
-  numgpu = 0
-  for idx,(node, specs) in enumerate(nodedict.items()):
+def CreateNodelist(config, gpus, nl_config, nodedict, error_nodes):
+  # Prepare the Data Structure to store information for each node
+  # We use short keys to save bytes in the JSON file
+  nodes_data = []
+  global_gpu_counter = 0
+
+  for idx, (node, specs) in enumerate(nodedict.items()):
+    # Extract Color and Interconnect info
     try:
       ic = list(specs['IC'].keys())[0]
-      color = list(specs['IC'].values())[0]
-      color = list(255*x for x in color)
-    except KeyError:
+      raw_color = list(specs['IC'].values())[0]
+      # Convert 0-1 float color to 0-255 int for CSS
+      color = [int(255*x) for x in raw_color]
+    except (KeyError, IndexError):
       ic = '-'
-      color = [0.0,0.0,0.0]
-    nodelist += f"""
-    <div class="{'errornode' if node in error_nodes else 'node'}" style="background-color: rgb{tuple(color+[0.1])};">
-      <div style="text-align: center;">
-      <span style="float: left; color: dimgray; padding: 0px 5px 0px 5px;">{idx+1}</span>
-      <b>{node}</b>
-      </div>
-"""
-    if gpus:
-      for gpu, spec in specs.items():
-        if 'GPU' not in gpu: continue
-        numgpu += 1
-        nodelist += f"""
-          <div style="text-align: center; font-size: 8pt;">
-          <span style="float:left; color: dimgray; padding: 0px 5px 0px 0px;">{numgpu}</span>
-          <b>{gpu}: </b>{spec}
-          </div>
-"""
+      color = [0, 0, 0]
 
-    nodelist += f"""
-      <div style="text-align: center; font-size: 10pt; color: rgb{tuple(color)};">
-      Interconnect group: {ic}
-      </div>
+    # Node Object
+    node_obj = {
+      'i': idx + 1,       # Index
+      'n': node,          # Name
+      'c': color,         # Color [r,g,b]
+      'ic': ic,           # Interconnect Group Name
+      'e': 1 if node in error_nodes else 0 # Error flag (1/0 is smaller than true/false)
+    }
+
+    # GPU Objects
+    if gpus:
+      node_gpus = []
+      for gpu_key, spec in specs.items():
+        if 'GPU' not in gpu_key: continue
+        global_gpu_counter += 1
+        node_gpus.append({
+          'i': global_gpu_counter, # Global GPU Index
+          'n': gpu_key,            # GPU Name (e.g., GPU0)
+          's': spec                # Specs string
+        })
+      
+      if node_gpus:
+        node_obj['g'] = node_gpus
+
+    nodes_data.append(node_obj)
+
+  # Return the data and the rendering logic
+  # We return a dictionary or tuple to separate concerns if needed, 
+  # but here we can return the HTML string wrapper directly.
+  
+  if not nodes_data:
+    return ""
+
+  # Define the Container and the Script
+  # HTML and Script with lazy loading logic
+  html_output = f"""
+  <details id="nodelist_details">
+    <summary>Node List</summary>
+    
+    <!-- Loader: Visible initially -->
+    <div id="nodelist_loader" style="padding: 20px; color: gray; font-style: italic;">
+      Loading {len(nodes_data)} nodes...
     </div>
-"""
-  return nodelist
+    
+    <!-- Container: Nodes are appended here -->
+    <div id="nodelist_container"></div>
+  </details>
+
+  <script>
+    (function() {{
+      const nodesData = {json.dumps(nodes_data)};
+      const details = document.getElementById('nodelist_details');
+      const container = document.getElementById('nodelist_container');
+      const loader = document.getElementById('nodelist_loader');
+      
+      let hasRendered = false;
+      let index = 0;
+      const chunkSize = 100;
+
+      function renderChunk() {{
+        let chunkHTML = '';
+        const limit = Math.min(index + chunkSize, nodesData.length);
+
+        for (; index < limit; index++) {{
+          const n = nodesData[index];
+          const colorStr = n.c.join(',');
+          
+          const bgStyle = `background-color: rgba(${{colorStr}}, 0.1);`;
+          const textStyle = `color: rgb(${{colorStr}});`;
+          const errClass = n.e ? 'nl-err' : ''; 
+          
+          chunkHTML += `<div class="nl-box ${{errClass}}" style="${{bgStyle}}">
+            <div class="nl-head">
+              <span class="nl-idx">${{n.i}}</span>
+              <b>${{n.n}}</b>
+            </div>`;
+          
+          if (n.g) {{
+            for (let j = 0; j < n.g.length; j++) {{
+              const g = n.g[j];
+              chunkHTML += `<div class="nl-gpu">
+                <span class="nl-idx">${{g.i}}</span>
+                <b>${{g.n}}: </b>${{g.s}}
+              </div>`;
+            }}
+          }}
+
+          chunkHTML += `<div class="nl-footer" style="${{textStyle}}">
+            Interconnect group: ${{n.ic}}
+          </div></div>`;
+        }}
+
+        // Append this chunk to the container
+        container.insertAdjacentHTML('beforeend', chunkHTML);
+
+        // Check if there is more data to process
+        if (index < nodesData.length) {{
+          // Schedule the next chunk
+          setTimeout(renderChunk, 0);
+        }} else {{
+          // Hide the loader now that everything is rendered
+          loader.style.display = 'none';
+        }}
+      }}
+
+      details.addEventListener("toggle", function() {{
+        if (details.open && !hasRendered) {{
+          renderChunk();
+          hasRendered = true;
+        }}
+      }});
+
+    }})();
+  </script>
+  """
+
+  return html_output
 
 def CreateSystemErrorReport(error_lines,data):
   system_report_html = f"""

@@ -58,8 +58,10 @@ def CreateOverviewFig(config, data, time_range, df_overview, gpus, data_manager)
                           colorscale=["#d62728","gold","#2ca02c"],
                           ), 1, 1)
 
-  fig['layout']['xaxis'].update(dict(zeroline=False, showgrid=False, range=[-0.5,0.5], tickmode='array',tickvals=[], fixedrange=True, showticklabels=False))
-  fig['layout']['yaxis'].update(dict(zeroline=False, showgrid=False, range=[0.0,100.0], tickmode='array',tickvals=[], fixedrange=True ,showticklabels=False))
+  fig.update_layout(
+    xaxis=dict(zeroline=False, showgrid=False, range=[-0.5,0.5], tickmode='array',tickvals=[], fixedrange=True, showticklabels=False),
+    yaxis=dict(zeroline=False, showgrid=False, range=[0.0,100.0], tickmode='array',tickvals=[], fixedrange=True ,showticklabels=False)
+  )
   
   fig.add_annotation( text = "<b>Average<br>CPU Usage</b>",
                       x = 0.0,
@@ -103,8 +105,10 @@ def CreateOverviewFig(config, data, time_range, df_overview, gpus, data_manager)
                             hoverinfo='skip',
                             colorscale=["#d62728","gold","#2ca02c"],
                             ), 1, 3)
-    fig['layout']['xaxis3'].update(dict(zeroline=False, showgrid=False, range=[-0.5,0.5], tickmode='array',tickvals=[], fixedrange=True, showticklabels=False))
-    fig['layout']['yaxis4'].update(dict(zeroline=False, showgrid=False, range=[0.0,100.0], tickmode='array',tickvals=[], fixedrange=True ,showticklabels=False))
+    fig.update_layout(
+      xaxis3=dict(zeroline=False, showgrid=False, range=[-0.5,0.5], tickmode='array',tickvals=[], fixedrange=True, showticklabels=False),
+      yaxis4=dict(zeroline=False, showgrid=False, range=[0.0,100.0], tickmode='array',tickvals=[], fixedrange=True ,showticklabels=False)
+    )
     fig.add_annotation( text = f"<b>Average<br>GPU Usage</b>",
                         x = 0.0,
                         y = 100,
@@ -170,7 +174,7 @@ def CreateOverviewFig(config, data, time_range, df_overview, gpus, data_manager)
                                 # hoverinfo='text',
                                 # text=[], 
                                 hoverinfo='y+x+name', # Fallback
-                                hovertemplate = "<b>Time:</b> %{x|%d/%m %H:%M:%S}<br><b>%{data.name}:</b> %{y:.2f}<extra></extra>",
+                                hovertemplate = "<b>Time:</b> %{x|%Y-%m-%d %H:%M:%S}<br><b>%{data.name}:</b> %{y:.2f}<extra></extra>",
                                 marker=dict(
                                       size=5,
                                       color=f"rgb{color}",
@@ -182,25 +186,26 @@ def CreateOverviewFig(config, data, time_range, df_overview, gpus, data_manager)
                                 }
                                 ), 1, 2)
     
+
     if '_label' in config['plots']['_overview']['left']:
-      fig['layout']['yaxis2'].update(dict( 
+      fig.update_layout(yaxis2=dict( 
         title=config['plots']['_overview']['left']['_label'],
         color = f"rgb{color}",
         tickcolor = f"rgb{color}",
       ))
     if '_range' in config['plots']['_overview']['left']:
-      fig['layout']['yaxis2'].update(dict( 
+      fig.update_layout(yaxis2=dict( 
         range=config['plots']['_overview']['left']['_range'],
       ))
-    
     # Update x-axis 
     # NOTE: Plotly.js auto-detects date strings.
     # We do NOT use 'type': 'date' explicitly here just to be safe, 
     # but usually Plotly handles ISO strings automatically.
-    fig['layout']['xaxis2'].update(dict( 
+    fig.update_layout(xaxis2=dict( 
       tickformat=('%d/%m/%y\n%H:%M:%S'),
       range=time_range,
     ))
+
 
   # RIGHT PLOT (GPU Lines)
   if 'right' in df_overview and df_overview['right']:
@@ -228,7 +233,7 @@ def CreateOverviewFig(config, data, time_range, df_overview, gpus, data_manager)
                                 # hoverinfo='text',
                                 # text=[], 
                                 hoverinfo='y+x+name',
-                                hovertemplate = "<b>Time:</b> %{x|%d/%m %H:%M:%S}<br><b>%{data.name}:</b> %{y:.2f}<extra></extra>",
+                                hovertemplate = "<b>Time:</b> %{x|%Y-%m-%d %H:%M:%S}<br><b>%{data.name}:</b> %{y:.2f}<extra></extra>",
                                 marker=dict(
                                       size=5,
                                       color=f"rgb{color}",
@@ -240,13 +245,13 @@ def CreateOverviewFig(config, data, time_range, df_overview, gpus, data_manager)
                                 }
                                 ), 1, 2, secondary_y=True)
     if '_label' in config['plots']['_overview']['right']:
-      fig['layout']['yaxis3'].update(dict( 
+      fig.update_layout(yaxis3=dict( 
         title=config['plots']['_overview']['right']['_label'],
         color = f"rgb{color}",
         tickcolor = f"rgb{color}",
       ))
     if '_range' in config['plots']['_overview']['right']:
-      fig['layout']['yaxis3'].update(dict( 
+      fig.update_layout(yaxis3=dict( 
         range=config['plots']['_overview']['right']['_range'],
       ))
 
@@ -256,9 +261,9 @@ def CreateOverviewFig(config, data, time_range, df_overview, gpus, data_manager)
                   linecolor='black',
                   showgrid=False,
                   )
-    fig['layout'][f'yaxis{i}'].update(frame)
+    fig.update_layout({f'yaxis{i}': frame})
     if i == 4: continue
-    fig['layout'][f'xaxis{i}'].update(frame)
+    fig.update_layout({f'xaxis{i}': frame})
 
   return fig
 
@@ -298,11 +303,11 @@ def CreateTimeline(config, timeline_df, time_range, data_manager):
     if 'nnodes' in row:
       hovertext.append(f"<b>{'Step '+str(row['step'])+': '+str(row['st'])+'</b><br />Name: '+str(row['name']) if str(row['step'])!='job' else 'Job '+str(row['name'])+': '+str(row['st'])+'</b>'}<br />#Nodes: {row['nnodes']} ({row['nodelist'][:27] + '...' if len(row['nodelist'])>30 else row['nodelist']})<br />{'#Tasks: '+str(row['ntasks'])+', ' if row['ntasks'] > 0 else ''}#CPUS: {row['ncpus']}<br />Start time: {row['start_time']}<br />End time: {row['end_time']}<br />Duration: {delta}<br />Return Code: {row['rc']}<br />Signal: {row['sig']}")
     else:
-          hovertext.append(f"<b>Step {row['step']}: {row['st']}</b><br />Executable: {row['name']}<br />Start time: {row['start_time']}<br />End time: {row['end_time']}<br />Duration: {delta}<br />Return Code: {row['rc']}<br />Signal: {row['sig']}")
+      hovertext.append(f"<b>Step {row['step']}: {row['st']}</b><br />Executable: {row['name']}<br />Start time: {row['start_time']}<br />End time: {row['end_time']}<br />Duration: {delta}<br />Return Code: {row['rc']}<br />Signal: {row['sig']}")
   
   # Register Data with Manager
   # X axis: Duration (converted to seconds/units)
-  x_ref = data_manager.register(timeline_df['duration']/1000000, 'timeline_duration')
+  x_ref = data_manager.register(timeline_df['duration'], 'timeline_duration')
   
   # Base: Start Time. DataManager handles datetime -> string conversion automatically.
   base_ref = data_manager.register(timeline_df['start_time'], 'timeline_start')
@@ -326,35 +331,49 @@ def CreateTimeline(config, timeline_df, time_range, data_manager):
                         hoverinfo='text',
                         hovertext=[], # Empty
                         marker=dict(
-                              color=[], # Empty (filled via JS)
-                              line=dict(color=[]), # Empty (filled via JS)
-                          ),
+                          color=[], # Empty (filled via JS)
+                          line=dict(color=[]), # Empty (filled via JS)
+                        ),
                         # Meta tags to link shared data
                         meta={
-                            'x_ref': x_ref,
-                            'base_ref': base_ref,
-                            'y_ref': y_ref,
-                            'text_ref': text_ref,
-                            'color_ref': color_ref,
-                            'line_color_ref': edge_ref
+                          'x_ref': x_ref,
+                          'base_ref': base_ref,
+                          'y_ref': y_ref,
+                          'hovertext': text_ref,
+                          'color_ref': color_ref,
+                          'line_color_ref': edge_ref
                         }
-                          ))
+  ))
   
-  fig['layout']['yaxis'].update(dict( title=f'Step',
-                                      range=[config['timeline']['nsteps']-0.5,-0.5],
-                                      ))
-  fig['layout']['xaxis'].update(dict( tickformat=('%d/%m/%y\n%H:%M:%S'),
-                                      type="date",
-                                      range=time_range,
-                                      ))
+  # Update Y Axis (Title, Range, and Style)
+  fig.update_yaxes(
+      title=f'Step',
+      range=[config['timeline']['nsteps']-0.5,-0.5],
+      mirror=True,
+      ticks='inside',
+      linecolor='black',
+      showgrid=False
+  )
+
+  # Update X Axis (Format, Range, and Style)
+  fig.update_xaxes(
+      tickformat=('%d/%m/%y\n%H:%M:%S'),
+      type="date",
+      range=time_range,
+      mirror=True,
+      ticks='inside',
+      linecolor='black',
+      showgrid=False
+  )
 
   frame = dict( mirror=True,
                 ticks='inside',
                 linecolor='black',
                 showgrid=False,
                 )
-  fig['layout'][f'yaxis'].update(frame)
-  fig['layout'][f'xaxis'].update(frame)
+  # Pass as dictionary to update_layout
+  fig.update_layout({f'xaxis': frame})
+  fig.update_layout({f'yaxis': frame})
 
   return fig
 
@@ -419,8 +438,9 @@ def CreatePlotlyFig(config,
                   linecolor='black',
                   showgrid=False,
                   )
-    fig['layout'][f'xaxis{i}'].update(frame)
-    fig['layout'][f'yaxis{i}'].update(frame)
+    # Pass as dictionary to update_layout
+    fig.update_layout({f'xaxis{i}': frame})
+    fig.update_layout({f'yaxis{i}': frame})
   
   if report['headers'][graph] == 'gpu_clkr':
     # Filtering NaN values to avoid weird min/max plots
@@ -447,7 +467,7 @@ def CreatePlotlyFig(config,
   colorscales['RdBu'] = [[0.0,"rgb(103,0,31)"],[0.1,"rgb(178,24,43)"],[0.2,"rgb(214,96,77)"],[0.3,"rgb(244,165,130)"],[0.4,"rgb(253,219,199)"],[0.5,"rgb(247,247,247)"],[0.6,"rgb(209,229,240)"],[0.7,"rgb(146,197,222)"],[0.8,"rgb(67,147,195)"],[0.9,"rgb(33,102,172)"],[1.0,"rgb(5,48,97)"]]
   
   # Dropdown menu configuration for color scales and reverse logic
-  dropdown_buttons = [
+  dropdown_buttons: list[dict] = [
           dict(
               buttons=list([
                   dict(
@@ -668,18 +688,24 @@ def CreatePlotlyFig(config,
                               ),
                               ), 1, 1)
                               
-  fig['layout'][f'xaxis1'].update(dict(showticklabels=False,range=time_range if report['x'][graph] == 'ts' else [x.min(),x.max()]))
-  fig['layout'][f'yaxis1'].update(dict(title=f"{report['unit'][graph]}", range=report['lim'][graph]))
+  fig.update_layout(
+    xaxis1=dict(showticklabels=False,range=time_range if report['x'][graph] == 'ts' else [x.min(),x.max()]),
+    yaxis1=dict(title=f"{report['unit'][graph]}", range=report['lim'][graph])
+  )
   if report['log'][graph]:
-    fig['layout'][f'yaxis1'].update(dict(type="log", dtick=np.log10(report['log'][graph]), range=[np.log10(i) for i in report['lim'][graph]], tickvals=cticks))
+    fig.update_layout(
+      yaxis1=dict(type="log", dtick=np.log10(report['log'][graph]), range=[np.log10(i) for i in report['lim'][graph]], tickvals=cticks)
+    )
 
   # Adding horizontal line(s)
   for line in report['lines'][graph]:
     fig.add_hline(y=line, line_dash="dash", line_color="red", row=1, col=1)
 
   #(1,2) - TEXT INFO
-  fig['layout'][f'xaxis2'].update(dict(range=[0.0,1.0], ticks="", fixedrange=True, showticklabels=False))
-  fig['layout'][f'yaxis2'].update(dict(range=[0.0,1.0], ticks="", fixedrange=True, showticklabels=False))
+  fig.update_layout(
+    xaxis2=dict(range=[0.0,1.0], ticks="", fixedrange=True, showticklabels=False),
+    yaxis2=dict(range=[0.0,1.0], ticks="", fixedrange=True, showticklabels=False)
+  )
   if report['note'][graph] == "":
     annotations.extend([
                   dict(
@@ -766,14 +792,19 @@ def CreatePlotlyFig(config,
   fig['layout']['annotations'] = annotations
   
   #(2,1) - COLORPLOT (Heatmap)
-  fig['layout'][f'xaxis3'].update(dict( matches='x', tickformat=('%d/%m/%y\n%H:%M:%S')) if report['x'][graph] == 'ts' else dict( matches='x' ))
-  fig['layout'][f'yaxis3'].update(dict( matches='y4', 
-                                        title=report['ylabel'][graph],
-                                        nticks = 16,
-                                        tickmode = 'auto',
-                                        ))
+  fig.update_layout(
+    xaxis3=dict( matches='x', tickformat=('%d/%m/%y\n%H:%M:%S')) if report['x'][graph] == 'ts' else dict( matches='x' ),
+    yaxis3=dict( 
+      matches='y4', 
+      title=report['ylabel'][graph],
+      nticks = 16,
+      tickmode = 'auto',
+    )
+  )
   if report['xlabel'][graph]:
-    fig['layout'][f'xaxis3'].update(dict( title=report['xlabel'][graph] ))
+    fig.update_layout(
+      xaxis3=dict( title=report['xlabel'][graph] )
+    )
 
   colorbar = dict(title=f"{report['unit'][graph]}",
                                           outlinewidth=0.5,
@@ -920,11 +951,14 @@ def CreatePlotlyFig(config,
                               # 'text_ref': text_node_ref
                               }
                               ), 2, 2)
-  
-  fig['layout'][f'xaxis4'].update(dict(title=f"{report['unit'][graph]}", range=report['lim'][graph]))
-  fig['layout'][f'yaxis4'].update(dict(showticklabels=False,range=[y.min()-0.5,y.max()+0.5] if isinstance(y, (np.ndarray, pd.Series)) else [0, 1])) 
+  fig.update_layout(
+    xaxis4=dict(title=f"{report['unit'][graph]}", range=report['lim'][graph]),
+    yaxis4=dict(showticklabels=False,range=[y.min()-0.5,y.max()+0.5] if isinstance(y, (np.ndarray, pd.Series)) else [0, 1])
+  )
   if report['log'][graph]:
-    fig['layout'][f'xaxis4'].update(dict(type="log", dtick=np.log10(report['log'][graph]), range=[np.log10(i) for i in report['lim'][graph]], tickvals=cticks))
+    fig.update_layout(
+      xaxis4=dict(type="log", dtick=np.log10(report['log'][graph]), range=[np.log10(i) for i in report['lim'][graph]], tickvals=cticks)
+    )
 
   # Adding vertical line(s)
   for line in report['lines'][graph]:
@@ -974,14 +1008,15 @@ def CreateUnifiedPlotlyFig(data,config,report,files,time_range):
                 showgrid=False,
                 # showline=True,
                 )
-  fig['layout'][f'xaxis'].update(frame)
-  fig['layout'][f'yaxis'].update(frame)
+  fig.update_layout({f'xaxis': frame})
+  fig.update_layout({f'yaxis': frame})
 
   # Getting data to be plotted (assuming there's a single file with all the data)
   df_current = files[report['data'][0]]['data'].copy()
 
   # Add dropdown menus
   # Adding different options to Dropdown
+  buttons_x = []
   buttons_y = []
   if 'ts' in report['x']:
     buttons_x = [dict(
@@ -998,6 +1033,7 @@ def CreateUnifiedPlotlyFig(data,config,report,files,time_range):
                       method="update"
                   )]
 
+  x = pd.Series(dtype=object)
   for i,graph in enumerate(report['graphs']):
     graph_header = report['headers'][i]
 
@@ -1078,7 +1114,13 @@ def CreateUnifiedPlotlyFig(data,config,report,files,time_range):
                                   # colorscale=colorscales[report['cmap'][graph].replace('cmc.','').replace('_r','')] if report['cmap'][graph].replace('cmc.','').replace('_r','') in colorscales else report['cmap'][graph],
                               ),
                               ))
-  fig['layout'][f'xaxis'].update(dict(range=time_range))
-  fig['layout'][f'yaxis'].update(dict(title=f"{report['graphs'][0]}", range=report['lim'][0]))
+  # Update X Axis Range
+  fig.update_xaxes(range=time_range)
+
+  # Update Y Axis Title and Range
+  fig.update_yaxes(
+      title=f"{report['graphs'][0]}", 
+      range=report['lim'][0]
+  )
 
   return {'Custom': {'x': 'custom', 'graph': fig} }

@@ -122,7 +122,7 @@ def Nodelist(pdf,data,config,gpus,nl_config,nodedict,error_nodes,page_num):
 
   nodelist_html = ""
   if config['html'] or config['gzip']:
-    nodelist_html = CreateNodelist(config,gpus,nl_config,nodedict,error_nodes)
+    nodelist_html = CreateNodelist(config, gpus, nl_config, nodedict, error_nodes)
 
   while nodedict:
     with AddEmptyPage(pdf,page_num,config) as page:
