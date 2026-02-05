@@ -114,6 +114,12 @@ application:
         opacity: 0.9         # Overwrite default opacity
       line:                  # Add a completely new key
         width: 2
+    # layout: layout options (passed to plotly.js)
+    layout:
+      legend:
+        xanchor: "center"
+        x: 0.5
+        y: 1
 
   # Definitions of the specific graphs to generate
   plots:

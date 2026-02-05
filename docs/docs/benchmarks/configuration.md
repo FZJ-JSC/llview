@@ -153,6 +153,11 @@ You can define global defaults using `plot_settings` and specific graph definiti
       colormap: 'Set1'
     styles:
       mode: 'lines+markers'
+    layout:
+      legend:
+        xanchor: "center"
+        x: 0.5
+        y: 1
 
   # Plot Definitions
   plots:
@@ -180,6 +185,7 @@ The following keys can be used inside `plot_settings` (globally) or inside a spe
 | | <span style="white-space:nowrap">`sort_strategy`</span> | Order in which colors are assigned to traces. Options: `'standard'`, `'reverse'`, `'interleave_even_odd'` | `'standard'` |
 | | `skip` | List of HEX color codes to exclude from the colormap. | `[]` |
 | **`styles`** | | Dictionary of style properties passed directly to the [Plotly.js Scatter trace](https://plotly.com/javascript/reference/scatter/). | `type: scatter`<br>`mode: markers`<br>`marker: { opacity: 0.9, size: 5 }` |
+| **`layout`** | | Dictionary of layout options passed directly to [Plotly.js Layout object](https://plotly.com/javascript/reference/layout/). | `yaxis: {title: Metric name [units]}`<br>`xaxis: {title: Metric name [units]}` (if not date)<br>`legend: {x: 1.02, xanchor: left, y: 0.98, yanchor: top, orientation: v}` |
 
 ## 5. Structuring Benchmarks (Tabs)
 

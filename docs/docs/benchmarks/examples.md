@@ -106,6 +106,11 @@ MolecDyn_Suite:
           colormap: 'Set1'
         styles:
           mode: 'markers'
+        layout:
+          legend:
+            xanchor: "center"
+            x: 0.5
+            y: 1
 
       plots:
         # Plot 1: Raw Performance

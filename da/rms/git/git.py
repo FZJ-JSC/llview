@@ -1882,6 +1882,8 @@ class BenchRepo:
           current_skip = colors_config.get('skip', [])
           current_sort_key = colors_config.get('sort_strategy', BenchRepo.DEFAULT_SORT_KEY)
 
+          # Resolve Layout
+          current_trace_layout = plot_config.get('layout', {})
           # Resolve Styles
           current_trace_styles = plot_config.get('styles', {})
 
@@ -1957,21 +1959,25 @@ class BenchRepo:
             trace = {'trace': plot_properties}
             traces.append(trace)  
 
+          # Update layout with config ones (Merged Global + Local)
+          layout = {
+            'yaxis': {
+              'title': graphelem + (f" [{config['metrics'][graphelem]['unit']}]" if "unit" in config.get('metrics', {}).get(graphelem, {}) else "")
+            },
+            'xaxis': {
+              'title': x_metric if x_metric != 'ts' else None
+            },
+            'legend': {
+              'x': "1.02", 'xanchor': "left", 'y': "0.98", 'yanchor': "top", 'orientation': "v"
+            }
+          }
+          self.deep_update(layout, current_trace_layout)
+
           graph = {
             'graph': {
               'name': graphelem,
               'xcol': x_col_name,
-              'layout': {
-                'yaxis': {
-                  'title': graphelem + (f" [{config['metrics'][graphelem]['unit']}]" if "unit" in config.get('metrics', {}).get(graphelem, {}) else "")
-                },
-                'xaxis': {
-                  'title': x_metric if x_metric != 'ts' else None
-                },
-                'legend': {
-                  'x': "1.02", 'xanchor': "left", 'y': "0.98", 'yanchor': "top", 'orientation': "v"
-                }
-              },
+              'layout': layout,
               'datapath': f"data/cb/cb_{combined_name}{''.join([f'_#{key}#' for key in parameters.keys()])}.csv",
               'traces': traces,
             }
