@@ -7,6 +7,7 @@
 #
 # Contributors:
 #    Wolfgang Frings (Forschungszentrum Juelich GmbH) 
+#    Nabil Abubaker (Forschungszentrum Juelich GmbH) 
 
 package LML_DBupdate_file;
 
@@ -424,14 +425,14 @@ sub adapt_data {
 
   #  add error cls to error messages 
   foreach my $msgref (@{$data->{NODEERR_ENTRIES}}) {
-    $msgref->{MSGCLS}=0;
-    if (exists($msgref->{MESSAGE})) {
-      if($msgref->{MESSAGE}=~/segfault/i) {
-        $msgref->{MSGCLS}=1;
-      } elsif($msgref->{MESSAGE}=~/oom-killer/i) {
-        $msgref->{MSGCLS}=2;
-      } elsif($msgref->{MESSAGE}=~/nodeDownAlloc/i) {
-        $msgref->{MSGCLS}=3;
+    $msgref->{msgcls}=0;
+    if (exists($msgref->{msg})) {
+      if($msgref->{msg}=~/segfault/i) {
+        $msgref->{msgcls}=1;
+      } elsif($msgref->{msg}=~/oom_score/i) {
+        $msgref->{msgcls}=2;
+      } elsif($msgref->{msg}=~/nodeDownAlloc/i) {
+        $msgref->{msgcls}=3;
       }
     }
   }

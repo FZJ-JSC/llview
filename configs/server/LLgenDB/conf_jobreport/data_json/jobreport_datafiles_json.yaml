@@ -109,7 +109,6 @@
     columns:        'nodeid, nodeerrts, jobid, cmd, pid, msgcls, msg, user, uid, gid'
     column_convert: 'nodeerrts->todate_std_hhmm'
     order:          "jobid DESC, nodeid DESC, nodeerrts DESC"
-    
 ###############################
 # Internal stat
 ###############################

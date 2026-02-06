@@ -7,6 +7,7 @@
 #
 # Contributors:
 #    Wolfgang Frings (Forschungszentrum Juelich GmbH) 
+#    Nabil Abubaker (Forschungszentrum Juelich GmbH)
 
 package LML_jobreport;
 
@@ -26,7 +27,11 @@ use LML_da_util qw( check_folder );
 sub process_data_query_and_save_json {
   my $self = shift;
   my($dataset,$varsetref)=@_;
-  
+
+  my $groupby="";
+  if(exists($dataset->{group_by})) {
+    $groupby="GROUP BY ".$dataset->{group_by};
+  }
   my $file=$dataset->{filepath};
   my $where="";
   if(exists($dataset->{sql_where})) {
@@ -147,11 +152,12 @@ sub process_data_query_and_save_json {
   # generate multiple files from one query?
   if(exists($dataset->{column_filemap})) {
     # build and call the query 
-    my $sql=sprintf("SELECT %s FROM %s %s %s;",
+    my $sql=sprintf("SELECT %s FROM %s %s %s %s;",
                       join(",",@cols),
                       $from,
                       ($where)?"WHERE $where":"",
-                      $order
+                      $order,
+                      ($groupby)?" $groupby":""
                     );
     # printf("%s process_data_query_and_save_json: multi sql=%s\n",$self->{INSTNAME},$sql);
 
@@ -191,10 +197,11 @@ sub process_data_query_and_save_json {
     }
   } else { # only a single file
     # build and call the query
-    my $sql=sprintf("SELECT %s FROM %s %s",
+    my $sql=sprintf("SELECT %s FROM %s %s %s",
                       join(",",@cols),
                       $from,
                       ($where)?"WHERE $where":"",
+                      ($groupby)?" $groupby":""
                     );
     # printf("%s process_data_query_and_save_json: single sql=%s\n",$self->{INSTNAME},$sql);
     my $starttime=time();

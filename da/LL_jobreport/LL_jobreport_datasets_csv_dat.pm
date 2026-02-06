@@ -7,6 +7,7 @@
 #
 # Contributors:
 #    Wolfgang Frings (Forschungszentrum Juelich GmbH) 
+#    Nabil Abubaker (Forschungszentrum Juelich GmbH)
 
 package LML_jobreport;
 
@@ -32,6 +33,10 @@ sub process_data_query_and_save_csv_dat {
   my $sql_debug=0;
   if(exists($dataset->{sqldebug})) {
     $sql_debug=1 if($dataset->{sqldebug}=~/yes/i);
+  }
+  my $groupby="";
+  if(exists($dataset->{group_by})) {
+    $groupby="GROUP BY ".$dataset->{group_by};
   }
   my $where="";
   if(exists($dataset->{sql_where})) {
@@ -147,7 +152,7 @@ sub process_data_query_and_save_csv_dat {
 
   # generate multiple files from one query?
   if(exists($dataset->{column_filemap})) {
-    my $sql=sprintf("SELECT %s FROM %s.%s D1 INNER JOIN  %s S ON D1.%s=S.ukey AND D1.%s>S.lastts_saved AND S.NAME=\"%s\" %s ORDER BY S.dataset,D1.%s",
+    my $sql=sprintf("SELECT %s FROM %s.%s D1 INNER JOIN  %s S ON D1.%s=S.ukey AND D1.%s>S.lastts_saved AND S.NAME=\"%s\" %s ORDER BY S.dataset,D1.%s %s;",
                     join(",",@cols),
                     $dataset->{data_database},
                     $dataset->{data_table},
@@ -156,7 +161,8 @@ sub process_data_query_and_save_csv_dat {
                     $dataset->{column_ts},
                     $dataset->{name},
                     ($where)?"WHERE $where":"",
-                    $dataset->{column_ts}
+                    $dataset->{column_ts},
+                    ($groupby)?" $groupby":""
                     );
     
     printf("%s process_data_query_and_save_csv_dat: (multi) sql: %s\n",$self->{INSTNAME},$sql) if($sql_debug);
@@ -199,11 +205,12 @@ sub process_data_query_and_save_csv_dat {
     }
 
     # build and call the query
-    my $sql=sprintf("SELECT %s FROM %s %s %s;",
+    my $sql=sprintf("SELECT %s FROM %s %s %s %s;",
                       join(",",@cols),
                       $from,
                       ($where)?"WHERE $where":"",
-                      $order
+                      $order,
+                      $(groupby)?" $groupby":""
                     );
     printf("%s process_data_query_and_save_csv_dat: (single) sql: %s\n",$self->{INSTNAME},$sql)  if($sql_debug);
     #	print "single: $where\n";
