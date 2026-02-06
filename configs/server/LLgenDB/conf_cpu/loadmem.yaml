@@ -44,7 +44,7 @@ loadmemstate:
             - loadmem_heatmap_node_mem_cls
           archive:
             limit: max(ts)-25h
-          index: nodeid,ts
+          unique_index: nodeid,ts
         columns: 
           - { name: nodeid,           type: nodeid_t,   LML_from: id,               LML_default: 'unknown' }
           - { name: ts,               type: ts_t,       LML_from: ts,               LML_default: -1,  LML_minlastinsert: mintsinserted }

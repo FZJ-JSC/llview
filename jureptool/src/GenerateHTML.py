@@ -1,24 +1,28 @@
 # Copyright (c) 2023 Forschungszentrum Juelich GmbH.
-# This file is part of LLview. 
+# This file is part of LLview.
 #
 # This is an open source software distributed under the GPLv3 license. More information see the LICENSE file at the top level.
 #
 # Contributions must follow the Contributor License Agreement. More information see the CONTRIBUTING.md file at the top level.
 #
 # Contributors:
-#    Filipe Guimarães (Forschungszentrum Juelich GmbH) 
+#    Filipe Guimarães (Forschungszentrum Juelich GmbH)
+#    Matthias Lapu (CEA)
 
 from tools import format_float_string,replace_vars
+import json
+import plotly.utils
 
-def CreateHTML( config, 
-                figs, 
-                navbar="", 
-                first="", 
-                overview="", 
-                nodelist="", 
-                timeline="", 
-                system_report="", 
-                filename="report.html"):
+def CreateHTML( config,
+                figs,
+                navbar="",
+                first="",
+                overview=None,
+                nodelist="",
+                timeline=None,
+                system_report="",
+                data_manager=None,
+                filename=None):
   """
   Collects together various html snippets from separate figures into a single html report page
   """
@@ -28,8 +32,13 @@ def CreateHTML( config,
   <head>
   <meta charset="UTF-8">
 """
-  html += f"""  
-  <link rel="stylesheet" href='{replace_vars(config['appearance']['hostname'],config['appearance'])}/css/ext/font-awesome.min.css'>
+  if loc := config['appearance'].get('fontawesome_location'):
+    fontawesome_location = loc
+  else:
+    fontawesome_location = f"{replace_vars(config['appearance']['hostname'],config['appearance'])}/css/ext/font-awesome.min.css"
+
+  html += f"""
+  <link rel="stylesheet" href='{fontawesome_location}'>
   <link rel="icon" type="image/svg+xml"
       href="data:image/svg+xml,%3Csvg height='100%25' stroke-miterlimit='10' style='fill-rule:nonzero;clip-rule:evenodd;stroke-linecap:round;stroke-linejoin:round;' version='1.1' viewBox='0 0 32 32' width='100%25' xml:space='preserve' xmlns='http://www.w3.org/2000/svg' xmlns:xlink='http://www.w3.org/1999/xlink'%3E%3Cpath d='M8.02154 13.6133L8.03331 23.6475L10.2411 23.6597L12.4489 23.6718L12.4489 25.7506L12.4489 27.8294L18.7334 27.8294L25.018 27.8294L25.018 26.6379L25.018 25.4464L20.0885 25.4464L15.1589 25.4464L15.1589 24.5587L15.1589 23.6709L17.869 23.6709L20.5791 23.6709L20.5791 22.456L20.5791 21.2412L17.869 21.2412L15.1589 21.2412L15.1589 14.4894L15.1589 7.73754L13.8039 7.73754L12.4489 7.73754L12.4489 14.4894L12.4489 21.2412L11.5844 21.2412L10.72 21.2412L10.72 12.4101L10.72 3.57898L9.36489 3.57898L8.00972 3.57898L8.02154 13.6133' fill='%23023d6b' fill-rule='evenodd' opacity='1' stroke='none'/%3E%3Cpath d='M15.0868 0.0309399C9.2877 0.347224 4.09586 3.83135 1.56139 9.10753C-0.520462 13.4413-0.520462 18.5745 1.56139 22.9083C5.1584 30.3963 13.8239 33.894 21.607 30.9994C25.9088 29.3995 29.3916 25.9168 30.9915 21.615C32.5077 17.538 32.307 12.997 30.4386 9.10753C28.097 4.233 23.5169 0.89078 18.1603 0.147847C17.6781 0.080936 16.1368-0.0254576 15.8598-0.0109727C15.7956-0.0076085 15.4477 0.0112218 15.0868 0.0309399M8.02154 13.6133L8.03331 23.6475L10.2411 23.6597L12.4489 23.6718L12.4489 25.7506L12.4489 27.8294L18.7334 27.8294L25.018 27.8294L25.018 26.6379L25.018 25.4464L20.0885 25.4464L15.1589 25.4464L15.1589 24.5587L15.1589 23.6709L17.869 23.6709L20.5791 23.6709L20.5791 22.456L20.5791 21.2412L17.869 21.2412L15.1589 21.2412L15.1589 14.4894L15.1589 7.73754L13.8039 7.73754L12.4489 7.73754L12.4489 14.4894L12.4489 21.2412L11.5844 21.2412L10.72 21.2412L10.72 12.4101L10.72 3.57898L9.36489 3.57898L8.00972 3.57898L8.02154 13.6133' fill='%23ffffff' fill-rule='evenodd' opacity='1' stroke='none'/%3E%3C/svg%3E" />
 """
@@ -212,27 +221,58 @@ def CreateHTML( config,
   div.lockzoom {
     visibility: hidden;
   }
-  div.node {
-    margin: 2pt;
-    padding: 5pt;
-    display: inline-block;
-    width: 250px;
+  .nl-box { 
+    display: inline-block; 
+    width: 250px; 
+    margin: 2px; 
+    padding: 5px; 
+    vertical-align: top; /* Aligns boxes to top if heights differ */
     border: 2px solid black; 
-    font-size: 10pt;
     text-align: center;
-  }
-  div.errornode {
-    margin: 2pt;
-    padding: 5pt;
-    display: inline-block;
-    width: 250px;
-    border: 2px solid red; 
     font-size: 10pt;
-    text-align: center;
   }
+  .nl-err { 
+    border-color: red; /* Overrides the black border */
+  }
+  .nl-head { text-align: center; }
+  .nl-idx { float: left; color: dimgray; padding: 0 5px; }
+  .nl-gpu { text-align: center; font-size: 8pt; }
+  .nl-footer { text-align: center; font-size: 10pt; }
   table {
     border: 2px solid black;
     border-collapse: collapse;
+  }
+  /* Style the Summary to look like a Header */
+  details > summary {
+    cursor: pointer;
+    list-style: none; /* Hides default arrow in some browsers */
+    padding: 10px;
+    background-color: #f0f0f0;
+    border: 1px solid #ccc;
+    border-radius: 5px;
+    font-size: 1.5em; /* Like H2 */
+    font-weight: bold;
+  }
+
+  /* Add a custom arrow indicator */
+  details > summary::after {
+    content: '+'; 
+    float: right;
+    font-weight: bold;
+  }
+
+  details[open] > summary::after {
+    content: '-';
+  }
+
+  /* Chrome/Safari specific fix to hide default arrow */
+  details > summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .section-content {
+    margin-top: 10px;
+    padding-left: 5px;
   }
   td {
     padding: 5px 5px 5px 5px;
@@ -338,6 +378,7 @@ def CreateHTML( config,
     height: 19px;
     width: 60px;
     -webkit-appearance: initial;
+    appearance: initial;
     border-radius: 3px;
     -webkit-tap-highlight-color: rgba(0, 0, 0, 0);
     outline: none;
@@ -428,16 +469,23 @@ def CreateHTML( config,
   html += """
   <script>
   var wsize = 0;
+  var resizeRequest;
   var plots = null;
   var time_plots = null;
   var overview = null;
   var timeline = null;
   var catch_scroll = true;
   var repeat;
+  // Global variable to hold the shared data
+  // This will be populated by Python injection at the top of the file
+  var REPORT_SHARED_DATA = {};
+
 """
   html += f"""
   var sections ={{{', '.join([f'{section.replace(f"$","").replace(" ","_")}: null' for section in figs.keys()]) }}};
 """
+  if data_manager: html += f"  REPORT_SHARED_DATA = {data_manager.get_json_payload()};"
+
   html += """
   var lockzoom = null;
 
@@ -507,209 +555,263 @@ def CreateHTML( config,
   }
 
   function timeline_sync_zoom(ed) {
+    // yaxis from timeline should not be synchronized
+    ed_xaxis = Object.fromEntries(
+      Object.entries(ed).filter(([key]) => !key.startsWith('yaxis'))
+    );
     if (lockzoom.is(':checked')) {
-      relayout(ed, $(overview), "", "2");
+      relayout(ed_xaxis, $(overview), "", "2");
 
-      relayout(ed, time_plots, "", "3");
+      relayout(ed_xaxis, time_plots, "", "3");
     }
   }
 
   function init() {
     wsize = window.innerWidth;
-    // Set navmenu size
-    var nav = document.getElementById("navmenu");
-    var newheight = window.innerHeight - document.getElementById("navbar").offsetHeight - 32;
-    nav.style.height = `${newheight}px`;
+    
+    // Navbar height logic
+    onresize(); 
 
-    // Getting all plotly graphs
+    // Cache jQuery objects
     plots = $('.plotly-graph-div');
-    // Getting all plotly graphs that has time as abscissa 
-    time_plots = $('div[id$="_time_plot"]'); // jQuery object
-    // First one is overview figure
-    overview = $('#overview_plot').get(0); // plots.get(0); // Needs to be the element, not jquery
-    // Last one is timeline
-    timeline = $('#timeline_plot').get(0); // plots.get(-1); // Needs to be the element, not jquery
-    // Getting all graphs per section
+    time_plots = $('div[id$="_time_plot"]');
+    overview = $('#overview_plot').get(0);
+    timeline = $('#timeline_plot').get(0);
+    
     for (const [key, value] of Object.entries(sections)) {
       sections[key] = $(`div[id^="${key}_"]`);
     }
+    
     lockzoom_div = $('.lockzoom');
     lockzoom = $('input[id="lockzoom"]');
+    lockzoom_div.css('visibility', 'visible');
 
+    // Menu toggle listener
     document.getElementById("toggle-menu").addEventListener('change', function() {
-      plots.each((i,div) => {
-        Plotly.Plots.resize(div);
-      });
+      // Defer resizing to avoid blocking UI immediately
+      setTimeout(() => {
+          plots.each((i,div) => { Plotly.Plots.resize(div); });
+      }, 50);
     });
 
-    // "Snake" progress bar, obtained from: https://lab.hakim.se/progress-nav
+    // Setup Snake Bar elements
     var toc = document.querySelector( '.section-toc' );
-    var tocPath = document.querySelector( '.section-toc-marker path' );
-    var tocItems;
-    // Factor of screen size that the element must cross
-    // before it's considered visible
-    var TOP_MARGIN = 0.01,
-      BOTTOM_MARGIN = 0.0;
-    var pathLength;
-    var lastPathStart,
-      lastPathEnd;
-    window.addEventListener( 'resize', drawPath, false );
-    window.addEventListener( 'scroll', sync, false );
+    tocPath = document.querySelector( '.section-toc-marker path' );
+    
+    // Cache the graph blocks for the Hash Scroll logic
+    cachedBlocks = Array.from(document.querySelectorAll('.block'));
 
-    drawPath();
+    // Use the throttled handlers
+    window.addEventListener( 'resize', onresize, false );
+    window.addEventListener( 'scroll', onScrollThrottled, false );
 
-    function drawPath() {
-      tocItems = [].slice.call( toc.querySelectorAll( 'li' ) );
-      // Cache element references and measurements
-      tocItems = tocItems.map( function( item ) {
-        var anchor = item.querySelector( 'a' );
-        var target = document.getElementById( anchor.getAttribute( 'href' ).match(/\'(.*)\'/)[1] );
-        return {
-          listItem: item,
-          anchor: anchor,
-          target: target
-        };
-      } );
-
-      // Remove missing targets
-      tocItems = tocItems.filter( function( item ) {
-        return !!item.target;
-      } );
-
-      var path = [];
-      var pathIndent;
-      tocItems.forEach( function( item, i ) {
-        var x = item.anchor.offsetLeft - 5,
-          y = item.anchor.offsetTop,
-          height = item.anchor.offsetHeight;
-        if( i === 0 ) {
-          path.push( 'M', x, y, 'L', x, y + height );
-          item.pathStart = 0;
-        }
-        else {
-          // Draw an additional line when there's a change in
-          // indent levels
-          if( pathIndent !== x ) path.push( 'L', pathIndent, y );
-          path.push( 'L', x, y );
-          // Set the current path so that we can measure it
-          tocPath.setAttribute( 'd', path.join( ' ' ) );
-          item.pathStart = tocPath.getTotalLength() || 0;
-          path.push( 'L', x, y + height );
-        }
-        pathIndent = x;
-        tocPath.setAttribute( 'd', path.join( ' ' ) );
-        item.pathEnd = tocPath.getTotalLength();
-      } );
-      pathLength = tocPath.getTotalLength();
-      sync();
-    }
-
-    function sync() {
-      var windowHeight = window.innerHeight;
-      var pathStart = pathLength,
-        pathEnd = 0;
-      var visibleItems = 0;
-
-      tocItems.forEach( function( item ) {
-        var targetBounds = item.target.getBoundingClientRect();
-        if( targetBounds.bottom > windowHeight * TOP_MARGIN && targetBounds.top < windowHeight * ( 1 - BOTTOM_MARGIN ) ) {
-          pathStart = Math.min( item.pathStart, pathStart );
-          pathEnd = Math.max( item.pathEnd, pathEnd );
-          visibleItems += 1;
-          item.listItem.classList.add( 'visible' );
-        }
-        else {
-          item.listItem.classList.remove( 'visible' );
-        }
-      } );
-
-      // Specify the visible path or hide the path altogether
-      // if there are no visible items
-      if( visibleItems > 0 && pathStart < pathEnd ) {
-        if( pathStart !== lastPathStart || pathEnd !== lastPathEnd ) {
-          tocPath.setAttribute( 'stroke-dashoffset', '1' );
-          tocPath.setAttribute( 'stroke-dasharray', '1, '+ pathStart +', '+ ( pathEnd - pathStart ) +', ' + pathLength );
-          tocPath.setAttribute( 'opacity', 1 );
-        }
-      }
-      else {
-        tocPath.setAttribute( 'opacity', 0 );
-      }
-      lastPathStart = pathStart;
-      lastPathEnd = pathEnd;
-    }
-
-    /* Timeline click event */
+    // Initial draw
+    drawPath(toc); 
+    
+    // Timeline clicks
     if (timeline) {
       timeline.on("plotly_click", function(ed) { 
-        /* Relayout timeline when clicked on a bar  */
         Plotly.relayout(timeline, { "xaxis.range[0]": ed.points[0].base, "xaxis.range[1]": ed.points[0].value });
       });
     }
 
-    lockzoom_div.css('visibility', 'visible');
-
-    // Synchronize zoom between plots
-    lockzoom.change( function() {
-      if ($(this).is(':checked')) {
-        sync_zoom()
-      } 
-    });
+    // Zoom Sync Listeners
+    lockzoom.change( function() { if ($(this).is(':checked')) sync_zoom(); });
+    
+    // Initial Hash Check
+    // Getting initial position from URL and scrolling to it, if present
+    var currentHash = window.location.hash.substring(1);
+    if (currentHash) scrollIntoView(currentHash);
   }
 
-  // Add scroll event listener to add fragment of current block on URL
-  window.addEventListener( 'scroll', function () {
-    if (!catch_scroll) {return;}
-    let graphs = Array.from(document.querySelectorAll('.block'))
-    let visible = graphs.find((el)=>{return isElementInViewport(el);});
+  // "Snake" progress bar, obtained from: https://lab.hakim.se/progress-nav
+  var tocItems = []; 
+  var tocPath;
+  var pathLength;
+  var lastPathStart, lastPathEnd;
+  var cachedBlocks = []; // Cache the blocks so we don't querySelectorAll on every scroll
+
+  // Throttled Scroll Handler using requestAnimationFrame
+  var isScrolling = false;
+  function onScrollThrottled() {
+    if (!isScrolling) {
+      window.requestAnimationFrame(function() {
+        syncSnake(); // Update snake bar
+        updateUrlHash(); // Update URL fragment
+        isScrolling = false;
+      });
+      isScrolling = true;
+    }
+  }
+
+  function drawPath(toc) {
+    if(!tocPath) return; // Safeguard
+    if(!toc) toc = document.querySelector( '.section-toc' );
+    tocItems = [].slice.call( toc.querySelectorAll( 'li' ) );
+    tocItems = tocItems.map( function( item ) {
+      var anchor = item.querySelector( 'a' );
+      var targetId = anchor.getAttribute( 'href' ).match(/'(.*)'/)[1];
+      var target = document.getElementById( targetId );
+      return { listItem: item, anchor: anchor, target: target };
+    }).filter( function( item ) { return !!item.target; } );
+
+    var path = [];
+    var pathIndent;
+    
+    tocItems.forEach( function( item, i ) {
+      var x = item.anchor.offsetLeft - 5,
+          y = item.anchor.offsetTop,
+          height = item.anchor.offsetHeight;
+      if( i === 0 ) {
+        path.push( 'M', x, y, 'L', x, y + height );
+        item.pathStart = 0;
+      } else {
+        if( pathIndent !== x ) path.push( 'L', pathIndent, y );
+        path.push( 'L', x, y );
+        tocPath.setAttribute( 'd', path.join( ' ' ) );
+        item.pathStart = tocPath.getTotalLength() || 0;
+        path.push( 'L', x, y + height );
+      }
+      pathIndent = x;
+      tocPath.setAttribute( 'd', path.join( ' ' ) );
+      item.pathEnd = tocPath.getTotalLength();
+    });
+    pathLength = tocPath.getTotalLength();
+
+    // Resize SVG container to fit the full scrolling content height
+    // Otherwise the path is visually clipped when scrolling the nav menu
+    if (tocItems.length > 0) {
+      var lastItem = tocItems[tocItems.length - 1];
+      var totalHeight = lastItem.anchor.offsetTop + lastItem.anchor.offsetHeight;
+      // tocPath.parentElement is the <svg> element
+      tocPath.parentElement.style.height = (totalHeight + 20) + "px"; 
+    }
+
+    syncSnake();
+  }
+
+  // Optimized Sync (Snake Bar)
+  function syncSnake() {
+    var windowHeight = window.innerHeight;
+    var pathStart = pathLength, pathEnd = 0;
+    var visibleItems = 0;
+    var TOP_MARGIN = 0.01, BOTTOM_MARGIN = 0.0;
+
+    tocItems.forEach( function( item ) {
+      var rect = item.target.getBoundingClientRect();
+      // Optimization: Only process if element is somewhat near viewport
+      if( rect.bottom > windowHeight * TOP_MARGIN && rect.top < windowHeight * ( 1 - BOTTOM_MARGIN ) ) {
+        pathStart = Math.min( item.pathStart, pathStart );
+        pathEnd = Math.max( item.pathEnd, pathEnd );
+        visibleItems += 1;
+        item.listItem.classList.add( 'visible' );
+      } else {
+        item.listItem.classList.remove( 'visible' );
+      }
+    });
+
+    if( visibleItems > 0 && pathStart < pathEnd ) {
+      if( pathStart !== lastPathStart || pathEnd !== lastPathEnd ) {
+        tocPath.setAttribute( 'stroke-dashoffset', '1' );
+        tocPath.setAttribute( 'stroke-dasharray', '1, '+ pathStart +', '+ ( pathEnd - pathStart ) +', ' + pathLength );
+        tocPath.setAttribute( 'opacity', 1 );
+      }
+    } else {
+      tocPath.setAttribute( 'opacity', 0 );
+    }
+    lastPathStart = pathStart;
+    lastPathEnd = pathEnd;
+  }
+
+  // Optimized URL Hash Updater
+  var currentHash = "";
+  function updateUrlHash() {
+    if (!catch_scroll) return;
+    
+    // Use cached blocks instead of querying DOM
+    let visible = cachedBlocks.find((el) => { 
+      var rect = el.getBoundingClientRect();
+      return ( rect.top > -3 && rect.top <= (window.innerHeight || document.documentElement.clientHeight) );
+    });
+
     if (visible) {
-      let hash = $(visible).attr('id');
-      if (currentHash == hash) {return;}
-      // window.location.hash = hash;
-      // if(history.pushState) { history.pushState(null, null, "#"+hash); } else { window.location.hash = hash; } 
-      history.replaceState(null, null, "#"+hash);
-      currentHash = hash;
+      let hash = visible.id;
+      if (currentHash !== hash) {
+        history.replaceState(null, null, "#"+hash);
+        currentHash = hash;
+      }
     }
-  }, false );
+  }
 
-  // Getting initial position from URL and scrolling to it, if present
-  var currentHash = window.location.hash.substring(1);
-  if (currentHash) scrollIntoView(currentHash);
+  function sync() {
+    var windowHeight = window.innerHeight;
+    var pathStart = pathLength,
+      pathEnd = 0;
+    var visibleItems = 0;
 
-  // Check if element 'el' is visible in viewport
-  function isElementInViewport (el) {
-    if (typeof jQuery === "function" && el instanceof jQuery) {
-        el = el[0];
+    tocItems.forEach( function( item ) {
+      var targetBounds = item.target.getBoundingClientRect();
+      if( targetBounds.bottom > windowHeight * TOP_MARGIN && targetBounds.top < windowHeight * ( 1 - BOTTOM_MARGIN ) ) {
+        pathStart = Math.min( item.pathStart, pathStart );
+        pathEnd = Math.max( item.pathEnd, pathEnd );
+        visibleItems += 1;
+        item.listItem.classList.add( 'visible' );
+      }
+      else {
+        item.listItem.classList.remove( 'visible' );
+      }
+    } );
+
+    // Specify the visible path or hide the path altogether
+    // if there are no visible items
+    if( visibleItems > 0 && pathStart < pathEnd ) {
+      if( pathStart !== lastPathStart || pathEnd !== lastPathEnd ) {
+        tocPath.setAttribute( 'stroke-dashoffset', '1' );
+        tocPath.setAttribute( 'stroke-dasharray', '1, '+ pathStart +', '+ ( pathEnd - pathStart ) +', ' + pathLength );
+        tocPath.setAttribute( 'opacity', 1 );
+      }
     }
-    var rect = el.getBoundingClientRect();
-    // Added small value above the top, otherwise it was changing the fragment to the graph below
-    return ( rect.top > -3 && rect.top <= (window.innerHeight || document.documentElement.clientHeight) );
+    else {
+      tocPath.setAttribute( 'opacity', 0 );
+    }
+    lastPathStart = pathStart;
+    lastPathEnd = pathEnd;
   }
 
   // Scroll to given '#elementid' when it is ready in page. If not present yet, try every second, waiting for it to be ready
   function scrollIntoView(elementid) {
-    if(repeat) clearInterval(repeat); // Stopping previous checks
-    catch_scroll = false;
-    let element = document.getElementById(elementid);
-    // If element is ready, scroll imediately
-    if (element) {
-      waitForElement(element).then(function(){
-        element.scrollIntoView({behavior: "instant"});
-      });
-      catch_scroll = true;
-      return;
-    }
-    // Otherwise, check every second
-    repeat = window.setInterval(function() {
-      element = document.getElementById(elementid);
+    // Clear any existing interval if the user clicks rapidly
+    if (window.scrollInterval) clearInterval(window.scrollInterval);
+    
+    // Catch-all safety: stop trying after 10 seconds
+    var attempts = 0;
+    
+    // Disable Hash updates while auto-scrolling
+    catch_scroll = false; 
+    
+    window.scrollInterval = setInterval(function() {
+      var element = document.getElementById(elementid);
+      attempts++;
+
       if (element) {
-        waitForElement(element).then(function(){
-          element.scrollIntoView({behavior: "instant"});
-        });
+        // Element found! Scroll and stop looking.
+        clearInterval(window.scrollInterval);
+        
+        element.scrollIntoView({behavior: "instant", block: "start"});
+        
+        // Re-enable Hash updates after a moment
+        setTimeout(() => { catch_scroll = true; }, 100);
+
+        // flash the target
+        // element.style.outline = "2px solid red"; 
+        // setTimeout(() => element.style.outline = "none", 1000);
+      } 
+      else if (attempts > 50) { 
+        // Stop looking after ~10 seconds (50 * 200ms) to save resources
+        clearInterval(window.scrollInterval);
         catch_scroll = true;
-        clearInterval(repeat);
       }
-    }, 1000)
+    }, 200); // Check every 200ms
   }
 
   // Activating synchronisation of zoom between graphs within a section
@@ -728,57 +830,239 @@ def CreateHTML( config,
     }
   }
 
-  /**
-   * Wait for an element before resolving a promise
-   * Adapted from https://stackoverflow.com/a/34863951/3142385
-   * @param {Node} element - element to wait for
-   * @param {Integer} timeout - Milliseconds to wait before timing out, or 0 for no timeout
-   */
-  function waitForElement(element, timeout){
-    return new Promise((resolve, reject)=>{
-      var timer = false;
-      if(!!element) return resolve();
-      const observer = new MutationObserver(()=>{
-        if(!!element) {
-          observer.disconnect();
-          if(timer !== false) clearTimeout(timer);
-          return resolve();
+  // Helper to copy link
+  function copyLink(id) {
+    navigator.clipboard.writeText(window.location.href.split('#')[0] + '#' + id);
+  }
+
+  // Helper to open help
+  function openHelp() {
+    window.open('https://apps.fz-juelich.de/jsc/llview/docu/jobreport/metrics_list/', '_blank').focus();
+  }
+
+  // Standard Download Function (Scatter/Heatmap)
+  function downloadPlotData(gd, filename) {
+    const traces = gd.data.filter(t => t.type === 'scatter' || t.type === 'scattergl' || t.type === 'heatmap');
+    
+    const dataToSave = traces.map(t => ({
+      name: t.name,
+      x: t.x,
+      y: t.y,
+      z: t.z
+    }));
+    
+    saveJson(dataToSave, filename);
+  }
+
+  // Specialized Timeline Download Function
+  // Extracts base, duration, step, and info as requested
+  function downloadTimelineData(gd, filename) {
+    const trace = gd.data[0];
+    if (!trace) return;
+
+    const dataToSave = trace.x.map((_, i) => ({
+      start_time: trace.base[i],
+      duration: trace.x[i],
+      step: trace.y[i],
+      info: trace.hovertext[i]
+    }));
+
+    saveJson(dataToSave, filename);
+  }
+
+  // Internal helper to save Blob
+  function saveJson(data, filename) {
+    const blob = new Blob([JSON.stringify(data)], {type: "application/json"});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  // Generates the custom modebar buttons
+  // Now accepts an optional 'downloadType' argument
+  function getCustomModeBarButtons(divId, filename, helpTitle, downloadType) {
+    return [[
+      {
+        name: 'Copy link to this graph',
+        icon: {
+          width: 1634,
+          height: 1634,
+          path: 'M 1441 434 q 0 40 -28 68 l -208 208 q -28 28 -68 28 q -42 0 -72 -32 q 3 -3 19 -18.5 t 21.5 -21.5 t 15 -19 t 13 -25.5 t 3.5 -27.5 q 0 -40 -28 -68 t -68 -28 q -15 0 -27.5 3.5 t -25.5 13 t -19 15 t -21.5 21.5 t -18.5 19 q -33 -31 -33 -73 q 0 -40 28 -68 l 206 -207 q 27 -27 68 -27 q 40 0 68 26 l 147 146 q 28 28 28 67 z M 738 1139 q 0 40 -28 68 l -206 207 q -28 28 -68 28 q -39 0 -68 -27 l -147 -146 q -28 -28 -28 -67 q 0 -40 28 -68 l 208 -208 q 27 -27 68 -27 q 42 0 72 31 q -3 3 -19 18.5 t -21.5 21.5 t -15 19 t -13 25.5 t -3.5 27.5 q 0 40 28 68 t 68 28 q 15 0 27.5 -3.5 t 25.5 -13 t 19 -15 t 21.5 -21.5 t 18.5 -19 q 33 31 33 73 z M 1633 434 q 0 -120 -85 -203 l -147 -146 q -83 -83 -203 -83 q -121 0 -204 85 l -206 207 q -83 83 -83 203 q 0 123 88 209 l -88 88 q -86 -88 -208 -88 q -120 0 -204 84 l -208 208 q -84 84 -84 204 t 85 203 l 147 146 q 83 83 203 83 q 121 0 204 -85 l 206 -207 q 83 -83 83 -203 q 0 -123 -88 -209 l 88 -88 q 86 88 208 88 q 120 0 204 -84 l 208 -208 q 84 -84 84 -204 z'
+        },
+        click: function() { copyLink(divId); }
+      },
+      {
+        name: helpTitle,
+        icon: {
+          width: 512,
+          height: 512,
+          path: 'M256 0C114.6 0 0 114.6 0 256s114.6 256 256 256s256-114.6 256-256S397.4 0 256 0zM256 464c-114.7 0-208-93.31-208-208S141.3 48 256 48s208 93.31 208 208S370.7 464 256 464zM256 336c-18 0-32 14-32 32s13.1 32 32 32c17.1 0 32-14 32-32S273.1 336 256 336zM289.1 128h-51.1C199 128 168 159 168 198c0 13 11 24 24 24s24-11 24-24C216 186 225.1 176 237.1 176h51.1C301.1 176 312 186 312 198c0 8-4 14.1-11 18.1L244 251C236 256 232 264 232 272V288c0 13 11 24 24 24S280 301 280 288V286l45.1-28c21-13 34-36 34-60C360 159 329 128 289.1 128z'
+        },
+        click: function() { openHelp(); }
+      },
+      "zoom2d", "pan2d", "zoomIn2d", "zoomOut2d", "resetScale2d", 
+      {
+        name: 'Download data',
+        icon: {
+          width: 514,
+          height: 514,
+          path: 'M216 0h80c13.3 0 24 10.7 24 24v168h87.7c17.8 0 26.7 21.5 14.1 34.1L269.7 378.3c-7.5 7.5-19.8 7.5-27.3 0L90.1 226.1c-12.6-12.6-3.7-34.1 14.1-34.1H192V24c0-13.3 10.7-24 24-24zm296 376v112c0 13.3-10.7 24-24 24H24c-13.3 0-24-10.7-24-24V376c0-13.3 10.7-24 24-24h146.7l49 49c20.1 20.1 52.5 20.1 72.6 0l49-49H488c13.3 0 24 10.7 24 24zm-124 88c0-11-9-20-20-20s-20 9-20 20 9 20 20 20 20-9 20-20zm64 0c0-11-9-20-20-20s-20 9-20 20 9 20 20 20 20-9 20-20z'
+        },
+        attr: 'download',
+        click: function(gd) { 
+          // Check the downloadType argument to switch logic
+          if(downloadType === 'timeline') {
+            downloadTimelineData(gd, filename);
+          } else {
+            downloadPlotData(gd, filename);
+          }
         }
-      });
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true
-      });
-      if(timeout) timer = setTimeout(()=>{
-        observer.disconnect();
-        reject();
-      }, timeout);
+      }
+    ]];
+  }
+
+  // Base64 Decoder Helper
+  function decodeBase64(entry) {
+    // If it's a standard array, return it
+    if (Array.isArray(entry)) return entry;
+    
+    // If we have already decoded this object, return the cached array (Reference)
+    // This prevents allocating the same memory for shared columns
+    if (entry._decoded) {
+      return entry._decoded;
+    }
+
+    // If it's encoded object
+    if (entry && entry._b64) {
+      const binaryString = window.atob(entry._b64);
+      const len = binaryString.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+
+      let flatArray;
+      if (entry.dtype === 'float32') {
+        flatArray = new Float32Array(bytes.buffer);
+      } else if (entry.dtype === 'int32') {
+        flatArray = new Int32Array(bytes.buffer);
+      } else {
+        flatArray = entry; // Fallback
+      }
+
+      // Handle Multi-dimensional Arrays (Heatmaps)
+      if (entry.shape && entry.shape.length > 1) {
+        const rows = entry.shape[0];
+        const cols = entry.shape[1];
+        const reshaped = [];
+        for (let r = 0; r < rows; r++) {
+          reshaped.push(flatArray.subarray(r * cols, (r + 1) * cols));
+        }
+        flatArray = reshaped;
+      }
+
+      // Cache the result and delete the string to free RAM
+      entry._decoded = flatArray;
+      delete entry._b64; // Garbage collect the Base64 string
+      
+      return flatArray;
+    }
+    return entry;
+  }
+
+  // Main rendering function to be called for each graph
+  // Accepts downloadType to handle the specific Timeline case
+  function renderOptimizedGraph(divId, plotData, layout, filename, helpTitle, downloadType) {
+    // Rehydrate the data from the shared storage
+    plotData.forEach(trace => {
+      if(trace.meta) {
+        // Apply decoding to all potential reference fields
+        if(trace.meta.x_ref) trace.x = decodeBase64(REPORT_SHARED_DATA[trace.meta.x_ref]);
+        if(trace.meta.y_ref) trace.y = decodeBase64(REPORT_SHARED_DATA[trace.meta.y_ref]);
+        if(trace.meta.z_ref) trace.z = decodeBase64(REPORT_SHARED_DATA[trace.meta.z_ref]);
+        
+        // Text is usually strings, so no decode needed, but safe to check
+        if(trace.meta.text_ref) trace.text = REPORT_SHARED_DATA[trace.meta.text_ref];
+        if(trace.meta.hovertext) trace.hovertext = REPORT_SHARED_DATA[trace.meta.hovertext]; // For timeline
+        
+        if(trace.meta.base_ref) trace.base = decodeBase64(REPORT_SHARED_DATA[trace.meta.base_ref]);
+        
+        if(trace.meta.color_ref) {
+          if(!trace.marker) trace.marker = {};
+          trace.marker.color = decodeBase64(REPORT_SHARED_DATA[trace.meta.color_ref]);
+        }
+      }
     });
+
+    // Configure buttons dynamically
+    const config = {
+      scrollZoom: false,
+      displaylogo: false,
+      responsive: true,
+      modeBarButtons: getCustomModeBarButtons(divId, filename, helpTitle, downloadType)
+    };
+
+    // Create Plot
+    Plotly.newPlot(divId, plotData, layout, config);
   }
 
   window.addEventListener('load', init);
 
   /* Check window size to toggle menu and adapt its height */
   function onresize(e) {
-    height = e.target.innerHeight;
-    width = e.target.innerWidth;
-    if (width == wsize) { return; }
-    if (width < 1000)  {
-      document.getElementById("toggle-menu").checked = true; 
-    } else { 
-      document.getElementById("toggle-menu").checked = false;
-    }
-    wsize = width;
-    var nav = document.getElementById("navmenu");
-    var newheight = height - document.getElementById("navbar").offsetHeight - 32;
-    nav.style.height = `${newheight}px`;
+    // Clear any pending frame
+    if (resizeRequest) cancelAnimationFrame(resizeRequest);
+
+    // Schedule the update for the next animation frame
+    resizeRequest = requestAnimationFrame(function() {
+      var height = window.innerHeight;
+      var width = window.innerWidth;
+
+      var nav = document.getElementById("navmenu");
+      var navbar = document.getElementById("navbar");
+      
+      // Calculate Height
+      if (nav && navbar) {
+        var newheight = height - navbar.offsetHeight - 32;
+        nav.style.height = `${newheight}px`;
+      }
+
+      // Calculate Width Logic (Menu Toggling)
+      if (typeof wsize !== 'undefined' && width != wsize) {
+        var toggle = document.getElementById("toggle-menu");
+        if (toggle) {
+          toggle.checked = (width < 1000);
+        }
+        wsize = width;
+      }
+
+      // Update snake path calculations on resize
+      drawPath();
+    });
   }
   window.addEventListener("resize", onresize);
 
   </script>
 """
-  html += f"  <script src='{replace_vars(config['appearance']['hostname'],config['appearance'])}/js/ext/jquery.min.js'></script>\n"
-  html += f"  <script src='{replace_vars(config['appearance']['hostname'],config['appearance'])}/js/ext/plotly.min.js'></script>\n"
+
+  # Getting location of plotly
+  if loc := config['appearance'].get('plotly_location'):
+      plotly_path = loc
+  else:
+    plotly_path = f"{replace_vars(config['appearance']['hostname'], config['appearance'])}/js/ext/plotly.min.js"
+  # Getting location of jquery
+  if loc := config['appearance'].get('jquery_location'):
+      jquery_path = loc
+  else:
+    jquery_path = f"{replace_vars(config['appearance']['hostname'], config['appearance'])}/js/ext/jquery.min.js"
+
+  html += f"  <script src='{jquery_path}'></script>\n"
+  html += f"  <script src='{plotly_path}'></script>\n"
+
   html += f"""
   <title>Job ID {config['appearance']['jobid']} Report</title>
   </head>
@@ -840,90 +1124,76 @@ def CreateHTML( config,
 
   # Overview figure:
   if overview:
+    # Extract config
+    fig_dict = overview.to_dict()
+    datafile = f"{config['appearance']['system']}-{config['appearance']['jobid']}-overview.json"
+
+    # Define the Help Title for this specific graph
+    help_title = "1-min average CPU and GPU usage, averaged over all the nodes/GPUs"
+
     html += f"""
     <section class="block" id="overview" style="margin-top:50px;">
-"""
-    copy_link = { 'name': 'Copy link to this graph', 
-                    'icon': { 'width': 1634, 
-                              'height': 1634, 
-                              'path': 'M 1441 434 q 0 40 -28 68 l -208 208 q -28 28 -68 28 q -42 0 -72 -32 q 3 -3 19 -18.5 t 21.5 -21.5 t 15 -19 t 13 -25.5 t 3.5 -27.5 q 0 -40 -28 -68 t -68 -28 q -15 0 -27.5 3.5 t -25.5 13 t -19 15 t -21.5 21.5 t -18.5 19 q -33 -31 -33 -73 q 0 -40 28 -68 l 206 -207 q 27 -27 68 -27 q 40 0 68 26 l 147 146 q 28 28 28 67 z M 738 1139 q 0 40 -28 68 l -206 207 q -28 28 -68 28 q -39 0 -68 -27 l -147 -146 q -28 -28 -28 -67 q 0 -40 28 -68 l 208 -208 q 27 -27 68 -27 q 42 0 72 31 q -3 3 -19 18.5 t -21.5 21.5 t -15 19 t -13 25.5 t -3.5 27.5 q 0 40 28 68 t 68 28 q 15 0 27.5 -3.5 t 25.5 -13 t 19 -15 t 21.5 -21.5 t 18.5 -19 q 33 31 33 73 z M 1633 434 q 0 -120 -85 -203 l -147 -146 q -83 -83 -203 -83 q -121 0 -204 85 l -206 207 q -83 83 -83 203 q 0 123 88 209 l -88 88 q -86 -88 -208 -88 q -120 0 -204 84 l -208 208 q -84 84 -84 204 t 85 203 l 147 146 q 83 83 203 83 q 121 0 204 -85 l 206 -207 q 83 -83 83 -203 q 0 -123 -88 -209 l 88 -88 q 86 88 208 88 q 120 0 204 -84 l 208 -208 q 84 -84 84 -204 z', 
-                          }, 
-                    'attr': 'help', 
-                    'click': "function() { navigator.clipboard.writeText(`${window.location.href.split('#')[0]}#overview`);}" , 
-                    }
-    help_button = { 'name': '1-min average CPU and GPU usage, averaged over all the nodes/GPUs', 
-                    'icon': { 'width': 512, 
-                              'height': 512, 
-                              'path': 'M256 0C114.6 0 0 114.6 0 256s114.6 256 256 256s256-114.6 256-256S397.4 0 256 0zM256 464c-114.7 0-208-93.31-208-208S141.3 48 256 48s208 93.31 208 208S370.7 464 256 464zM256 336c-18 0-32 14-32 32s13.1 32 32 32c17.1 0 32-14 32-32S273.1 336 256 336zM289.1 128h-51.1C199 128 168 159 168 198c0 13 11 24 24 24s24-11 24-24C216 186 225.1 176 237.1 176h51.1C301.1 176 312 186 312 198c0 8-4 14.1-11 18.1L244 251C236 256 232 264 232 272V288c0 13 11 24 24 24S280 301 280 288V286l45.1-28c21-13 34-36 34-60C360 159 329 128 289.1 128z', 
-                          }, 
-                    'attr': 'help', 
-                    'click': "function() { window.open('https://apps.fz-juelich.de/jsc/llview/docu/jobreport/metrics_list/', '_blank').focus();}" , 
-                    }
-    datafile=f"{config['appearance']['system']}-{config['appearance']['jobid']}-overview.json"
-    download_data_button = {'name': 'Download data', 
-                            'icon': { 'width': 514, 
-                                      'height': 514, 
-                                      'path': 'M216 0h80c13.3 0 24 10.7 24 24v168h87.7c17.8 0 26.7 21.5 14.1 34.1L269.7 378.3c-7.5 7.5-19.8 7.5-27.3 0L90.1 226.1c-12.6-12.6-3.7-34.1 14.1-34.1H192V24c0-13.3 10.7-24 24-24zm296 376v112c0 13.3-10.7 24-24 24H24c-13.3 0-24-10.7-24-24V376c0-13.3 10.7-24 24-24h146.7l49 49c20.1 20.1 52.5 20.1 72.6 0l49-49H488c13.3 0 24 10.7 24 24zm-124 88c0-11-9-20-20-20s-20 9-20 20 9 20 20 20 20-9 20-20zm64 0c0-11-9-20-20-20s-20 9-20 20 9 20 20 20 20-9 20-20z', 
-                                  }, 
-                            'attr': 'download', 
-                            'click': "function(gd) { download('"+datafile+"', [(({ name, x, y }) => ({ name, x, y }))(gd.data[1]), (({ name, x, y }) => ({ name, x, y }))(gd.data[3])] );}" , 
-                            }
-    html += overview.to_html( include_plotlyjs=False, 
-                              full_html=False, 
-                              config={'displaylogo': False, 
-                                      # 'displayModeBar': True,
-                                      'modeBarButtons': [ [copy_link, help_button, "zoom2d", "pan2d", "zoomIn2d", "zoomOut2d", "resetScale2d",download_data_button] ], 
-                                      }, 
-                              div_id='overview_plot').replace('"function','function').replace(';}"}','; }}') #.replace('"function(gd)','function(gd)').replace('(gd.data[3])] );}"','(gd.data[3])] );}')
-    html += f"""
+      <div id="overview_plot" class="plotly-graph-div" style="height:300px; width:100%;"></div>
+      <script type="text/javascript">
+        setTimeout(function() {{
+          renderOptimizedGraph(
+            "overview_plot", 
+            {json.dumps(fig_dict['data'], cls=plotly.utils.PlotlyJSONEncoder)}, 
+            {json.dumps(fig_dict['layout'], cls=plotly.utils.PlotlyJSONEncoder)}, 
+            "{datafile}",
+            {json.dumps(help_title)} // json.dumps escape characters correctly
+          );
+        }}, 0);
+      </script>
     </section>
 """
 
-  # Plots
+  # Iterate over System Types and Sections
   for systype, section in figs.items():
     stype = systype.replace("$","").replace(" ","_")
     html += f"""
     <hr class="no-print">
     <section id="{stype}"> </section>
 """
+    # Iterate over individual graphs in the section
     for title, graph in section.items():
       id = f"{stype}_{title.replace(' ','_')}"
       html += f"""
-      <section class="block" id="{id}">
+      <section class="block" id="{id}" style="content-visibility: auto; contain-intrinsic-size: 500px;">
 """
-      copy_link = { 'name': 'Copy link to this graph', 
-                      'icon': { 'width': 1634, 
-                                'height': 1634, 
-                                'path': 'M 1441 434 q 0 40 -28 68 l -208 208 q -28 28 -68 28 q -42 0 -72 -32 q 3 -3 19 -18.5 t 21.5 -21.5 t 15 -19 t 13 -25.5 t 3.5 -27.5 q 0 -40 -28 -68 t -68 -28 q -15 0 -27.5 3.5 t -25.5 13 t -19 15 t -21.5 21.5 t -18.5 19 q -33 -31 -33 -73 q 0 -40 28 -68 l 206 -207 q 27 -27 68 -27 q 40 0 68 26 l 147 146 q 28 28 28 67 z M 738 1139 q 0 40 -28 68 l -206 207 q -28 28 -68 28 q -39 0 -68 -27 l -147 -146 q -28 -28 -28 -67 q 0 -40 28 -68 l 208 -208 q 27 -27 68 -27 q 42 0 72 31 q -3 3 -19 18.5 t -21.5 21.5 t -15 19 t -13 25.5 t -3.5 27.5 q 0 40 28 68 t 68 28 q 15 0 27.5 -3.5 t 25.5 -13 t 19 -15 t 21.5 -21.5 t 18.5 -19 q 33 31 33 73 z M 1633 434 q 0 -120 -85 -203 l -147 -146 q -83 -83 -203 -83 q -121 0 -204 85 l -206 207 q -83 83 -83 203 q 0 123 88 209 l -88 88 q -86 -88 -208 -88 q -120 0 -204 84 l -208 208 q -84 84 -84 204 t 85 203 l 147 146 q 83 83 203 83 q 121 0 204 -85 l 206 -207 q 83 -83 83 -203 q 0 -123 -88 -209 l 88 -88 q 86 88 208 88 q 120 0 204 -84 l 208 -208 q 84 -84 84 -204 z', 
-                            }, 
-                      'attr': 'help', 
-                      'click': f"function() {{ navigator.clipboard.writeText(`${{window.location.href.split('#')[0]}}#{id}`);}}" , 
-                      }
-      help_button = { 'name': config['plots'][systype.replace("$",r"\$")][title]['description'], 
-                      'icon': { 'width': 512, 
-                                'height': 512, 
-                                'path': 'M256 0C114.6 0 0 114.6 0 256s114.6 256 256 256s256-114.6 256-256S397.4 0 256 0zM256 464c-114.7 0-208-93.31-208-208S141.3 48 256 48s208 93.31 208 208S370.7 464 256 464zM256 336c-18 0-32 14-32 32s13.1 32 32 32c17.1 0 32-14 32-32S273.1 336 256 336zM289.1 128h-51.1C199 128 168 159 168 198c0 13 11 24 24 24s24-11 24-24C216 186 225.1 176 237.1 176h51.1C301.1 176 312 186 312 198c0 8-4 14.1-11 18.1L244 251C236 256 232 264 232 272V288c0 13 11 24 24 24S280 301 280 288V286l45.1-28c21-13 34-36 34-60C360 159 329 128 289.1 128z', 
-                            }, 
-                      'attr': 'help', 
-                      'click': "function() { window.open('https://apps.fz-juelich.de/jsc/llview/docu/jobreport/metrics_list/', '_blank').focus();}" , 
-                      }
+      # Prepare Datafile Name for download
+      div_id_suffix = '_time_plot' if graph['x']=='ts' else '_plot'
+      final_div_id = id + div_id_suffix
+      datafile = f"{config['appearance']['system']}-{config['appearance']['jobid']}-{id.lower()}.json"
+      
+      # Prepare Help Description for the help button
+      # Uses safe retrieval, defaulting to the title if no description exists
+      help_desc = config['plots'][systype.replace("$",r"\$")][title].get('description', title)
 
-      datafile=f"{config['appearance']['system']}-{config['appearance']['jobid']}-{id.lower()}.json"
-      download_data_button = {'name': 'Download data', 
-                              'icon': { 'width': 514, 
-                                        'height': 514, 
-                                        'path': 'M216 0h80c13.3 0 24 10.7 24 24v168h87.7c17.8 0 26.7 21.5 14.1 34.1L269.7 378.3c-7.5 7.5-19.8 7.5-27.3 0L90.1 226.1c-12.6-12.6-3.7-34.1 14.1-34.1H192V24c0-13.3 10.7-24 24-24zm296 376v112c0 13.3-10.7 24-24 24H24c-13.3 0-24-10.7-24-24V376c0-13.3 10.7-24 24-24h146.7l49 49c20.1 20.1 52.5 20.1 72.6 0l49-49H488c13.3 0 24 10.7 24 24zm-124 88c0-11-9-20-20-20s-20 9-20 20 9 20 20 20 20-9 20-20zm64 0c0-11-9-20-20-20s-20 9-20 20 9 20 20 20 20-9 20-20z', 
-                                    }, 
-                              'attr': 'download', 
-                              'click': "function(gd) { download('"+datafile+"', [(({ name, x, y, z }) => ({ name, x, y, z }))(gd.data[2])] );}" , 
-                              }
-      html += graph['graph'].to_html( include_plotlyjs=False, 
-                                      full_html=False, 
-                                      config={'displaylogo': False, 
-                                              # 'displayModeBar': True,
-                                              'modeBarButtons': [ [copy_link, help_button, "zoom2d", "pan2d", "zoomIn2d", "zoomOut2d", "resetScale2d",download_data_button] ], 
-                                              }, 
-                                      div_id=id+('_time_plot' if graph['x']=='ts' else '_plot')).replace('"function','function').replace(';}"}','; }}')
+      # Extract Figure Dictionary
+      # This pulls the 'data' (with meta tags) and 'layout' from the figure object
+      # created by CreatePlotlyFig.
+      fig_dict = graph['graph'].to_dict()
+
+      # Inject HTML and Script
+      # We create the container DIV first.
+      # Then we call 'renderOptimizedGraph' with the JSON data, layout, filename, and help text.
+      # json.dumps ensures all strings and objects are safely encoded for JavaScript.
+      # plotly.utils.PlotlyJSONEncoder ensures that any remaining NumPy types or NaNs are handled.
+      html += f"""
+      <div id="{final_div_id}" class="plotly-graph-div" style="height:500px; width:100%;"></div>
+      <script type="text/javascript">
+        setTimeout(function() {{
+          renderOptimizedGraph(
+            "{final_div_id}", 
+            {json.dumps(fig_dict['data'], cls=plotly.utils.PlotlyJSONEncoder)}, 
+            {json.dumps(fig_dict['layout'], cls=plotly.utils.PlotlyJSONEncoder)}, 
+            "{datafile}",
+            {json.dumps(help_desc)}
+          );
+        }}, 0);
+      </script>
+      """
       html += f"""
       </section>
 """
@@ -933,51 +1203,35 @@ def CreateHTML( config,
     html += f"""
     <hr class="no-print">
     <section class="block" id="nodelist">
-    <h2>Node List</h2>
     {nodelist}
     </section>
 """
 
   # Timeline:
   if timeline:
+    # Extract config
+    fig_dict = timeline.to_dict()
+    datafile = f"{config['appearance']['system']}-{config['appearance']['jobid']}-timeline.json"
+    
+    # Help text
+    help_text = 'Timeline containing all the steps in a job. A step can be clicked to focus. When zoom-lock is selected, syncs zoom between all graphs.'
+
     html += f"""
     <hr class="no-print">
     <section class="block" id="timeline" style="margin-top:50px;">
-"""
-    copy_link = { 'name': 'Copy link to this graph', 
-                    'icon': { 'width': 1634, 
-                              'height': 1634, 
-                              'path': 'M 1441 434 q 0 40 -28 68 l -208 208 q -28 28 -68 28 q -42 0 -72 -32 q 3 -3 19 -18.5 t 21.5 -21.5 t 15 -19 t 13 -25.5 t 3.5 -27.5 q 0 -40 -28 -68 t -68 -28 q -15 0 -27.5 3.5 t -25.5 13 t -19 15 t -21.5 21.5 t -18.5 19 q -33 -31 -33 -73 q 0 -40 28 -68 l 206 -207 q 27 -27 68 -27 q 40 0 68 26 l 147 146 q 28 28 28 67 z M 738 1139 q 0 40 -28 68 l -206 207 q -28 28 -68 28 q -39 0 -68 -27 l -147 -146 q -28 -28 -28 -67 q 0 -40 28 -68 l 208 -208 q 27 -27 68 -27 q 42 0 72 31 q -3 3 -19 18.5 t -21.5 21.5 t -15 19 t -13 25.5 t -3.5 27.5 q 0 40 28 68 t 68 28 q 15 0 27.5 -3.5 t 25.5 -13 t 19 -15 t 21.5 -21.5 t 18.5 -19 q 33 31 33 73 z M 1633 434 q 0 -120 -85 -203 l -147 -146 q -83 -83 -203 -83 q -121 0 -204 85 l -206 207 q -83 83 -83 203 q 0 123 88 209 l -88 88 q -86 -88 -208 -88 q -120 0 -204 84 l -208 208 q -84 84 -84 204 t 85 203 l 147 146 q 83 83 203 83 q 121 0 204 -85 l 206 -207 q 83 -83 83 -203 q 0 -123 -88 -209 l 88 -88 q 86 88 208 88 q 120 0 204 -84 l 208 -208 q 84 -84 84 -204 z', 
-                          }, 
-                    'attr': 'help', 
-                    'click': "function() { navigator.clipboard.writeText(`${window.location.href.split('#')[0]}#timeline`);}" , 
-                    }
-    help_button = { 'name': 'Timeline containing all the steps in a job. A step can be clicked to focus. When zoom-lock is selected, syncs zoom between all graphs.', 
-                    'icon': { 'width': 512, 
-                              'height': 512, 
-                              'path': 'M256 0C114.6 0 0 114.6 0 256s114.6 256 256 256s256-114.6 256-256S397.4 0 256 0zM256 464c-114.7 0-208-93.31-208-208S141.3 48 256 48s208 93.31 208 208S370.7 464 256 464zM256 336c-18 0-32 14-32 32s13.1 32 32 32c17.1 0 32-14 32-32S273.1 336 256 336zM289.1 128h-51.1C199 128 168 159 168 198c0 13 11 24 24 24s24-11 24-24C216 186 225.1 176 237.1 176h51.1C301.1 176 312 186 312 198c0 8-4 14.1-11 18.1L244 251C236 256 232 264 232 272V288c0 13 11 24 24 24S280 301 280 288V286l45.1-28c21-13 34-36 34-60C360 159 329 128 289.1 128z', 
-                          }, 
-                    'attr': 'help', 
-                    'click': "function() { window.open('https://apps.fz-juelich.de/jsc/llview/docu/jobreport/metrics_list/', '_blank').focus();}" , 
-                    }
-    datafile=f"{config['appearance']['system']}-{config['appearance']['jobid']}-timeline.json"
-    download_data_button = {'name': 'Download data', 
-                            'icon': { 'width': 514, 
-                                      'height': 514, 
-                                      'path': 'M216 0h80c13.3 0 24 10.7 24 24v168h87.7c17.8 0 26.7 21.5 14.1 34.1L269.7 378.3c-7.5 7.5-19.8 7.5-27.3 0L90.1 226.1c-12.6-12.6-3.7-34.1 14.1-34.1H192V24c0-13.3 10.7-24 24-24zm296 376v112c0 13.3-10.7 24-24 24H24c-13.3 0-24-10.7-24-24V376c0-13.3 10.7-24 24-24h146.7l49 49c20.1 20.1 52.5 20.1 72.6 0l49-49H488c13.3 0 24 10.7 24 24zm-124 88c0-11-9-20-20-20s-20 9-20 20 9 20 20 20 20-9 20-20zm64 0c0-11-9-20-20-20s-20 9-20 20 9 20 20 20 20-9 20-20z', 
-                                  }, 
-                            'attr': 'download', 
-                            'click': "function(gd) { download('"+datafile+"', gd.data[0].x.map((_, i) => ({ start_time: gd.data[0].base[i], duration: gd.data[0].x[i], step: gd.data[0].y[i], info: gd.data[0].hovertext[i] })) );}", 
-                            }
-
-    html += timeline.to_html( include_plotlyjs=False, 
-                              full_html=False, 
-                              config={'displaylogo': False, 
-                                      # 'displayModeBar': True,
-                                      'modeBarButtons': [ [copy_link, help_button, "zoom2d", "pan2d", "zoomIn2d", "zoomOut2d", "resetScale2d", download_data_button] ], 
-                                      }, 
-                              div_id='timeline_plot').replace('"function','function').replace(';}"}','; }}') #.replace('"function(gd)','function(gd)').replace('(gd.data[3])] );}"','(gd.data[3])] );}')
-    html += f"""
+      <div id="timeline_plot" class="plotly-graph-div" style="height:{timeline.layout.height}px; width:100%;"></div>
+      <script type="text/javascript">
+        setTimeout(function() {{
+          renderOptimizedGraph(
+            "timeline_plot", 
+            {json.dumps(fig_dict['data'], cls=plotly.utils.PlotlyJSONEncoder)}, 
+            {json.dumps(fig_dict['layout'], cls=plotly.utils.PlotlyJSONEncoder)}, 
+            "{datafile}",
+            {json.dumps(help_text)},
+            "timeline" 
+          );
+        }}, 0);
+      </script>
     </section>
 """
 
@@ -999,53 +1253,151 @@ def CreateHTML( config,
   </html>
 """
 
-
   # Writing to file
-  if config['html']:
-    with open(filename, 'w') as f:
-      f.write(html)
-  if config['gzip']:
-    import gzip
-    with gzip.open(f"{filename}.gz", 'wb') as f:
-      f.write(html.encode())
+  if filename:
+    if config['html']:
+      with open(filename, 'w') as f:
+        f.write(html)
+    if config['gzip']:
+      import gzip
+      with gzip.open(f"{filename}.gz", 'wb') as f:
+        f.write(html.encode())
   return
 
-def CreateNodelist(config,gpus,nl_config,nodedict,error_nodes):
-  nodelist = ""
-  numgpu = 0
-  for idx,(node, specs) in enumerate(nodedict.items()):
-    try: 
-      ic = list(specs['IC'].keys())[0]
-      color = list(specs['IC'].values())[0]
-      color = list(255*x for x in color)
-    except KeyError:
-      ic = '-'
-      color = [0.0,0.0,0.0]
-    nodelist += f"""
-    <div class="{'errornode' if node in error_nodes else 'node'}" style="background-color: rgb{tuple(color+[0.1])};">
-      <div style="text-align: center;">
-      <span style="float: left; color: dimgray; padding: 0px 5px 0px 5px;">{idx+1}</span>
-      <b>{node}</b>
-      </div>
-"""
-    if gpus:
-      for gpu, spec in specs.items():
-        if 'GPU' not in gpu: continue
-        numgpu += 1
-        nodelist += f"""
-          <div style="text-align: center; font-size: 8pt;">
-          <span style="float:left; color: dimgray; padding: 0px 5px 0px 0px;">{numgpu}</span>
-          <b>{gpu}: </b>{spec}
-          </div>
-"""
+def CreateNodelist(config, gpus, nl_config, nodedict, error_nodes):
+  # Prepare the Data Structure to store information for each node
+  # We use short keys to save bytes in the JSON file
+  nodes_data = []
+  global_gpu_counter = 0
 
-    nodelist += f"""
-      <div style="text-align: center; font-size: 10pt; color: rgb{tuple(color)};">
-      Interconnect group: {ic}
-      </div>
+  for idx, (node, specs) in enumerate(nodedict.items()):
+    # Extract Color and Interconnect info
+    try:
+      ic = list(specs['IC'].keys())[0]
+      raw_color = list(specs['IC'].values())[0]
+      # Convert 0-1 float color to 0-255 int for CSS
+      color = [int(255*x) for x in raw_color]
+    except (KeyError, IndexError):
+      ic = '-'
+      color = [0, 0, 0]
+
+    # Node Object
+    node_obj = {
+      'i': idx + 1,       # Index
+      'n': node,          # Name
+      'c': color,         # Color [r,g,b]
+      'ic': ic,           # Interconnect Group Name
+      'e': 1 if node in error_nodes else 0 # Error flag (1/0 is smaller than true/false)
+    }
+
+    # GPU Objects
+    if gpus:
+      node_gpus = []
+      for gpu_key, spec in specs.items():
+        if 'GPU' not in gpu_key: continue
+        global_gpu_counter += 1
+        node_gpus.append({
+          'i': global_gpu_counter, # Global GPU Index
+          'n': gpu_key,            # GPU Name (e.g., GPU0)
+          's': spec                # Specs string
+        })
+      
+      if node_gpus:
+        node_obj['g'] = node_gpus
+
+    nodes_data.append(node_obj)
+
+  # Return the data and the rendering logic
+  # We return a dictionary or tuple to separate concerns if needed, 
+  # but here we can return the HTML string wrapper directly.
+  
+  if not nodes_data:
+    return ""
+
+  # Define the Container and the Script
+  # HTML and Script with lazy loading logic
+  html_output = f"""
+  <details id="nodelist_details">
+    <summary>Node List</summary>
+    
+    <!-- Loader: Visible initially -->
+    <div id="nodelist_loader" style="padding: 20px; color: gray; font-style: italic;">
+      Loading {len(nodes_data)} nodes...
     </div>
-"""
-  return nodelist
+    
+    <!-- Container: Nodes are appended here -->
+    <div id="nodelist_container"></div>
+  </details>
+
+  <script>
+    (function() {{
+      const nodesData = {json.dumps(nodes_data)};
+      const details = document.getElementById('nodelist_details');
+      const container = document.getElementById('nodelist_container');
+      const loader = document.getElementById('nodelist_loader');
+      
+      let hasRendered = false;
+      let index = 0;
+      const chunkSize = 100;
+
+      function renderChunk() {{
+        let chunkHTML = '';
+        const limit = Math.min(index + chunkSize, nodesData.length);
+
+        for (; index < limit; index++) {{
+          const n = nodesData[index];
+          const colorStr = n.c.join(',');
+          
+          const bgStyle = `background-color: rgba(${{colorStr}}, 0.1);`;
+          const textStyle = `color: rgb(${{colorStr}});`;
+          const errClass = n.e ? 'nl-err' : ''; 
+          
+          chunkHTML += `<div class="nl-box ${{errClass}}" style="${{bgStyle}}">
+            <div class="nl-head">
+              <span class="nl-idx">${{n.i}}</span>
+              <b>${{n.n}}</b>
+            </div>`;
+          
+          if (n.g) {{
+            for (let j = 0; j < n.g.length; j++) {{
+              const g = n.g[j];
+              chunkHTML += `<div class="nl-gpu">
+                <span class="nl-idx">${{g.i}}</span>
+                <b>${{g.n}}: </b>${{g.s}}
+              </div>`;
+            }}
+          }}
+
+          chunkHTML += `<div class="nl-footer" style="${{textStyle}}">
+            Interconnect group: ${{n.ic}}
+          </div></div>`;
+        }}
+
+        // Append this chunk to the container
+        container.insertAdjacentHTML('beforeend', chunkHTML);
+
+        // Check if there is more data to process
+        if (index < nodesData.length) {{
+          // Schedule the next chunk
+          setTimeout(renderChunk, 0);
+        }} else {{
+          // Hide the loader now that everything is rendered
+          loader.style.display = 'none';
+        }}
+      }}
+
+      details.addEventListener("toggle", function() {{
+        if (details.open && !hasRendered) {{
+          renderChunk();
+          hasRendered = true;
+        }}
+      }});
+
+    }})();
+  </script>
+  """
+
+  return html_output
 
 def CreateSystemErrorReport(error_lines,data):
   system_report_html = f"""
@@ -1163,7 +1515,7 @@ def CreateFirstTables(data,config,num_cpus,num_gpus,gpus,ierr):
     <td>pck/s</td>
   </tr>
   <tr>
-"""  
+"""
   if gpus:
     tables += f"""
     <td>Job Size, #GPUs: </td>
@@ -1215,7 +1567,7 @@ def CreateFirstTables(data,config,num_cpus,num_gpus,gpus,ierr):
 """
   tables += f"""
   </table>
-"""  
+"""
   if gpus:
     tables += f"""
     <table style="border-top: 1px solid black; border-bottom: {"1px" if config['finished'] else "2px"} solid black; width:100%;">
@@ -1250,8 +1602,8 @@ def CreateFirstTables(data,config,num_cpus,num_gpus,gpus,ierr):
     elif ('FAIL' in data['rc']['rc_state']):
       color = 'red'
     else:
-      color = 'goldenrod'    
-    
+      color = 'goldenrod'
+
     tables += f"""
     <table style="border-top: 1px solid black; width:100%;">
     <tr>
@@ -1275,7 +1627,7 @@ def CreateFirstTables(data,config,num_cpus,num_gpus,gpus,ierr):
       <td colspan="5" style="text-align: center;">
       <b>This job has used approximately: {num_cpus} nodes &times; {config['system'][data['job']['system'].upper()][data["job"]["queue"]]['cores']} cores &times; {float(data['job']['runtime']):.3f} hours = {num_cpus*config['system'][data['job']['system'].upper()][data["job"]["queue"]]['cores']*float(data['job']['runtime']):.2f} core-h</b>
 """
-    if config['energy']:   
+    if config['energy']:
       tables += f"""
       <br />
       <b>Estimated energy used by this job, integrated from the node power snapshots: {data['energy']['en_nd_all_sum']:.2f} M-Joules = {data['energy']['en_nd_all_sum']*0.2778:.2f} kWh</b>
@@ -1296,7 +1648,7 @@ def CreateFirstTables(data,config,num_cpus,num_gpus,gpus,ierr):
       <div style="margin: 15px">
       <b>This job has used approximately {num_cpus} nodes &times; {config['system'][data['job']['system'].upper()][data["job"]["queue"]]['cores']} cores &times; {float(data['job']['runtime']):.3f} hours = {num_cpus*config['system'][data['job']['system'].upper()][data["job"]["queue"]]['cores']*float(data['job']['runtime']):.2f} core-h up to now</b>
 """
-    if config['energy']:   
+    if config['energy']:
       tables += f"""
       <br />
       <b>Estimated energy used by this job up to now, integrated from the node power snapshots: {data['energy']['en_nd_all_sum']:.2f} M-Joules = {data['energy']['en_nd_all_sum']*0.2778:.2f} kWh</b>
@@ -1304,6 +1656,11 @@ def CreateFirstTables(data,config,num_cpus,num_gpus,gpus,ierr):
     tables += f"""
     </div>
 """
+
+  if config['appearance'].get('hostname'):
+      hostname_link = f"{replace_vars(config['appearance']['hostname'], data['job'])}/login.php"
+  else:
+      hostname_link = config['appearance'].get('standalone_link')
 
   navbar = f"""
     <div id="navbar" class="no-print">
@@ -1342,7 +1699,7 @@ def CreateFirstTables(data,config,num_cpus,num_gpus,gpus,ierr):
           <td style="text-align: center;">{"#GPUs: <b>"+str(data['job']['numgpus'])+"</b>" if gpus else ""}</td>
           <td style="text-align: center;">Last Update: <b>{data['job']['updatetime']}</b></td>
           <td rowspan="2" style="width:6%; padding: 0px; vertical-align:middle;">
-            <a href="{replace_vars(config['appearance']['hostname'],data['job'])}/login.php" class="simple">
+            <a href="{hostname_link}" class="simple">
             <div style="position: relative;">
               <svg xmlns="http://www.w3.org/2000/svg" version="1.1" viewBox="0 0 940 555"  height="40px" style="fill-rule:evenodd;" xmlns:xlink="http://www.w3.org/1999/xlink">
                 <g><path style="opacity:0.991" fill="#163b67" d="M 20.5,14.5 C 39.8333,14.5 59.1667,14.5 78.5,14.5C 78.5,140.833 78.5,267.167 78.5,393.5C 90.8333,393.5 103.167,393.5 115.5,393.5C 115.5,297.167 115.5,200.833 115.5,104.5C 134.833,104.5 154.167,104.5 173.5,104.5C 173.5,200.833 173.5,297.167 173.5,393.5C 212.167,393.5 250.833,393.5 289.5,393.5C 289.5,410.833 289.5,428.167 289.5,445.5C 250.833,445.5 212.167,445.5 173.5,445.5C 173.5,457.833 173.5,470.167 173.5,482.5C 243.833,482.5 314.167,482.5 384.5,482.5C 384.5,500.167 384.5,517.833 384.5,535.5C 294.833,535.5 205.167,535.5 115.5,535.5C 115.5,505.5 115.5,475.5 115.5,445.5C 83.5,445.5 51.5,445.5 19.5,445.5C 19.1684,301.763 19.5017,158.097 20.5,14.5 Z"/></g>

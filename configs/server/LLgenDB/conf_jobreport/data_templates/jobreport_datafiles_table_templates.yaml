@@ -541,36 +541,49 @@
           cellRenderer: "(params) => gen_benchmark_link(params)",
       }
       - {
-          field: "systemname",
-          headerName: "System",
-          flex: 1,
-          headerTooltip: "System where the Benchmark was run",
-      }
-      - {
           headerName: "Timings",
           groupId: "Timings",
           children: [
             {
               field: "min_ts",
               headerName: "Date of First Run", 
-              headerTooltip: "Minimum timestamp of the benchmark",
+              headerTooltip: "Minimum timestamp on the benchmark",
               cellDataType: "text",
               flex: 1
             },
             {
               field: "max_ts",
               headerName: "Date of Last Run", 
-              headerTooltip: "Maximum timestamp of the benchmark",
+              headerTooltip: "Maximum timestamp on the benchmark",
               cellDataType: "text",
               flex: 1
             },
           ]
         }
       - {
-          field: "count",
-          headerName: "#Runs",
-          headerTooltip: "Number of runs of the benchmark",
-          flex: 1
+        headerName: "#Points",
+        groupId: "#Points",
+        children: [
+          {
+            field: "count",
+            headerName: "Total", 
+            headerTooltip: "Total number of runs",
+            flex: 1
+          },
+          {
+            field: "valid_count",
+            headerName: "Valid", 
+            headerTooltip: "Number of valid runs",
+            flex: 1
+          },
+        ]
+      }
+      - {
+          field: "_status",
+          headerName: "Status",
+          flex: 1,
+          headerTooltip: "Status of the last run",
+          cellStyle: "(params) => cell_color(params)",
       }
 
 # %include "../../conf_cb/template_cb.yaml"

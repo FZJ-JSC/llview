@@ -8,7 +8,6 @@
 # Contributors:
 #    Filipe Guimarães (Forschungszentrum Juelich GmbH) 
 
-import sys
 from email.mime.text import MIMEText
 from subprocess import Popen, PIPE
 import logging

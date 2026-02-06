@@ -651,9 +651,10 @@ class OutputAggregator:
       if "__lml_object_name__" in row_data:
         # This row came from _output_mode_entry with specific LML name handling
         base_name_val = row_data.get("__lml_object_name__")
-      else:
+      elif index_key_for_name_attribute is not None:
         # This row likely came from _output_mode_file or a custom handler.
         # The LML object name is the value of the 'index' field directly from the row.
+        # Check added to ensure index_key_for_name_attribute is a string and not None
         base_name_val = row_data.get(index_key_for_name_attribute)
         
       if base_name_val is None: # Should ideally not happen if _output_mode_entry always adds it
@@ -661,9 +662,9 @@ class OutputAggregator:
         # Create a clean dict for logging, excluding internal keys
         loggable_row_data = {k:v for k,v in row_data.items() if not k.startswith('__')}
         self.log.warning(
-            f"Missing value for LML object name (index: '{index_key_for_name_attribute}', row index: {i}) "
-            f"in LML output {final_output_path}. Using generated name '{base_name}'. "
-            f"Row data (debug): {loggable_row_data}"
+          f"Missing value for LML object name (index: '{index_key_for_name_attribute}', row index: {i}) "
+          f"in LML output {final_output_path}. Using generated name '{base_name}'. "
+          f"Row data (debug): {loggable_row_data}"
         )
       else:
         base_name = str(base_name_val)
@@ -691,17 +692,17 @@ class OutputAggregator:
     timing_obj_name = f"get{self.group_name}"
     timing_data_key = f"pstat_{timing_obj_name}"
     timing_values: Dict[str, Any] = {
-        'startts': group_start_time, 'datats': group_start_time,
-        'endts': group_end_time, 'duration': round(group_end_time - group_start_time, 3),
-        'nelems': num_data_elements, f"__nelems_{output_config_type}": num_data_elements,
-        '__type': 'pstat', '__id': timing_data_key
+      'startts': group_start_time, 'datats': group_start_time,
+      'endts': group_end_time, 'duration': round(group_end_time - group_start_time, 3),
+      'nelems': num_data_elements, f"__nelems_{output_config_type}": num_data_elements,
+      '__type': 'pstat', '__id': timing_data_key
     }
     if timing_obj_name in lml_dict : 
-        original_timing_obj_name = timing_obj_name
-        timing_obj_name += "_pstat"
-        timing_data_key = f"pstat_{timing_obj_name}" 
-        timing_values['__id'] = timing_data_key
-        self.log.warning(f"Timing object name '{original_timing_obj_name}' clashed with a data object. Renamed to '{timing_obj_name}'.")
+      original_timing_obj_name = timing_obj_name
+      timing_obj_name += "_pstat"
+      timing_data_key = f"pstat_{timing_obj_name}" 
+      timing_values['__id'] = timing_data_key
+      self.log.warning(f"Timing object name '{original_timing_obj_name}' clashed with a data object. Renamed to '{timing_obj_name}'.")
 
     lml_dict[timing_obj_name] = timing_values
     self._perform_lml_write(final_output_path, lml_dict, output_config_prefix, output_config_type)
@@ -759,8 +760,8 @@ class OutputAggregator:
     # XML output might need to write a pstat object even with no data records.
     if not self.has_records() and not is_any_xml_output_defined: # MODIFIED THIS CONDITION
       self.log.info(
-          f"No data records for group '{self.group_name}' and no XML output is defined. "
-          "Skipping all output file generation for this group."
+        f"No data records for group '{self.group_name}' and no XML output is defined. "
+        "Skipping all output file generation for this group."
       )
       return
     
@@ -779,11 +780,11 @@ class OutputAggregator:
 
       # Early check for supported output extensions
       if file_extension not in [".csv", ".xml"]:
-          self.log.warning(
-              f"Unsupported file extension '{file_extension}' for output file "
-              f"'{final_output_path}'. Skipping this output specification."
-          )
-          continue
+        self.log.warning(
+          f"Unsupported file extension '{file_extension}' for output file "
+          f"'{final_output_path}'. Skipping this output specification."
+        )
+        continue
       
       self.log.debug(f"Generating output for '{self.group_name}', mode '{mode}', target '{final_output_path}'.")
       rows: List[Dict] = []; headers: List[str] = []
@@ -792,7 +793,16 @@ class OutputAggregator:
         elif mode == "entry": rows, headers = self._output_mode_entry(spec)
         else: # Custom mode
           handler_func_name = f"_output_{mode}"; handler_func = globals().get(handler_func_name)
-          if callable(handler_func): rows, headers = handler_func(self, spec)
+          if callable(handler_func): 
+            # Capture the result of the custom handler call
+            handler_result = handler_func(self, spec)
+            # Check if the result is a sequence of the expected length
+            # and prevent errors
+            if isinstance(handler_result, (list, tuple)) and len(handler_result) == 2:
+              rows, headers = handler_result
+            else:
+              self.log.warning(f"Custom handler '{handler_func_name}' did not return (rows, headers). Skipping.")
+              continue
           else: self.log.warning(f"Custom handler '{handler_func_name}' not found/callable. Skipping."); continue
         
         # If no data rows generated, and it's not XML (which might still write pstat)

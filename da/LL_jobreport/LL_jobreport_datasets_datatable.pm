@@ -53,6 +53,17 @@ sub process_dataset_datatable {
     $coldefs .= "    {\n";
 
     while ((my $key, my $ele) = each %{$colref}) {
+      # Manual serialization for hash references (e.g., cellStyle)
+      if (ref($ele) eq 'HASH') {
+        my $str = "{ ";
+        foreach my $k (keys %$ele) {
+          $str .= "'$k': \"$ele->{$k}\", ";
+        }
+        $str =~ s/, $/ /; # Remove trailing comma
+        $str .= "}";
+        $ele = $str;
+      }
+
       if ($key eq 'children') {
         # If the key is 'children',
         # this should be a column group, 
@@ -62,6 +73,17 @@ sub process_dataset_datatable {
           # Starting child column
           $coldefs .= "        {\n";
           while ((my $subkey, my $value) = each %{$subele}) {
+            # Manual serialization for child hash references
+            if (ref($value) eq 'HASH') {
+              my $str = "{ ";
+              foreach my $k (keys %$value) {
+                $str .= "'$k': \"$value->{$k}\", ";
+              }
+              $str =~ s/, $/ /; 
+              $str .= "}";
+              $value = $str;
+            }
+
             if (($value =~/\(.*\)\s=>/) || ($value=~/^{.*}$/) || ($subkey=~'filterParams') || ($subkey=~'floatingFilterComponent')) {
               # If element contains a JS function, i.e. is of the form '(...) =>', or if it's an object {...}, write it out without quotes
               $coldefs .= "          $subkey: $value,\n";
@@ -85,8 +107,9 @@ sub process_dataset_datatable {
         }
         $coldefs .= "      ],\n";
       } else {
-        if (($ele =~/\(.*\)\s=>/) || ($key=~'filterParams') || ($key=~'floatingFilterComponent')) {
-          # If element contains a JS function, i.e. is of the form '(...) =>', write it out without quotes
+        # Added check for '^{.*}$' here as well to handle the serialized hashes correctly
+        if (($ele =~/\(.*\)\s=>/) || ($ele =~ /^{.*}$/) || ($key=~'filterParams') || ($key=~'floatingFilterComponent')) {
+          # If element contains a JS function, i.e. is of the form '(...) =>', or is an object string, write it out without quotes
           $coldefs .= "      $key: $ele,\n";
         } else {
           $coldefs .= "      $key: \"$ele\",\n";

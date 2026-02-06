@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Copyright (c) 2023 Forschungszentrum Juelich GmbH.
-# This file is part of LLview. 
+# This file is part of LLview.
 #
 # This is an open source software distributed under the GPLv3 license. More information see the LICENSE file at the top level.
 #
@@ -63,21 +63,21 @@ def cpus(options: dict, cpus_info) -> dict:
   nsmts = options.get('smt',2)
   # Default is returning all values in a node, not separating per socket
   nsockets = options.get('sockets',1)
-  # Separating in two possible topologies, that can be given on the config: 
+  # Separating in two possible topologies, that can be given on the config:
   #   - 'blocked' (default): Assumes all primary cores (SMT0) are listed first,
   #     followed by all secondary cores (SMT1), etc.
   #     (e.g., 0-127 are SMT0, 128-255 are SMT1).
   #   - 'interleaved': Assumes SMT threads for a single core are adjacent.
   #     (e.g., 0,1 are for core0; 2,3 are for core1).
   topology = options.get('topology','blocked')
-  
-  # Threshold to consider a core used 
+
+  # Threshold to consider a core used
   # (default: if usage is above 25% - i.e., idle is below 75% -, the core is considered to be used)
   usage_threshold = 1 - options.get('usage_threshold',0.25)
 
   # Create a new dictionary to hold the results, since the node_names will be potentially changed
   cpusextra = {}
-  logical_cores_per_scope = {} 
+  logical_cores_per_scope = {}
 
   # Updating the jobs dictionary by adding or removing keys
   for node,cpuinfo in list(cpus_info.items()):
@@ -118,7 +118,7 @@ def cpus(options: dict, cpus_info) -> dict:
         effective_coreid = coreid % total_physical_cores
         # Extracting the socket based on the effective core ID.
         # (e.g., for 64 cores/socket, effective_coreid 64-127 are socket 1)
-        socket = int(effective_coreid / phys_cores_per_socket)      
+        socket = int(effective_coreid / phys_cores_per_socket)
       else: # 'interleaved'
         # Calculating the socket the core belongs to
         # (e.g., for 2 sockets, coreids 0-127 are socket=0, 128-255 are socket=1)
@@ -144,10 +144,10 @@ def cpus(options: dict, cpus_info) -> dict:
 
       # Aggregate the data for core usage on this socket/node
       socket_data['usage'] += (1 - coreidle)
-      
+
       # A core is considered "used" if its idle time is below a threshold (e.g., 75% by default)
       is_used = int(coreidle < usage_threshold)
-      
+
       # smt == 0 is the primary "physical" thread. All others are logical.
       # This logic now correctly generalizes to more than 2 SMTs.
       if smt == 0:
@@ -219,7 +219,7 @@ def gpu(options: dict, gpus_info) -> dict:
 
 class Info:
   """
-  Class that stores and processes information from parsed output  
+  Class that stores and processes information from parsed output
   """
   def __init__(self, hostname="", username=None, password=None, token=None, client_secret=None, verify=True):
     self._raw = {}  # Dictionary with parsed raw information
@@ -241,7 +241,7 @@ class Info:
 
   def __iter__(self):
     return (t for t in self._dict.keys())
-    
+
   def __len__(self):
     return len(self._dict)
 
@@ -302,7 +302,7 @@ class Info:
 
         # Adding parameters given in options
         if 'parameters' in metric:
-          url = f"{url}?{'&'.join([f'{key}={quote(value)}' for key,value in metric['parameters'].items()])}" 
+          url = f"{url}?{'&'.join([f'{key}={quote(value)}' for key,value in metric['parameters'].items()])}"
 
         self.log.debug(f"{url}\n")
 
@@ -363,7 +363,7 @@ class Info:
       if has_metric_key:
         # Pre-calculate values and flags to use inside the loop
         id_from = metric.get('id', 'instance')
-        
+
         # Determine metric type (gpu, cpu, or other) from the first element
         first_metric_dict = first_instance['metric']
         is_gpu_metric = 'device' in first_metric_dict
@@ -377,7 +377,7 @@ class Info:
         max_val = metric.get('max')
         use_factor = 'factor' in metric
         factor = metric.get('factor', 1.0)
-        
+
         # Pre-format timestamp keys
         ts_key = f'{prefix}_ts' if prefix else 'ts'
         name_ts_key = f'{name}_ts' if prefix else 'ts'
@@ -390,23 +390,23 @@ class Info:
 
             if has_replace and pid in metric['replace']:
               pid = self.substitute_placeholders(metric['replace'][pid], metric_dict)
-            
+
             # Applying regex to pid
             pid = self.apply_regex(pid, regex)
 
             gpu = int(metric_dict['device'].replace('nvidia',''))
             id = f"{pid}_{gpu:02d}"
-            
+
             # Use float() instead of slow ast.literal_eval() - to be checked if this works for all cases
             value = float(instance['value'][1])
-            
+
             if use_factor:
               value *= factor
             if has_min and value < min_val:
               value = min_val
             if has_max and value > max_val:
               value = max_val
-            
+
             id_data = self._raw.setdefault(id, {})
             id_data[name] = value
             id_data[ts_key] = start_ts
@@ -443,11 +443,11 @@ class Info:
             id_data = self._raw.setdefault(id, {})
             cpu_dict = id_data.setdefault(name, {})
             cpu_dict[cpu_core] = value
-            
+
             id_data[ts_key] = start_ts
             id_data[name_ts_key] = instance['value'][0]
             id_data['id'] = id
-            
+
         # For general data (no 'cpu' nor 'device' key inside)
         else:
           for instance in data:
@@ -471,12 +471,18 @@ class Info:
               value = min_val
             if has_max and value > max_val:
               value = max_val
-              
+
             id_data = self._raw.setdefault(id, {})
             id_data[name] = value
             id_data[ts_key] = start_ts
             id_data[name_ts_key] = instance['value'][0]
             id_data['id'] = id
+
+            # add additional data related to the query, that are not numeric related, e.g.
+            # metric_dict = {'instance': 'X', 'model_name': 'Intel(R) Core(TM) i5'}, 'value': [X, '1']
+            for k,v in metric_dict.items():
+              if k!= 'instance':
+                id_data[k] = v
 
       # If instance does not contain the key 'metric' (e.g., SEMS)
       else:
@@ -484,7 +490,7 @@ class Info:
         ts_key = f'{prefix}_ts' if prefix else 'ts'
         name_ts_key = f'{name}_ts' if prefix else 'ts'
         internal_ts = data[0] # TODO: check how SEMS response looks like here
-        
+
         for id, value in data.items():
           id_data = self._raw.setdefault(id, {})
           id_data[name] = value
@@ -643,8 +649,8 @@ class Info:
         key,value = splitted
       else:  # If not, split on ":"
         key,value = line.split(":",1)
-      # Here must be all fields that can contain '=' and ' ', otherwise it may break the workflow below 
-      if key in ['Comment','Reason','Command','WorkDir','StdErr','StdIn','StdOut','TRES','OS']: 
+      # Here must be all fields that can contain '=' and ' ', otherwise it may break the workflow below
+      if key in ['Comment','Reason','Command','WorkDir','StdErr','StdIn','StdOut','TRES','OS']:
         self.add_value(key,value,self._raw[current_unit])
         continue
       # Now the pairs are separated by space
@@ -674,7 +680,7 @@ class Info:
     for unitname in to_remove:
       del self._dict[unitname]
     return
-  
+
   def check_unit(self,unitname,unit,pattern,text="included/excluded"):
     """
     Check 'current_unit' name with rules for exclusion or inclusion. (exclusion is applied first)
@@ -711,7 +717,7 @@ class Info:
           for v in value:
             if (key in unit) and re.match(v, unit[key]): # At this point, v in list can only be a string
               self.log.debug(f"Unit {unitname} is {text} due to {v} rule in list of {key} key\n")
-              return True            
+              return True
     return False
 
   def map(self, mapping_dict):
@@ -808,7 +814,7 @@ class Info:
         # Looping over the quantities obtained in this item
         for key,value in item.items():
           # The __nelems_{type} is used to indicate to DBupdate the number of elements - important when the file is empty
-          if key.startswith('__nelems'): 
+          if key.startswith('__nelems'):
             file.write(" <data key={:24s} value=\"{}\"/>\n".format('\"'+str(key[2:])+'\"',value))
             continue
           if key.startswith('__'): continue
@@ -880,11 +886,11 @@ def get_token(username,password,config,verify):
 
 def get_credentials(name,config):
   """
-  This function receives a server 'name' and 'config', checks 
-  the options in the server configuration and gets the username 
+  This function receives a server 'name' and 'config', checks
+  the options in the server configuration and gets the username
   and password according to what is given:
   - if 'username' and 'password' are given, read them and return
-  - if "credentials: 'module'" is chosen, then a module 'credentials' with a function 'get_user_pass' 
+  - if "credentials: 'module'" is chosen, then a module 'credentials' with a function 'get_user_pass'
     must be in PYTHONPATH and "return username,password"
   - if "credentials: 'none'" is used, perform queries without authentication
   - if username and/or password are not obtained from the options above,
@@ -907,7 +913,7 @@ def get_credentials(name,config):
         else:
           password = os.path.expandvars(config['credentials']['password'])
     elif config['credentials'] == 'module':
-      try: 
+      try:
         # Internal function
         from credentials import get_user_pass
         username,password = get_user_pass()
@@ -973,12 +979,12 @@ class CustomFormatter(logging.Formatter):
                     logging.ERROR: self.red + self.fmt + self.reset,
                     logging.CRITICAL: self.bold_red + self.fmt + self.reset
                   }
-    
+
   def format(self, record):
     log_fmt = self.FORMATS.get(record.levelno)
     formatter = logging.Formatter(fmt=log_fmt,datefmt=self.datefmt)
     return formatter.format(record)
-    
+
 # Adapted from: https://stackoverflow.com/a/53257669/3142385
 class _ExcludeErrorsFilter(logging.Filter):
     def filter(self, record):
@@ -1030,7 +1036,7 @@ def main():
   """
   Main program
   """
-  
+
   # Parse arguments
   parser = argparse.ArgumentParser(description="Prometheus Plugin for LLview")
   parser.add_argument("--config",    default=False, help="YAML config file containing the information to be gathered and converted to LML")

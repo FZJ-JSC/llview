@@ -21,6 +21,7 @@ def AddRectangles(fig,config,numcpu,numgpu,gpus,nl_config,nodedict,error_nodes):
   # Looping over each node and creating their rectangle and adding information
   patches = []
   idx = 0
+  this_line = 0
   while nodedict:
 
     # Getting row and col index of node
@@ -121,7 +122,7 @@ def Nodelist(pdf,data,config,gpus,nl_config,nodedict,error_nodes,page_num):
 
   nodelist_html = ""
   if config['html'] or config['gzip']:
-    nodelist_html = CreateNodelist(config,gpus,nl_config,nodedict,error_nodes)
+    nodelist_html = CreateNodelist(config, gpus, nl_config, nodedict, error_nodes)
 
   while nodedict:
     with AddEmptyPage(pdf,page_num,config) as page:

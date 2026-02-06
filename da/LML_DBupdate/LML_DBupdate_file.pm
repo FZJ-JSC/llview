@@ -82,8 +82,10 @@ sub get_data {
 
     if($checklmldata) {
       if(!exists($self->{DATA}->{SYSTEM_TS})) {
-        printf(STDERR "\n[LML_DBupdate_file] ERROR SYSTEM_TS missing, probably no system element in input files, leaving...\n\n");
-        return();
+        $self->{DATA}->{SYSTEM_TS} = int(time());
+        printf("\n[LML_DBupdate_file] WARNING: SYSTEM_TS missing, probably no system element in input files. Setting to current time (%d)...\n\n", $self->{DATA}->{SYSTEM_TS});
+        # printf(STDERR "\n[LML_DBupdate_file] ERROR SYSTEM_TS missing, probably no system element in input files, leaving...\n\n");
+        # return();
       }
     }
 
@@ -398,7 +400,9 @@ sub update_structure {
         }
       } elsif ($ref->{type} eq "benchmark") {
         my $bmname = $fh->{DATA}->{OBJECT}->{$key}->{name};
-        if($bmname=~/^([\D]+)\d+/) {
+        # Note: The object for the benchmarks are assumed to have a `_` as separator
+        # such that benchmarks names ending in digits (e.g., Graph500) are parsed correctly
+        if($bmname=~/^(.+)_\d+$/) {
           my $bm=$1;
           if(exists($fh->{DATA}->{INFODATA}->{$key})) {
             my $jref    = $fh->{DATA}->{INFODATA}->{$key};

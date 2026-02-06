@@ -80,9 +80,66 @@ sub _process_FORALL {
     }
   } else {
     # end of recursion
-  
-    # printf("_process_FORALL: call function\n");
-    &$func_ref($self,$funcpar,$varsetref);
+
+    # There are some tables that contain entries with slashes. When they
+    # are used in filenames (coming from the VAR), they should be escaped.
+    # This is done here, only when they are used in 'filepath'
+    my $local_funcpar;
+    my $string_to_modify_ref; # Reference to the specific string we want to patch
+
+    # Determine if input is Hash or String
+    if (ref($funcpar) eq 'HASH') {
+      # It's a Hash: Make a shallow copy
+      my %copy = %{$funcpar};
+      $local_funcpar = \%copy;
+      
+      # We only care if 'filepath' key exists
+      if (exists($local_funcpar->{filepath})) {
+        $string_to_modify_ref = \$local_funcpar->{filepath};
+      }
+    } else {
+      # It's a String/Scalar: Make a copy
+      $local_funcpar = $funcpar;
+      # We try to modify the string itself
+      $string_to_modify_ref = \$local_funcpar;
+    }
+
+    # Apply the logic if we found a string to modify
+    if (defined($string_to_modify_ref)) {
+
+      # Whitelist: Variables that are folders and MUST keep slashes
+      my %dir_whitelist = (
+        'outputdir' => 1,
+        'tmpdir'    => 1,
+        'dbdir'     => 1,
+        'archdir'   => 1
+      );
+
+      while ( my ($key, $val) = each(%{$varsetref}) ) {
+        # Skip if value has no slash, or key is whitelisted
+        next if (!defined($val) || $val !~ /\//);
+        next if (exists($dir_whitelist{$key}));
+
+        # Check if this specific variable is used in the target string
+        # We look for the pattern ${KEY}
+        if ($$string_to_modify_ref =~ /\$\{\Q$key\E\}/) {
+          
+          # Create safe version with %2F
+          my $safe_val = $val;
+          $safe_val =~ s/\//%2F/g;
+          
+          # Substitute it immediately into the local copy
+          # This prevents the raw slash from being substituted later
+          $$string_to_modify_ref =~ s/\$\{\Q$key\E\}/$safe_val/g;
+          
+          # Debug print
+          # print STDERR "DEBUG FIX: Replaced \${$key} with '$safe_val'\n" if($debug);
+        }
+      }
+    }
+
+    # Pass the locally modified parameters
+    &$func_ref($self, $local_funcpar, $varsetref);
   }
   # printf("_process_FORALL: end\n") if($debug);
 }

@@ -2,6 +2,65 @@
 
 Since the JURI (Jülich Reporting Interface) module is the same for the internal and the public versions, a single and separated page describe its changelog.
 
+### 2.4.3 (January 18, 2025)
+
+<h4> Added </h4>
+
+- Added possibility for using xaxis with string variables using `layout.xaxis.type = 'category'`
+- Added new helper function for benchmark status (i.e., history status entries)
+- Added KaTeX library (MIT license) to render LaTeX equations in 'infotext'
+
+<h4> Changed </h4>
+
+- gen_benchmark_link is applied for everyone, not only support
+- Try to get `mapjobid_to_day.cav` only if search_field is defined (pages without jobs don't need that)
+- Improved infoline/footer graphs dragger to allow also touch events
+- Use timestamp (instead of Date object) on plotly plots for performance
+- Removed (slow) unshift usage on plotly traces preparation
+- Consolidated loops over traces
+- Use 'scattergl' instead of 'scatter' when plots have too many points (given by variable WEBGL_THRESHOLD), except for stacked graphs (plotly limitation)
+- Open links on benchmark names in new windows/tabs when clicked with meta keys or middle mouse button
+
+<h4> Fixed </h4>
+
+- Catch error when `mapjobid_to_day.csv` does not exist, to allow pages without Jobs (e.g., CB only)
+- Fixed issue of updating 'view_data_info' on graph pages
+- Fixed system menu not showing up, and height of title_wrapper
+- Fixed position of scrolled dropdown menus on navbar
+- Fixed height of selected tab
+
+
+### 2.4.2 (December 19, 2025)
+
+New: Open links in new tabs/windows with modifier keys, scrollable top navbar, faster loading pages, and many more!
+
+<h4> Added </h4>
+
+- Added headers on .htaccess example that allow icons to be seen when opening files locally
+- Added possibility to replace placeholders on links of navbar
+- Added possibility of clicking modifier keys on top navbar and in tabs (to open pages in new window/tabs)
+- Added scrollable navbar (for smaller screens)
+
+<h4> Changed </h4>
+
+- Improved changing old to new page on refresh
+- Improved the loading of the page, to avoid flickering on refresh
+- Improved postprocessing function after page selection
+- Smaller scrollbars
+- Functions out of View class were moved to a separate file `functions.js` (that is imported first on index)
+- Main page use now 3-row grid (infobar, tabs, main_content)
+- Extended cell_color helper (for CB status)
+- Moved setting of 'view_data_info' text (in 'footer_infoline') to each page (for CB benchmark name)
+
+<h4> Fixed </h4>
+
+- Fix for tables not being refreshed on auto-refresh
+- Clean up of old elements (including destroying old grid, to avoid memory leak)
+- Fixed refresh of graphs to update with new points
+- Fixed graph tab selection with special symbols
+- Fixed plots with empty y value not to plot the point (instead of plotting 0)
+
+
 ### 2.4.1 (November 1, 2025)
 
 With the separation of the releases of LLview and JURI, their versions may differ in the future. This will allow a more dynamic development of both codes.

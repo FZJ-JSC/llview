@@ -32,7 +32,7 @@ def AverageUsageBar(x,y,str,fig,config,avg):
   return
 
 
-def FirstPage(pdf,data,config,df_overview,time_range,page_num,tocentries,num_cpus,num_gpus,gpus,nl_config,nodedict,error_nodes):
+def FirstPage(pdf,data,config,df_overview,time_range,page_num,tocentries,num_cpus,num_gpus,gpus,nl_config,nodedict,error_nodes,data_manager):
   """
   Creates first page in job report
   """
@@ -274,7 +274,7 @@ def FirstPage(pdf,data,config,df_overview,time_range,page_num,tocentries,num_cpu
       # left graph
       overview_fig = None
       if 'left' in df_overview and df_overview['left']:
-        page.ax1 = page.fig.add_axes([0.130,0.365, 0.740,0.180], zorder=4)
+        page.ax1 = page.fig.add_axes((0.130,0.365, 0.740,0.180), zorder=4)
         page.ax1.set_title("Job-Usage Overview", fontweight='bold')
         page.ax1.yaxis.tick_left()
         page.ax1.yaxis.set_label_position('left') 
@@ -303,7 +303,7 @@ def FirstPage(pdf,data,config,df_overview,time_range,page_num,tocentries,num_cpu
 
       # right graph
       if 'right' in df_overview and df_overview['right']:
-        page.ax2 = page.fig.add_axes([0.130,0.365, 0.740,0.180], frame_on=False, sharex=page.ax1, zorder=4)
+        page.ax2 = page.fig.add_axes((0.130,0.365, 0.740,0.180), frame_on=False, sharex=page.ax1, zorder=4)
         if not df_overview['left']: page.ax2.set_title("Job-Usage Overview", fontweight='bold')
         page.ax2.yaxis.tick_right()
         page.ax2.yaxis.set_label_position('right')
@@ -331,12 +331,14 @@ def FirstPage(pdf,data,config,df_overview,time_range,page_num,tocentries,num_cpu
       # Add legends
       if (p1 or p2):
         ax = (page.ax2 if p2 else page.ax1)
+        assert ax is not None
         leg = ax.legend(legends.values(), legends.keys(),fontsize=config['appearance']['smallfont'],ncol=1,loc=('center right' if gpus and (data['gpu']['usage_avg'] > 60) else 'lower center'), facecolor='white', labelspacing=0.3, handletextpad=0.2, columnspacing=0.4)
         leg.set_zorder(100)
+        assert page.ax1 is not None
         page.ax1.set_xlim(time_range)
         page.ax1.xaxis.set_major_formatter(DateFormatter('%d/%m/%y\n%H:%M:%S'))
         if config['html'] or config['gzip']:
-          overview_fig = CreateOverviewFig(config,data,time_range,df_overview,gpus)
+          overview_fig = CreateOverviewFig(config,data,time_range,df_overview,gpus,data_manager)
     
     # Table of contents
     posy = 0.330
