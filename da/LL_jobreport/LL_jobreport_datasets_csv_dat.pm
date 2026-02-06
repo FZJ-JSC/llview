@@ -260,7 +260,7 @@ sub process_data_query_and_save_csv_dat {
                       $from,
                       ($where)?"WHERE $where":"",
                       $order,
-                      $(groupby)?" $groupby":""
+                      ($groupby)?" $groupby":""
                     );
     printf("%s process_data_query_and_save_csv_dat: (single) sql: %s\n",$self->{INSTNAME},$sql)  if($sql_debug);
     #	print "single: $where\n";
