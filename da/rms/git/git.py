@@ -641,7 +641,13 @@ class BenchRepo:
 
     # Temporary lastts:
     lastts_temp = 0
-    required_keys = headers.keys()
+    # Determine strictly required keys (those without a default value)
+    required_keys = set()
+    for csv_header, metric_name in headers.items():
+      # If the metric has a user-defined default, it is NOT required in the file
+      if metrics_section[metric_name].get('default') is not None:
+          continue
+      required_keys.add(csv_header)
     for source in sources:
       # Initializing variable to collect all data defined for given metric
       current_data = []
@@ -699,7 +705,7 @@ class BenchRepo:
 
         # Check for missing keys
         available_keys = data[0].keys()
-        missing_keys = set(required_keys) - set(available_keys)
+        missing_keys = required_keys - set(available_keys)
         if missing_keys:
           keys_str = ", ".join(f"'{key}'" for key in sorted(list(missing_keys)))
           self.log.error(f"Required keys {keys_str} not found in file header of source {source}. Skipping...\n")
@@ -836,46 +842,55 @@ class BenchRepo:
 
         # Use `used_metrics` to check all required fields.
         for metric in used_metrics:
+          is_empty = False
+          
+          # Check if metric exists and has content
           if metric in line:
             val = str(line.get(metric, '')).strip()
-            is_empty = (not val or val.lower() in ['none', 'null', 'nan'])
+            if not val or val.lower() in ['none', 'null', 'nan']:
+                is_empty = True
+          else:
+            # Metric is missing entirely from the source (e.g. optional column)
+            is_empty = True
 
-            # If the value is not empty, it's valid
-            if not is_empty:
-              continue
+          # If the value is valid (exists and not empty), skip to next metric
+          if not is_empty:
+            continue
             
-            # For the plot metrics, set the problematic value to None, so it's not plotted
-            if metric in plot_metrics:
-              run_status = "F"
-              # Set the value to None so it will be skipped during plotting.
-              line[metric] = None 
-            
-            # If a non-string value is empty, it's a failure and needs a default.
-            # The default value of the string is '', so missing strings should not
-            # trigger 'F' status - which may be not intended in some cases,
-            # but for others (i.e., 'flags used'), it's necessary
+          # Handling Missing/Empty Values:
+          
+          # For the plot metrics, set the problematic value to None, so it's not plotted
+          if metric in plot_metrics:
+            run_status = "F"
+            # Set the value to None so it will be skipped during plotting.
+            line[metric] = None 
+          
+          # If a non-string value is empty, it's a failure and needs a default.
+          # The default value of the string is '', so missing strings should not
+          # trigger 'F' status - which may be not intended in some cases,
+          # but for others (i.e., 'flags used'), it's necessary
 
-            # For the table parameters, annotations, etc. set the default value
+          # For the table parameters, annotations, etc. set the default value
+          else:
+            metric_type = metrics_types.get(metric, 'str')
+            
+            # If the config has a 'default' key, use it
+            specific_default = metrics_section[metric].get('default')
+            
+            if specific_default is not None:
+              # Use the user-defined default
+              line[metric] = specific_default
+              # Note: We do NOT set status to 'F' here, because the user provided a fallback.
+              # So, it is treated as a valid value.
+            
             else:
-              metric_type = metrics_types.get(metric, 'str')
+              # Fallback to standard logic (Global Defaults)
+              # If a non-string parameter is empty AND no specific default exists, it's a failure.
+              if metric_type != 'str':
+                run_status = "F"
               
-              # If the config has a 'default' key, use it
-              specific_default = metrics_section[metric].get('default')
-              
-              if specific_default is not None:
-                # Use the user-defined default
-                line[metric] = specific_default
-                # Note: We do NOT set status to 'F' here, because the user provided a fallback.
-                # So, it is treated as a valid value.
-              
-              else:
-                # Fallback to standard logic (Global Defaults)
-                # If a non-string parameter is empty AND no specific default exists, it's a failure.
-                if metric_type != 'str':
-                  run_status = "F"
-                
-                # Set the value to the global type default.
-                line[metric] = self.default.get(metric_type, '')
+              # Set the value to the global type default.
+              line[metric] = self.default.get(metric_type, '')
 
         # Set the final, determined status for the line
         line['_status'] = run_status
@@ -1737,7 +1752,7 @@ class BenchRepo:
     self.log.info(f"Generating Vars configuration file {filename}\n")
 
     format_types = {
-      'int': '%d',
+      'int': '%s',   # We will use the string output to allow empty values without errors on LLview's workflow
       'float': '%s', # We will use the string output to allow empty values without errors on LLview's workflow
       'str': '%s',
       'bool': '%d',
