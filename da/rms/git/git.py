@@ -858,37 +858,35 @@ class BenchRepo:
             continue
             
           # Handling Missing/Empty Values:
-          
-          # For the plot metrics, set the problematic value to None, so it's not plotted
-          if metric in plot_metrics:
-            run_status = "F"
-            # Set the value to None so it will be skipped during plotting.
-            line[metric] = None 
-          
-          # If a non-string value is empty, it's a failure and needs a default.
-          # The default value of the string is '', so missing strings should not
-          # trigger 'F' status - which may be not intended in some cases,
-          # but for others (i.e., 'flags used'), it's necessary
 
-          # For the table parameters, annotations, etc. set the default value
+          metric_type = metrics_types.get(metric, 'str')
+          
+          # If the config has a 'default' key, use it
+          specific_default = metrics_section[metric].get('default')
+          
+          if specific_default is not None:
+            # Use the user-defined default
+            line[metric] = specific_default
+            # Note: We do NOT set status to 'F' here, because the user provided a fallback.
+            # So, it is treated as a valid value.
+          
           else:
-            metric_type = metrics_types.get(metric, 'str')
+            # Fallback to standard logic (Global Defaults)
+
+            # If a non-string value is empty, it's a failure and needs a default.
+            # The default value of the string is '', so missing strings should not
+            # trigger 'F' status - which may be not intended in some cases,
+            # but for others (i.e., 'flags used'), it's necessary
+            # If a non-string parameter is empty AND no specific default exists, it's a failure.
+            if metric_type != 'str':
+              run_status = "F"
             
-            # If the config has a 'default' key, use it
-            specific_default = metrics_section[metric].get('default')
-            
-            if specific_default is not None:
-              # Use the user-defined default
-              line[metric] = specific_default
-              # Note: We do NOT set status to 'F' here, because the user provided a fallback.
-              # So, it is treated as a valid value.
-            
+            # For the plot metrics, set the problematic value to None, so it's not plotted
+            if metric in plot_metrics:
+              run_status = "F"
+              # Set the value to None so it will be skipped during plotting.
+              line[metric] = None 
             else:
-              # Fallback to standard logic (Global Defaults)
-              # If a non-string parameter is empty AND no specific default exists, it's a failure.
-              if metric_type != 'str':
-                run_status = "F"
-              
               # Set the value to the global type default.
               line[metric] = self.default.get(metric_type, '')
 
