@@ -87,17 +87,22 @@ def to_seconds(time: str) -> int:
   """
   Transform different time formats to number of seconds (integer)
   """
+  log = logging.getLogger('logger')
   ret = time
-  patint = r'([\+\-]?[\d]+)'
-  if match := re.match(fr'\({patint} seconds\)',time):
-    ret = int(match.group(1))
-  elif match := re.match(f'{patint} minutes',time):
-    ret = int(match.group(1))*60
-  elif match := re.match(f'^{patint}[:]{patint}[:]{patint}$',time):
-    ret = int(match.group(1)) * 60 * 60 + int(match.group(2)) * 60 + int(match.group(3))
-  elif match := re.match(f'^{patint}[-]{patint}[:]{patint}[:]{patint}$',time):
-    ret = int(match.group(1)) * 24 * 60 * 60 + int(match.group(2)) * 60 * 60 + int(match.group(3)) * 60 + int(match.group(4))
-  return int(ret)
+  try:
+    patint = r'([\+\-]?[\d]+)'
+    if match := re.match(fr'\({patint} seconds\)',time):
+      ret = int(match.group(1))
+    elif match := re.match(f'{patint} minutes',time):
+      ret = int(match.group(1))*60
+    elif match := re.match(f'^{patint}[:]{patint}[:]{patint}$',time):
+      ret = int(match.group(1)) * 60 * 60 + int(match.group(2)) * 60 + int(match.group(3))
+    elif match := re.match(f'^{patint}[-]{patint}[:]{patint}[:]{patint}$',time):
+      ret = int(match.group(1)) * 24 * 60 * 60 + int(match.group(2)) * 60 * 60 + int(match.group(3)) * 60 + int(match.group(4))
+    ret = int(ret)
+  except ValueError:
+    log.error(f"[to_seconds] Could not convert '{ret}' to int. Skipping conversion...\n")
+  return ret
 
 def to_hours(time: str) -> (float|str):
   if not time: return time
@@ -328,14 +333,14 @@ def nodeinfo(options: dict, nodes_info) -> dict:
 
     # Falling back to AllocMem if there is an issue with RealMemory and FreeMem
     # .e.g FreeMem = N/A or FreeMem > RealMemory
-    if UsedMem is None :
+    if UsedMem is None:
       if re.match(r'^\d+$',nodeinfo['AllocMem']):
         UsedMem = float(nodeinfo['AllocMem'])
         log.info(f"Using AllocMem as fallback for node {nodename}: {UsedMem}\n")
       else:
         log.warning(f"Could not determine memory usage for node {nodename}\n")
         continue
-      nodeinfo['UsedMem'] = UsedMem
+    nodeinfo['UsedMem'] = UsedMem
 
   return nodeextra
 
