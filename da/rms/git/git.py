@@ -2558,7 +2558,7 @@ def main():
   """
   
   # Parse arguments
-  parser = argparse.ArgumentParser(description="Prometheus Plugin for LLview")
+  parser = argparse.ArgumentParser(description="Git Plugin for LLview")
   parser.add_argument("--config",          default=False, help="YAML config file (or folder with YAML configs) containing the information to be gathered and converted to LML")
   parser.add_argument("--loglevel",        default=False, help="Select log level: 'DEBUG', 'INFO', 'WARNING', 'ERROR' (more to less verbose)")
   parser.add_argument("--singleLML",       default=False, help="Merge all sections into a single LML file")
