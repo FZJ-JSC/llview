@@ -1,0 +1,143 @@
+# Copyright (c) 2023 Forschungszentrum Juelich GmbH.
+# This file is part of LLview. 
+#
+# This is an open source software distributed under the GPLv3 license. More information see the LICENSE file at the top level.
+#
+# Contributions must follow the Contributor License Agreement. More information see the CONTRIBUTING.md file at the top level.
+#
+# Contributors:
+#    Filipe Guimarães (Forschungszentrum Juelich GmbH) 
+
+# Each top-level entry correspond to a prometheus server
+checkmk:
+  hostname: ${CHECKMK_SERVER}
+  # Verification on the GET query, can be True (default), False, or the path to a certificate
+  # verify: '/etc/pki/tls/certs/ca-bundle.crt'
+  proxies: # Route http and https requests via these proxies
+    http: ${CHECKMK_PROXY}
+    https: ${CHECKMK_PROXY}
+
+  # When no authentication is necessary, use:
+  # credentials: "none"
+  #
+  # Otherwise credentials can be given here (using keys 'username' and 'password')
+  # (envvars can be used)
+  # credentials:
+  #   username: ${CHECKMK_USERNAME}
+  #   password: ${CHECKMK_PASSWORD}
+  #
+  # Or obtained via a function "get_user_pass" in module "credentials" (whoud be in PYTHONPATH)
+  # in this case, use 
+  # credentials: "module"
+  # The following lines are then run:
+  #
+  #   from credentials import get_user_pass
+  #   username,password = get_user_pass()
+  #
+  # If none of these are given, name and password are 
+  # asked directly for the user (if no username is given at this point, the queries are done without authentication)
+
+  # If queries are done using a token obtained from an authentication server, options can be given here
+  token: "Bearer ${CHECKMK_USERNAME} ${CHECKMK_PASSWORD}"
+
+  # Different (XML) files to be created can be given here
+  files:
+    environment:
+      LML: './checkmk_LML.xml'
+      type: 'sysstat'
+      prefix: 'syst'
+      metrics:
+        sysname:
+          value: 'JURECA-DC'
+          target_id: 'sysstat'
+        power:
+          endpoint: '/jsc/check_mk/api/1.0/objects/host/zam2011/actions/show_service/invoke'
+          parameters:
+            service_description: 16.4_Stromverbrauch_JURECA_DC_Leistung
+            columns: plugin_output
+          path: 'extensions.plugin_output'
+          target_id: 'sysstat'
+          regex: '^(\d+\.?\d+)' 
+          cache: true
+        power_unit:
+          endpoint: '/jsc/check_mk/api/1.0/objects/host/zam2011/actions/show_service/invoke'
+          parameters:
+            service_description: 16.4_Stromverbrauch_JURECA_DC_Leistung
+            columns: plugin_output
+          path: 'extensions.plugin_output'
+          target_id: 'sysstat'
+          regex: '^\d+\.?\d+([^\s]+)' 
+          cache: true
+        water_power:
+          endpoint: '/jsc/check_mk/api/1.0/objects/host/zam2011/actions/show_service/invoke'
+          parameters:
+            service_description: 16.4_Kaltwasser_Unterzaehler_1_JURECA_DC_Leistung
+            columns: plugin_output
+          path: 'extensions.plugin_output'
+          target_id: 'sysstat'
+          regex: '^(\d+\.?\d+)' 
+          cache: true
+        water_power_unit:
+          endpoint: '/jsc/check_mk/api/1.0/objects/host/zam2011/actions/show_service/invoke'
+          parameters:
+            service_description: 16.4_Kaltwasser_Unterzaehler_1_JURECA_DC_Leistung
+            columns: plugin_output
+          path: 'extensions.plugin_output'
+          target_id: 'sysstat'
+          regex: '^\d+\.?\d+([^\s]+)' 
+          cache: true
+        water_flowrate:
+          endpoint: '/jsc/check_mk/api/1.0/objects/host/zam2011/actions/show_service/invoke'
+          parameters:
+            service_description: 16.4_Kaltwasser_Unterzaehler_1_JURECA_DC_Durchflussmenge
+            columns: plugin_output
+          path: 'extensions.plugin_output'
+          target_id: 'sysstat'
+          regex: '^(\d+\.?\d+)' 
+          cache: true
+        water_flowrate_unit:
+          endpoint: '/jsc/check_mk/api/1.0/objects/host/zam2011/actions/show_service/invoke'
+          parameters:
+            service_description: 16.4_Kaltwasser_Unterzaehler_1_JURECA_DC_Durchflussmenge
+            columns: plugin_output
+          path: 'extensions.plugin_output'
+          target_id: 'sysstat'
+          regex: '^\d+\.?\d+([^\s]+)' 
+          cache: true
+        water_inlet_temp:
+          endpoint: '/jsc/check_mk/api/1.0/objects/host/zam2011/actions/show_service/invoke'
+          parameters:
+            service_description: 16.4_Summe_Kaltwasser_JURECA_DC_JUWELS_Booster_91A1_Sekundaerkreis_Rechner_Vorlauf
+            columns: plugin_output
+          path: 'extensions.plugin_output'
+          target_id: 'sysstat'
+          regex: '^(\d+\.?\d+)' 
+          cache: true
+        water_inlet_temp_unit:
+          endpoint: '/jsc/check_mk/api/1.0/objects/host/zam2011/actions/show_service/invoke'
+          parameters:
+            service_description: 16.4_Summe_Kaltwasser_JURECA_DC_JUWELS_Booster_91A1_Sekundaerkreis_Rechner_Vorlauf
+            columns: plugin_output
+          path: 'extensions.plugin_output'
+          target_id: 'sysstat'
+          regex: '^\d+\.?\d+([^\s]+)' 
+          cache: true
+        water_outlet_temp:
+          endpoint: '/jsc/check_mk/api/1.0/objects/host/zam2011/actions/show_service/invoke'
+          parameters:
+            service_description: 16.4_Summe_Kaltwasser_JURECA_DC_JUWELS_Booster_91A1_Sekundaerkreis_Rechner_Ruecklauf
+            columns: plugin_output
+          path: 'extensions.plugin_output'
+          target_id: 'sysstat'
+          regex: '^(\d+\.?\d+)' 
+          cache: true
+        water_outlet_temp_unit:
+          endpoint: '/jsc/check_mk/api/1.0/objects/host/zam2011/actions/show_service/invoke'
+          parameters:
+            service_description: 16.4_Summe_Kaltwasser_JURECA_DC_JUWELS_Booster_91A1_Sekundaerkreis_Rechner_Ruecklauf
+            columns: plugin_output
+          path: 'extensions.plugin_output'
+          target_id: 'sysstat'
+          regex: '^\d+\.?\d+([^\s]+)' 
+          cache: true
+

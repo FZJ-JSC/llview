@@ -224,7 +224,6 @@
     stat_table:    datasetstat_templates
     format:        'template'
     columns:
-      - { name: sysname,         group: "sysstat",  sort: "S", title: "System-Name",  desc: "System Name"      }
       - { name: power,           group: "sysstat",  sort: "N", title: "Total Power Usage",    desc: "Total Power Usage (in kW)" }
       - { name: water_flowrate,  group: "sysstat",  sort: "N", title: "Water_Flowrate", desc: "Water Flow Rate (in m3/hour)" }
       - { name: water_inlet_temp,  group: "sysstat",  sort: "N", title: "Water_Inlet_Temp", desc: "Water Inlet Temperature (in C)" }

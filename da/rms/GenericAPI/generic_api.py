@@ -23,7 +23,7 @@ import requests
 from urllib.parse import quote
 from copy import deepcopy
 from subprocess import check_output
-from typing import Optional
+from typing import Any, Dict, Optional
 # Optional: keyring
 try:
     import keyring  # pyright: ignore [reportMissingImports]
@@ -221,10 +221,11 @@ class Info:
   """
   Class that stores and processes information from parsed output
   """
-  def __init__(self, hostname="", username=None, password=None, token=None, client_secret=None, verify=True):
+  def __init__(self, hostname="", proxies={}, username=None, password=None, token=None, client_secret=None, verify=True):
     self._raw = {}  # Dictionary with parsed raw information
     self._dict = {} # Dictionary with modified information (which is output to LML)
     self._host = os.path.expandvars(hostname)
+    self._proxies = {k: os.path.expandvars(v) for k, v in proxies.items()}
     self._user = username
     self._pass = password
     self._token = token
@@ -272,7 +273,31 @@ class Info:
     """
     return not bool(self._dict)
 
-  def query(self, metrics, prefix="", stype="", regex="", cached_queries = {}, start_ts=None):
+  def _extract_data_by_path(self,response_json: Dict[str, Any], path: str) -> Optional[Any]:
+    """
+    Traverses a nested dictionary using a dot-separated string path.
+
+    Arguments:
+      response_json: The parsed JSON dictionary from the API response.
+      path: A dot-separated string indicating where the target data lives (e.g., 'data.result').
+
+    Returns:
+      The extracted data if the path exists, otherwise None.
+    """
+    data = response_json
+    keys = path.split('.')
+    
+    try:
+      # Iterate through each key in the path to drill down into the dictionary
+      for key in keys:
+        data = data[key]
+      return data
+    except (KeyError, TypeError):
+      # KeyError happens if the key doesn't exist.
+      # TypeError happens if we try to access a string or list like a dictionary.
+      return None
+
+  def query(self, metrics, prefix="", stype="", cached_queries = {}, start_ts=None):
     """
     This function will loop through the metrics given in the list 'metrics'
     and perform them in the server defined in self.
@@ -281,8 +306,28 @@ class Info:
 
     # Looping over all metrics that should be put into the file
     for name,metric in metrics.items():
-      # Recovering data from cached query when that is present
-      if name in cached_queries:
+      # Handle static values first (no API request needed)
+      if 'value' in metric:
+        self.log.debug(f"Metric '{name}' has a static value defined. Skipping API query...\n")
+        
+        # If the user explicitly provided a target_id, we can store it immediately
+        target_id = metric.get('target_id')
+        if target_id:
+          id_data = self._raw.setdefault(target_id, {})
+          id_data[name] = metric['value']
+          id_data['id'] = target_id
+          
+          ts_key = f'{prefix}_ts' if prefix else 'ts'
+          name_ts_key = f'{name}_ts' if prefix else 'ts'
+          
+          # Ensure timestamps exist for this hardcoded entry
+          id_data.setdefault(ts_key, start_ts)
+          id_data.setdefault(name_ts_key, start_ts)
+          
+        # Continue to the next metric in the loop
+        continue
+      elif name in cached_queries:
+        # Recovering data from cached query when that is present
         self.log.info(f"Query {name} is cached, recovering data without querying again...\n")
         data = cached_queries[name]
       else:
@@ -311,38 +356,43 @@ class Info:
           if self._token:
             # with token
             headers = {'accept': 'application/json', 'Authorization': self._token}
-            resp = requests.get(url, headers=headers, timeout=(10,20), verify=self._verify)
+            self.log.debug(f"Headers: {headers}, Proxies: {self._proxies}, Verify: {self._verify}\n")
+            resp = requests.get(url, headers=headers, timeout=(10,20), proxies=self._proxies, verify=self._verify)
           else:
             # with credentials
             credentials = None
             if self._user and self._pass:
               credentials = (self._user, self._pass)
-            resp = requests.get(url, auth=credentials, timeout=(10,20), verify=self._verify)
+            self.log.debug(f"Proxies: {self._proxies}, Verify: {self._verify}\n")
+            resp = requests.get(url, auth=credentials, timeout=(10,20), proxies=self._proxies, verify=self._verify)
 
           # If current query does not succeed, log error and continue to next query
           if not resp.ok:
             self.log.error(f"Status <{resp.status_code}> with query {url}\n")
             continue
         except Exception as e:
-          self.log.error(f"Problem with request/json error: {e}")
+          self.log.error(f"Problem with request/json error: {e}\n")
           continue
 
         # Getting data from returned result of query
         r = resp.json()
         self.log.debug(f"Raw response received\n")
-        # self.log.debug(f"Raw response received: {r}\n")
+        self.log.debug(f"Raw response received: {r}\n")
 
-        if r and 'data' in r and r['data'] and 'result' in r['data']:
-          # Prometheus response
-          data = r['data']['result']
-        elif r and 'out' in r and r['out'] and 'columns' in r['out'] and 'data' in r['out']:
-          # SEMS response
-          data = {key: value for key,value in zip(r['out']['columns'],r['out']['data'][0])}
-        else:
-          self.log.error("Problem parsing output! Skipping... \n")
+        # Get the path from the metric configuration
+        # Defaulting to 'data.result' ensures backward compatibility with older 
+        # Prometheus configs
+        target_path = metric.get('path', 'data.result')
+        
+        # Extract the data dynamically using the path
+        data = self._extract_data_by_path(r, target_path)
+
+        # Handle cases where the path was not found or the response was empty
+        if data is None:
+          self.log.error(f"Problem parsing output! Could not find path '{target_path}' in response. Skipping... \n")
           continue
-
-        if ('cache' in metric) and metric['cache']:
+        
+        if metric.get('cache'):
           cached_queries[name] = data
       #==== END GETTING DATA ====
 
@@ -352,15 +402,21 @@ class Info:
         self.log.debug(f"Data is empty, skipping loop processing for metric {metric}.\n")
         continue
 
-      self.log.debug(f"Collecting information of {len(data)} elements...\n")
+      self.log.debug(f"Collecting information of {len(data) if isinstance(data, (list, dict)) else 1} elements...\n")
+
+      # Get regex configuration if it exists
+      regex = metric.get('regex')
 
       # Determine the structure of the data from the first element.
       # This avoids redundant 'if' checks inside the loop.
-      first_instance = data[0] # TODO: check how SEMS response looks like here
-      has_metric_key = 'metric' in first_instance
+      first_instance = None
+      has_metric_key = False
+      if isinstance(data, list) and len(data) > 0 and isinstance(data[0], dict):
+        first_instance = data[0]
+        has_metric_key = 'metric' in first_instance
 
       # If instance contain the key 'metric' (e.g., Prometheus)
-      if has_metric_key:
+      if has_metric_key and first_instance is not None:
         # Pre-calculate values and flags to use inside the loop
         id_from = metric.get('id', 'instance')
 
@@ -377,7 +433,7 @@ class Info:
         max_val = metric.get('max')
         use_factor = 'factor' in metric
         factor = metric.get('factor', 1.0)
-
+        
         # Pre-format timestamp keys
         ts_key = f'{prefix}_ts' if prefix else 'ts'
         name_ts_key = f'{name}_ts' if prefix else 'ts'
@@ -484,19 +540,51 @@ class Info:
               if k!= 'instance':
                 id_data[k] = v
 
-      # If instance does not contain the key 'metric' (e.g., SEMS)
+      # If instance does not contain the key 'metric' (e.g., CheckMK single values)
       else:
-        # `data` is a dictionary where keys are the IDs.
-        ts_key = f'{prefix}_ts' if prefix else 'ts'
-        name_ts_key = f'{name}_ts' if prefix else 'ts'
-        internal_ts = data[0] # TODO: check how SEMS response looks like here
+        target_id = metric.get('target_id')
+        if not target_id:
+          self.log.error(f"No 'target_id' defined for metric {name}. Skipping...\n")
+          continue
+        
+        # Convert data to string to ensure regex can run against it safely
+        raw_value = str(data)
 
-        for id, value in data.items():
-          id_data = self._raw.setdefault(id, {})
-          id_data[name] = value
-          id_data['id'] = id
-          id_data[ts_key] = start_ts
-          id_data[name_ts_key] = internal_ts
+        # Apply regex using the class helper method
+        parsed_value = self.apply_regex(raw_value, regex)
+
+        # Setup modifiers for numeric values
+        has_min = 'min' in metric
+        min_val = metric.get('min')
+        has_max = 'max' in metric
+        max_val = metric.get('max')
+        use_factor = 'factor' in metric
+        factor = metric.get('factor', 1.0)
+        
+        ts_key = f'{prefix}_ts' if prefix else 'ts'
+
+        # Attempt to convert to float so we can apply factors/mins/maxes.
+        # If it fails (e.g., parsing "kW" because it's a unit or regex didn't match),
+        # it will hit the except block and remain a string.
+        try:
+          final_value = float(parsed_value)
+          if use_factor:
+            final_value *= factor
+          if has_min and final_value < min_val:
+            final_value = min_val
+          if has_max and final_value > max_val:
+            final_value = max_val
+        except ValueError:
+          # The parsed value is a string (e.g., "kW" or "m^3/h")
+          final_value = parsed_value
+
+        # Store the extracted value
+        id_data = self._raw.setdefault(target_id, {})
+        id_data[name] = final_value
+        id_data['id'] = target_id
+        
+        # Add timestamps (fallback to start_ts since simple REST responses lack native timestamps)
+        id_data[ts_key] = start_ts
 
     self.log.debug(f"Finished parsing all queries, adding internal and default information...\n")
     for instance in self._raw:
@@ -505,9 +593,13 @@ class Info:
           self._raw[instance]["__prefix"] = prefix
       if stype:
         self._raw[instance]["__type"] = stype
-      # Adding default values for missing metrics
-      for name,metric in metrics.items():
-        if name not in self._raw[instance] and 'default' in metric:
+      # Adding static values and defaults for missing metrics
+      for name, metric in metrics.items():
+        if 'value' in metric:
+          # Apply the static value to all discovered instances
+          self._raw[instance][name] = metric['value']
+        elif name not in self._raw[instance] and 'default' in metric:
+          # Apply default if the metric is missing
           self._raw[instance][name] = metric['default']
 
     self._dict |= self._raw
@@ -855,6 +947,12 @@ def get_token(username,password,config,verify):
   Get token to be used in requests
   """
   log = logging.getLogger('logger')
+
+  # If token is directly given, just take it, expand envvars and return
+  if isinstance(config,str):
+    return os.path.expandvars(config)
+
+  # If a query must be done to retrieve the token:
   # Build Auth URI for token
   token_endpoint = os.path.expandvars(config['endpoint'])
 
@@ -900,28 +998,28 @@ def get_credentials(name,config):
   log = logging.getLogger('logger')
   username = None
   password = None
-  if "credentials" in config:
-    if isinstance(config['credentials'],dict):
-      # Trying to get 'username' and 'password' from configuration
-      # password is only tried if username is present
-      if ('username' not in config['credentials']):
-        log.error("'username' not in credentials configuration! Skipping...\n")
+  credentials = config.get('credentials', 'none')
+  if isinstance(credentials,dict):
+    # Trying to get 'username' and 'password' from configuration
+    # password is only tried if username is present
+    if (config['credentials'].get('username')):
+      username = os.path.expandvars(config['credentials']['username'])
+      if (config['credentials'].get('password')):
+        password = os.path.expandvars(config['credentials']['password'])
       else:
-        username = os.path.expandvars(config['credentials']['username'])
-        if ('password' not in config['credentials']):
-          log.warning("'password' not in credentials configuration! Skipping...\n")
-        else:
-          password = os.path.expandvars(config['credentials']['password'])
-    elif config['credentials'] == 'module':
-      try:
-        # Internal function
-        from credentials import get_user_pass
-        username,password = get_user_pass()
-      except ModuleNotFoundError:
-        log.critical("Credentials was chosen to be obtained via module, but module 'credentials' does not exist!\n")
-    elif config['credentials'] == 'none':
-      log.debug("Queries will be done without authentication\n")
-      return None,None
+        log.warning("'password' not in credentials configuration!\n")
+    else:
+      log.error("'username' not in credentials configuration!\n")
+  elif credentials == 'module':
+    try:
+      # Internal function
+      from credentials import get_user_pass
+      username,password = get_user_pass()
+    except ModuleNotFoundError:
+      log.critical("Credentials was chosen to be obtained via module, but module 'credentials' does not exist!\n")
+  elif credentials == 'none':
+    log.debug("Queries will be done without authentication\n")
+    return None,None
   # If username was not obtained in config or module, ask now
   if not username:
     username = input("Username:")
@@ -1063,10 +1161,10 @@ def main():
     log.debug(f"Processing Server '{servername}'\n")
 
     # Checking if something is to be done on current server
-    if ('files' not in server_config) or (len(server_config['files']) == 0):
+    if not server_config.get('files'):
       log.warning("No files to process on this server. Skipping...\n")
       continue
-    if ('hostname' not in server_config):
+    if not server_config.get('hostname'):
       log.warning("No 'hostname' to collect on this server. Skipping...\n")
       continue
 
@@ -1074,10 +1172,10 @@ def main():
     username, password = get_credentials(servername,server_config)
 
     # Getting verification option (Default: True)
-    verify = server_config['verify'] if ('verify' in server_config) else True
+    verify = server_config.get('verify',True)
 
     token = None
-    if 'token' in server_config and len(server_config['token']):
+    if server_config.get('token'):
       token = get_token(username,password,server_config['token'],verify)
       if not token:
         log.error(f"Token was defined but could not be obtained. Skipping server {servername}...\n")
@@ -1099,7 +1197,8 @@ def main():
 
       # Initializing new object of type given in config
       info = Info(
-                  hostname=server_config['hostname'],
+                  hostname=server_config.get('hostname'),
+                  proxies=server_config.get('proxies',{}),
                   username=username,
                   password=password,
                   token=token,
@@ -1115,7 +1214,6 @@ def main():
                                       file['metrics'],
                                       prefix=file.get('prefix','i'),
                                       stype=file.get('type','item'),
-                                      regex=file.get('regex'),
                                       cached_queries = cached_queries,
                                       start_ts = start_time,
                                     )
