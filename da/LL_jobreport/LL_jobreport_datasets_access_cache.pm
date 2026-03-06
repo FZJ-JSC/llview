@@ -271,9 +271,25 @@ sub write_data_to_file_access_cache {
     }
     $datastr.=$dataset->{post_rows}."\n" if(exists($dataset->{post_rows}));
 
-    # Substituting environment variables
-    $datastr =~ s/\$\{(\w+)\}/$ENV{$1}/g;
-    $datastr =~ s/\$ENV\{(\w+)\}/$ENV{$1}/g;
+    # Safely substitute ${VAR} format
+    $datastr =~ s/\$\{(\w+)\}/
+      if (defined $ENV{$1}) {
+        $ENV{$1};
+      } else {
+        print STDERR "LLview WARNING: Environment variable \${$1} used in config but not defined. Substitution was not made.\n";
+        "\${$1}";
+      }
+    /ge;
+    # Safely substitute $ENV{VAR} format
+    $datastr =~ s/\$ENV\{(\w+)\}/
+      if (defined $ENV{$1}) {
+        $ENV{$1};
+      } else {
+        print STDERR "LLview WARNING: Environment variable \$ENV{$1} used in config but not defined. Substitution was not made.\n";
+        "\$ENV{$1}";
+      }
+    /ge;
+
 
     $datastr=~s/\\n/\n/gs;
 
@@ -352,9 +368,25 @@ sub process_data_query_and_save_access {
   $datastr.=$dataset->{rows}."\n"      if(exists($dataset->{rows}));
   $datastr.=$dataset->{post_rows}."\n" if(exists($dataset->{post_rows}));
 
-  # Substituting environment variables
-  $datastr =~ s/\$\{(\w+)\}/$ENV{$1}/g;
-  $datastr =~ s/\$ENV\{(\w+)\}/$ENV{$1}/g;
+  # Safely substitute ${VAR} format
+  $datastr =~ s/\$\{(\w+)\}/
+    if (defined $ENV{$1}) {
+      $ENV{$1};
+    } else {
+      print STDERR "LLview WARNING: Environment variable \${$1} used in config but not defined. Substitution was not made.\n";
+      "\${$1}";
+    }
+  /ge;
+  # Safely substitute $ENV{VAR} format
+  $datastr =~ s/\$ENV\{(\w+)\}/
+    if (defined $ENV{$1}) {
+      $ENV{$1};
+    } else {
+      print STDERR "LLview WARNING: Environment variable \$ENV{$1} used in config but not defined. Substitution was not made.\n";
+      "\$ENV{$1}";
+    }
+  /ge;
+
 
   $datastr=~s/\\n/\n/gs;
 

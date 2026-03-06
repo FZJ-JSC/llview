@@ -283,79 +283,97 @@ sub process_data_query_and_save_csv_dat {
   $self->{SAVE_LASTFH}->close() if($self->{SAVE_LASTFILE} ne "---");
 }
 
+# Writes rows from a DB query into multiple output files (based on column file mapping)
+# Safely handles appending to both raw text (.csv) and compressed (.gz) files
 sub write_data_to_multi_file_csv_dat {
   my $self = shift;
-  my($dataref,$format,$ds,$tscol,$header,$col_convert,$delimiter)=@_;
-  my $file=shift(@{$dataref});
+  my ($dataref, $format, $ds, $tscol, $header, $col_convert, $delimiter) = @_;
+  
+  # The first column in $dataref is S."dataset" (the filename)
+  my $file = shift(@{$dataref});
 
-  #  same file as last entry?
-  if( $self->{SAVE_LASTFILE} ne $file ) {
-    # if not close the old one if opened
-    $self->{SAVE_LASTFH}->close() if($self->{SAVE_LASTFILE} ne "---");
+  # If this row belongs to a different file than the last one, we must open a new file handle
+  if ($self->{SAVE_LASTFILE} ne $file) {
+    # If a file is already open, close it
+    $self->{SAVE_LASTFH}->close() if ($self->{SAVE_LASTFILE} ne "---");
 
-    # open new file
     my $openop;
-    
-    if($ds->{$file}->{status} == FSTATUS_NOT_EXISTS) {
-      $openop=">";
+    if ($ds->{$file}->{status} == FSTATUS_NOT_EXISTS) {
+      $openop = ">";
       $self->{COUNT_OP_NEW_FILE}++;
     } else {
-      $openop=">>";
+      $openop = ">>";
       $self->{COUNT_OP_EXISTING_FILE}++;
     }
 
-    if (!($self->{SAVE_LASTFH}->open("$openop $self->{OUTDIR}/$file"))) {
-      # print STDERR "LLmonDB:    ERROR, cannot open $self->{OUTDIR}/$file\n";
+    # If the target file is compressed, pipe to gzip so we don't corrupt the binary
+    my $open_cmd;
+    if ($file =~ /\.gz$/) {
+      $open_cmd = "| gzip -c $openop $self->{OUTDIR}/$file";
+    } else {
+      $open_cmd = "$openop $self->{OUTDIR}/$file";
+    }
+
+    if (!($self->{SAVE_LASTFH}->open($open_cmd))) {
+      # print STDERR "LLmonDB:    ERROR, cannot open $open_cmd\n";
       return();
     }
-    $self->{SAVE_LASTFH}->print($header) if($ds->{$file}->{status} == FSTATUS_NOT_EXISTS);
-    $ds->{$file}->{status}=FSTATUS_EXISTS;
-    $self->{SAVE_LASTFILE}=$file;
-    # printf("%s write_data_to_multi_file_csv_dat:      open file %s %s\n",$self->{INSTNAME},$file,$openop);
+    
+    $self->{SAVE_LASTFH}->print($header) if ($ds->{$file}->{status} == FSTATUS_NOT_EXISTS);
+    
+    # Never downgrade a compressed file back to FSTATUS_EXISTS
+    if ($file =~ /\.gz$/) {
+      $ds->{$file}->{status} = FSTATUS_COMPRESSED;
+    } else {
+      $ds->{$file}->{status} = FSTATUS_EXISTS;
+    }
+    
+    $self->{SAVE_LASTFILE} = $file;
   }
-  # update last ts stored to file
-  if($tscol>=0) {
-    $ds->{$file}->{lastts_saved}=$dataref->[$tscol];
+  
+  # Update last timestamp stored to file
+  if ($tscol >= 0) {
+    $ds->{$file}->{lastts_saved} = $dataref->[$tscol];
   } else {
-    $ds->{$file}->{lastts_saved}=$self->{CURRENTTS}; # due to lack of time dependent data
+    $ds->{$file}->{lastts_saved} = $self->{CURRENTTS};
   }
-  $ds->{$file}->{mts}=$self->{CURRENTTS}; # last change ts
+  $ds->{$file}->{mts} = $self->{CURRENTTS};
 
-  # convert data
+  # Convert data based on mapped functions
   while ( my ($colnum, $func) = each(%{$col_convert}) ) {
-    $dataref->[$colnum]=&{$func}($dataref->[$colnum],$self);
+    $dataref->[$colnum] = &{$func}($dataref->[$colnum], $self);
   }
-  # for(my $c=0;$c<$#{$dataref};$c++) {
-  #   printf(STDERR "data convert error: undefined data: %s, col=%d (format=%s) (data=%s)\n",
-  #                 $file,$c,$format,join(",",(@{$dataref}))) if(!defined($dataref->[$c]));
-  #   printf(STDERR "data convert error: empty data: %s, col=%d (format=%s) (data=%s)\n",
-  #                 $file,$c,$format,join(",",(@{$dataref}))) if($dataref->[$c] eq "");
-  # }
-  # write data
-  if($check) {
-    return if(!$self->check_printf($file,$format,$dataref));
+  
+  if ($check) {
+    return if (!$self->check_printf($file, $format, $dataref));
   }
-  for(my $colnum=0;$colnum<$#{$dataref};$colnum++) {
-      $dataref->[$colnum]=~s/$delimiter/\\$delimiter/gs;
+  
+  # Escape delimiters inside the data columns
+  for (my $colnum = 0; $colnum < scalar @{$dataref}; $colnum++) {
+    $dataref->[$colnum] =~ s/$delimiter/\\$delimiter/gs;
   }
-  $self->{SAVE_LASTFH}->printf($format,@{$dataref}) ; 
+  
+  $self->{SAVE_LASTFH}->printf($format, @{$dataref}); 
   $self->{COUNT_OP_WRITE_LINE}++;
 }
 
+
+# Writes rows from a DB query into a single output file
 sub write_data_to_single_file_csv_dat {
   my $self = shift;
-  my($dataref,$format,$ds,$tscol,$header,$col_convert,$file,$delimiter)=@_;
+  my ($dataref, $format, $ds, $tscol, $header, $col_convert, $file, $delimiter) = @_;
 
-  #  same file as last entry?
-  if( $self->{SAVE_LASTFILE} ne $file ) {
-    # open new file
+  # Open the file if it's not already open
+  if ($self->{SAVE_LASTFILE} ne $file) {
     $self->{COUNT_OP_NEW_FILE}++;
 
     my $openparm;
-    if($file=~/\.gz$/) {
-      $openparm="| gzip -c > $self->{OUTDIR}/$file";
+    
+    # Safely handle appending to a compressed file without corrupting the archive
+    if ($file =~ /\.gz$/) {
+      $openparm = "| gzip -c > $self->{OUTDIR}/$file";
     } else {
-      $openparm="> $self->{OUTDIR}/$file";
+      $openparm = "> $self->{OUTDIR}/$file";
     }
 
     &check_folder("$self->{OUTDIR}/$file");
@@ -364,34 +382,52 @@ sub write_data_to_single_file_csv_dat {
       die "stop";
       return();
     }
+    
     $self->{SAVE_LASTFH}->print($header);
-    $ds->{$file}->{status}=FSTATUS_EXISTS;
-    $self->{SAVE_LASTFILE}=$file;
+    
+    # Ensure a compressed file stays marked as compressed
+    if ($file =~ /\.gz$/) {
+      $ds->{$file}->{status} = FSTATUS_COMPRESSED;
+    } else {
+      $ds->{$file}->{status} = FSTATUS_EXISTS;
+    }
+    
+    $self->{SAVE_LASTFILE} = $file;
   }
-  return() if(!defined($dataref));
-  # update last ts stored to file
-  if($tscol>=0) {
-    $ds->{$file}->{lastts_saved}=$dataref->[$tscol];
-  } else {
-    $ds->{$file}->{lastts_saved}=$self->{CURRENTTS}; # due to lack of time dependent data
-  }
-  $ds->{$file}->{mts}=$self->{CURRENTTS}; # last change ts
-
-  return() if(!defined($dataref));
   
-  # convert data
-  while ( my ($colnum, $func) = each(%{$col_convert}) ) {
-    $dataref->[$colnum]=&{$func}($dataref->[$colnum],$self);
+  # If dataref is undef, this was an empty initialization, and files are 
+  # generated with lastts_saved 1 year before (-365*24*3600 on check_filepath). 
+  # lastts_saved needs to be updated here, otherwise it remains stuck at "-1 year", 
+  # which may lead the workflow to compress it immediately.
+  if (!defined($dataref)) {
+    $ds->{$file}->{lastts_saved} = $self->{CURRENTTS};
+    $ds->{$file}->{mts} = $self->{CURRENTTS};
+    return();
   }
-  # write data
-  if($check) {
-    return if(!$self->check_printf($file,$format,$dataref));
+  
+  # Update last timestamp stored to file based on data
+  if ($tscol >= 0) {
+    $ds->{$file}->{lastts_saved} = $dataref->[$tscol];
+  } else {
+    $ds->{$file}->{lastts_saved} = $self->{CURRENTTS};
+  }
+  $ds->{$file}->{mts} = $self->{CURRENTTS};
+
+  # Convert data based on mapped functions
+  while ( my ($colnum, $func) = each(%{$col_convert}) ) {
+    $dataref->[$colnum] = &{$func}($dataref->[$colnum], $self);
+  }
+  
+  if ($check) {
+    return if (!$self->check_printf($file, $format, $dataref));
   }
 
-  for(my $colnum=0;$colnum<$#{$dataref};$colnum++) {
-      $dataref->[$colnum]=~s/$delimiter/\\$delimiter/gs;
+  # Escape delimiters inside the data columns
+  for (my $colnum = 0; $colnum < scalar @{$dataref}; $colnum++) {
+    $dataref->[$colnum] =~ s/$delimiter/\\$delimiter/gs;
   }
-  $self->{SAVE_LASTFH}->printf($format,@{$dataref}) ; 
+  
+  $self->{SAVE_LASTFH}->printf($format, @{$dataref}); 
   $self->{COUNT_OP_WRITE_LINE}++;
 }
 

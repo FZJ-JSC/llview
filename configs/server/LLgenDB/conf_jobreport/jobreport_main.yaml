@@ -105,6 +105,7 @@ graphpages:
  %include "./graphpages/jobreport_graphpage_sysinterconnect.yaml"
  %include "./graphpages/jobreport_graphpage_environment.yaml"
  %include "./graphpages/jobreport_graphpage_steptimelines.yaml"
+ %include "./graphpages/jobreport_graphpage_job_dist.yaml"
 #  %include "./graphpages/jobreport_graphpage_nodeexporterstat.yaml"
 
 views:

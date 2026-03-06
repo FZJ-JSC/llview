@@ -23,7 +23,7 @@ import requests
 from urllib.parse import quote
 from copy import deepcopy
 from subprocess import check_output
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Union
 # Optional: keyring
 try:
     import keyring  # pyright: ignore [reportMissingImports]
@@ -273,29 +273,53 @@ class Info:
     """
     return not bool(self._dict)
 
-  def _extract_data_by_path(self,response_json: Dict[str, Any], path: str) -> Optional[Any]:
+  def _extract_data_by_path(self, response_json: Dict[str, Any], path: str, metric_name: str) -> Optional[Union[Dict[str, Any], Any]]:
     """
-    Traverses a nested dictionary using a dot-separated string path.
-
-    Arguments:
-      response_json: The parsed JSON dictionary from the API response.
-      path: A dot-separated string indicating where the target data lives (e.g., 'data.result').
-
-    Returns:
-      The extracted data if the path exists, otherwise None.
+    Traverses a JSON dictionary using a dot-separated string path.
+    - '{name}' is dynamically replaced by the current metric name.
+    - '*' acts as a wildcard, capturing dictionary keys as target IDs.
+    
+    Returns a scalar/list if no wildcard is used (e.g., Prometheus or CheckMK).
+    Returns a dictionary of {target_id: extracted_value} if '*' is used (e.g., Argos).
     """
-    data = response_json
+    path = path.replace('{name}', metric_name)
     keys = path.split('.')
     
-    try:
-      # Iterate through each key in the path to drill down into the dictionary
-      for key in keys:
-        data = data[key]
-      return data
-    except (KeyError, TypeError):
-      # KeyError happens if the key doesn't exist.
-      # TypeError happens if we try to access a string or list like a dictionary.
-      return None
+    # Standard traversal (e.g., for Prometheus and CheckMK - No wildcard)
+    if '*' not in keys:
+      data = response_json
+      try:
+        for key in keys:
+          data = data[key]
+        return data
+      except (KeyError, TypeError):
+        return None
+
+    # Wildcard traversal (e.g., for Argos) 
+    # nodes is a list of tuples: (target_id, current_data)
+    nodes = [(None, response_json)]
+    
+    for key in keys:
+      next_nodes = []
+      for t_id, current_data in nodes:
+        if current_data is None:
+          continue
+          
+        if key == '*':
+          # Wildcard: iterate over dictionary keys, setting them as the target_id
+          if isinstance(current_data, dict):
+            for k, v in current_data.items():
+              next_nodes.append((k, v))
+        else:
+          # Standard key access
+          if isinstance(current_data, dict) and key in current_data:
+            next_nodes.append((t_id, current_data[key]))
+            
+      nodes = next_nodes
+
+    # Convert back to a dictionary {target_id: extracted_value}
+    result = {t_id: val for t_id, val in nodes if t_id is not None}
+    return result if result else None
 
   def query(self, metrics, prefix="", stype="", cached_queries = {}, start_ts=None):
     """
@@ -347,7 +371,34 @@ class Info:
 
         # Adding parameters given in options
         if 'parameters' in metric:
-          url = f"{url}?{'&'.join([f'{key}={quote(value)}' for key,value in metric['parameters'].items()])}"
+          now_ts = int(time.time())
+          
+          query_params = []
+          for key, value in metric['parameters'].items():
+            val_str = str(value).strip()
+            
+            # Dynamically expand relative timestamps (only for 'start' and 'end' keys)
+            if key in ['start', 'end']:
+              # Matches an optional sign (+ or -), a number, and a unit (s, m, h, d, w)
+              match = re.match(r'^([+-]?\d+)([smhdw])$', val_str)
+              if match:
+                offset = int(match.group(1))
+                unit = match.group(2)
+                
+                # Convert the unit to seconds
+                multipliers = {
+                  's': 1, 
+                  'm': 60, 
+                  'h': 3600, 
+                  'd': 86400, 
+                  'w': 604800
+                }
+                
+                # Calculate the final absolute UNIX timestamp
+                val_str = str(now_ts + (offset * multipliers[unit]))
+            query_params.append(f"{key}={quote(val_str)}")
+            
+          url = f"{url}?{'&'.join(query_params)}"
 
         self.log.debug(f"{url}\n")
 
@@ -385,7 +436,7 @@ class Info:
         target_path = metric.get('path', 'data.result')
         
         # Extract the data dynamically using the path
-        data = self._extract_data_by_path(r, target_path)
+        data = self._extract_data_by_path(r, target_path, name)
 
         # Handle cases where the path was not found or the response was empty
         if data is None:
@@ -540,18 +591,19 @@ class Info:
               if k!= 'instance':
                 id_data[k] = v
 
-      # If instance does not contain the key 'metric' (e.g., CheckMK single values)
+      # If instance does not contain the key 'metric' (e.g., CheckMK or Argos)
       else:
-        target_id = metric.get('target_id')
-        if not target_id:
-          self.log.error(f"No 'target_id' defined for metric {name}. Skipping...\n")
-          continue
-        
-        # Convert data to string to ensure regex can run against it safely
-        raw_value = str(data)
-
-        # Apply regex using the class helper method
-        parsed_value = self.apply_regex(raw_value, regex)
+        # Normalize the data into a dictionary of {target_id: raw_value}
+        if isinstance(data, dict):
+          # data was extracted via wildcard and is already a dictionary (e.g., Argos)
+          iterable_data = data
+        else:
+          # data is a single scalar value, so we wrap it using the YAML target_id (e.g., CheckMK)
+          target_id = metric.get('target_id')
+          if not target_id:
+            self.log.error(f"No 'target_id' defined for metric {name}. Skipping...\n")
+            continue
+          iterable_data = {target_id: data}
 
         # Setup modifiers for numeric values
         has_min = 'min' in metric
@@ -563,28 +615,85 @@ class Info:
         
         ts_key = f'{prefix}_ts' if prefix else 'ts'
 
-        # Attempt to convert to float so we can apply factors/mins/maxes.
-        # If it fails (e.g., parsing "kW" because it's a unit or regex didn't match),
-        # it will hit the except block and remain a string.
-        try:
-          final_value = float(parsed_value)
-          if use_factor:
-            final_value *= factor
-          if has_min and final_value < min_val:
-            final_value = min_val
-          if has_max and final_value > max_val:
-            final_value = max_val
-        except ValueError:
-          # The parsed value is a string (e.g., "kW" or "m^3/h")
-          final_value = parsed_value
+        # Loop through our standardized dictionary
+        for current_id, raw_value in iterable_data.items():
+          parsed_value = None
+          extracted_ts = start_ts
 
-        # Store the extracted value
-        id_data = self._raw.setdefault(target_id, {})
-        id_data[name] = final_value
-        id_data['id'] = target_id
-        
-        # Add timestamps (fallback to start_ts since simple REST responses lack native timestamps)
-        id_data[ts_key] = start_ts
+          # Extract and optionally aggregate values from arrays (e.g., Argos)
+          if isinstance(raw_value, list):
+            # Gather all valid data points, ignoring Nones
+            valid_points = []
+            for point in raw_value:
+              # Looking for [[ts, value], [ts, None]]
+              if isinstance(point, list) and len(point) >= 2 and point[1] is not None:
+                valid_points.append(point)
+            
+            # If the array was empty or only contained Nones, skip this target
+            if not valid_points:
+              continue
+
+            agg_method = metric.get('aggregate')
+
+            if agg_method == 'concatenate':
+              # Join all valid values with a comma
+              parsed_value = ",".join(str(p[1]) for p in valid_points)
+              extracted_ts = valid_points[-1][0]  # Use timestamp of the latest point
+            elif agg_method == 'count':
+              # Return the total number of valid data points
+              parsed_value = str(len(valid_points))
+              extracted_ts = valid_points[-1][0]
+            elif agg_method in ['min', 'max', 'avg', 'sum']:
+              try:
+                # Convert values to floats for math operations
+                float_vals = [float(p[1]) for p in valid_points]
+                extracted_ts = valid_points[-1][0] # Use timestamp of the latest point
+                
+                if agg_method == 'min':
+                  parsed_value = str(min(float_vals))
+                elif agg_method == 'max':
+                  parsed_value = str(max(float_vals))
+                elif agg_method == 'sum':
+                  parsed_value = str(sum(float_vals))
+                elif agg_method == 'avg':
+                  parsed_value = str(sum(float_vals) / len(float_vals))
+                  
+              except ValueError:
+                self.log.error(f"Cannot apply '{agg_method}' to non-numeric data for target {current_id}. Falling back to first value.\n")
+                parsed_value = str(valid_points[0][1])
+                extracted_ts = valid_points[0][0]
+            else:
+              # Default behavior (No aggregation or unknown method): 
+              # Grab the first valid point
+              if agg_method:
+                self.log.warning(f"Unknown aggregate method '{agg_method}'. Falling back to first valid point.\n")
+              parsed_value = str(valid_points[0][1])
+              extracted_ts = valid_points[0][0]
+          else:
+            # Scalar value (like "546.42kW" in CheckMK)
+            parsed_value = str(raw_value)
+
+          # Apply Regex
+          parsed_value = self.apply_regex(parsed_value, metric.get('regex'))
+
+          # Attempt to convert to float and apply factors/mins/maxes.
+          try:
+            final_value = float(parsed_value)
+            if use_factor:
+              final_value *= factor
+            if has_min and final_value < min_val:
+              final_value = min_val
+            if has_max and final_value > max_val:
+              final_value = max_val
+          except ValueError:
+            # The parsed value is a string (e.g., "kW")
+            final_value = parsed_value
+
+          # Store the extracted value
+          id_data = self._raw.setdefault(current_id, {})
+          id_data[name] = final_value
+          id_data['id'] = current_id
+          id_data[ts_key] = start_ts
 
     self.log.debug(f"Finished parsing all queries, adding internal and default information...\n")
     for instance in self._raw:
@@ -973,7 +1082,7 @@ def get_token(username,password,config,verify):
   token_request = requests.post(token_endpoint, data=data, headers=headers, verify=verify)
 
   if not token_request.ok:
-    log.error(f'Token request not successful (return code {token_request.status_code})! Creating empty LML...\n')
+    log.error(f'Token request not successful (return code {token_request.status_code})!\n')
     return ""
   log.debug(f"token_request: {token_request.json()}\n")
   token = f"Bearer {token_request.json()['access_token']}"
