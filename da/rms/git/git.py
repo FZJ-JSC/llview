@@ -143,7 +143,7 @@ def flatten_json(json_data):
   
   return flattened_data
 
-def gen_tab_config(default=False,suffix="cb",folder="./"):
+def gen_tab_config(default=False,tabname='Benchmarks',suffix="cb",folder="./"):
   """
   This function generates the main tab configuration for LLview (with Overview + each Benchmark).
   """
@@ -153,7 +153,7 @@ def gen_tab_config(default=False,suffix="cb",folder="./"):
 
   pages = [{
     'page': {
-      'name': "Benchmarks",
+      'name': tabname,
       'section': "benchmarks",
       'icon': "bar-chart",
       'pages': [
@@ -2566,6 +2566,7 @@ def main():
   parser.add_argument("--outfolder",       default=False, help="Reference output folder for LML files")
   parser.add_argument("--repofolder",      default=False, help="Folders where the repos will be cloned")
   parser.add_argument("--outconfigfolder", default=False, help="Folder to generate config files")
+  parser.add_argument("--tabname",         default='Benchmarks', help="Default text on LLview tab")
   parser.add_argument("--skipupdate",      action='store_true', help="Skip updating the repos (if they don't exist, they will still be cloned)")
   parser.add_argument("--setdefault",      action='store_true', help="Set Benchmark page with 'default: true'")
   parser.add_argument("--statuspoints",    default=5, help="Set how many previous points are shown on the status column")
@@ -2807,7 +2808,7 @@ def main():
     log.warning(f"No repos given.\n")
 
   # Creating LLview tab configuration file
-  success = gen_tab_config(default=args.setdefault,folder=(args.outconfigfolder if args.outconfigfolder else ''))
+  success = gen_tab_config(default=args.setdefault,tabname=args.tabname, folder=(args.outconfigfolder if args.outconfigfolder else ''))
   if not success:
     log.error(f"Error generating tab configuration file!\n")
 

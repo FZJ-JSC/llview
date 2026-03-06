@@ -9,8 +9,19 @@
 # Contributors:
 #    Filipe Guimarães (Forschungszentrum Juelich GmbH) 
 
-# Note: file .llview_server_rc must be sourced, e.g.:
-# $ source ~/.llview_server_rc
+# Note: file $LLVIEW_HOME/scripts/listerrors must be sourced, e.g.:
+# $ source $LLVIEW_HOME/scripts/listerrors
+
+# If sourced, register auto-completion options and return
+if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
+    _myscript_completions() {
+        local cur="${COMP_WORDS[COMP_CWORD]}"
+        local options="delete"
+        COMPREPLY=($(compgen -W "${options}" -- "${cur}"))
+    }
+    complete -F _myscript_completions $(basename ${BASH_SOURCE[0]})
+    return
+fi
 
 ls -ltr $LLVIEW_DATA/$LLVIEW_SYSTEMNAME/logs/*errlog $LLVIEW_DATA/$LLVIEW_SYSTEMNAME/logs/steps/*errlog
 

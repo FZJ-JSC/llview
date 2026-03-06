@@ -55,3 +55,7 @@ export PYTHON="python3.9"
 
 # Location of this file to be monitored for changes
 export LLVIEW_CONF_FILE=${BASH_SOURCE[0]}
+
+# If this file is sourced, source also the listerrors to define the autocomplete
+source $LLVIEW_HOME/scripts/listerrors
+
