@@ -17,13 +17,13 @@ prometheus:
   #
   # Otherwise credentials can be given here (using keys 'username' and 'password')
   # (envvars can be used)
-  # credentials:
-  #   username: user
-  #   password: password
+  credentials:
+    username: ${PROMETHEUS_USERNAME}
+    password: ${PROMETHEUS_PASSWORD}
   #
   # Or obtained via a function "get_user_pass" in module "credentials" (whoud be in PYTHONPATH)
   # in this case, use 
-  credentials: "module"
+  # credentials: "module"
   # The following lines are then run:
   #
   #   from credentials import get_user_pass

@@ -369,59 +369,84 @@ sub mngt_datasets_check_gz_gz {
   printf("%s check dataset for files .gz.gz: %d file changed\n", $self->{INSTNAME}, $total_count_fixed);
 }
 
+# Retrieves and filters datasets that are eligible for a specific management action (like compress or archive)
+#
+# Arguments:
+#   $self             - (Object) The LML_jobreport instance
+#   $st               - (HashRef) Database state containing the datasets
+#   $files_found      - (HashRef) Accumulator for files that match the criteria
+#   $name             - (String) Name of the dataset (e.g., 'GPU_csv')
+#   $limit_ts         - (Integer) The timestamp threshold (files older than this are selected)
+#   $limit_pattern_ts - (HashRef|Undef) Optional specific timestamp limits based on filename patterns
+#   $action_type      - (Integer) The action ID (e.g., FACTION_COMPRESS)
+#
+# Returns:
+#   (HashRef, Integer) The updated files_found hash reference and the count of matched files
 sub scan_for_files_by_name_limit {
   my $self = shift;
-  my ($st,$files_found,$name,$limit_ts,$limit_pattern_ts,$action_type)=@_;
-  my $count=0;
+  my ($st, $files_found, $name, $limit_ts, $limit_pattern_ts, $action_type) = @_;
+  
+  my $count = 0;
 
   while ( my ($file, $ref) = each(%{$st->{ds}}) ) {
-    next if($ref->{name} ne $name);	
-    next if($ref->{status} == FSTATUS_NOT_EXISTS); # file not created
-    next if($ref->{status} == FSTATUS_TOBEDELETED); # file already marked to be deleted from DB
-    if($action_type == FACTION_COMPRESS) {
-      next if($ref->{status} == FSTATUS_COMPRESSED); # already compressed
-      next if($ref->{status} == FSTATUS_TOBECOMPRESSED); # already marked to be compressed
+    # Skip files that don't match the current dataset name
+    next if $ref->{name} ne $name;	
+    
+    # Skip files that are not fully created or are already flagged for deletion
+    next if $ref->{status} == FSTATUS_NOT_EXISTS;
+    next if $ref->{status} == FSTATUS_TOBEDELETED;
+    
+    # For compression, immediately skip files that are already compressed or queued
+    if ($action_type == FACTION_COMPRESS) {
+      next if $ref->{status} == FSTATUS_COMPRESSED;
+      next if $ref->{status} == FSTATUS_TOBECOMPRESSED;
+      
+      # Failsafe check to avoid double compression
+      if ($file =~ /\.gz(\.gz)?$/) {
+        printf(STDERR "LLmonDB:    WARNING: compress action planned for compressed filename %-20s (%-20s) ... skipping\n",
+               get_status_desc($ref->{status}), $file);
+        next;
+      }
     }
-    my $found=0;
     
-    $found=1 if($ref->{lastts_saved}<=$limit_ts);
+    my $is_eligible = 0;
     
-    if(defined($limit_pattern_ts)) {
+    # Check if the file is older than the global limit
+    if ($ref->{lastts_saved} <= $limit_ts) {
+      $is_eligible = 1;
+    }
+    
+    # If a pattern-specific limit exists, override the eligibility based on pattern matching
+    if (defined $limit_pattern_ts) {
       while ( my ($pat, $l_ts) = each(%{$limit_pattern_ts}) ) {
-        if($file=~/$pat/) {
-          $found=1 if($ref->{lastts_saved}<=$l_ts);
+        if ($file =~ /$pat/) {
+          $is_eligible = ($ref->{lastts_saved} <= $l_ts) ? 1 : 0;
+          last;
         }
       }
     }
     
-    if($action_type == FACTION_COMPRESS) {
-	if($file=~/\.gz\.gz$/) {
-	    printf(STDERR "LLmonDB:    WARNING: compress action planed for filename with .gz.gz ending %-20s (%-20s) ... skipping\n",
-		   get_status_desc($ref->{status}),$file);
-	    $found=0;
-	} elsif($file=~/.gz$/) {
-	    printf(STDERR "LLmonDB:    WARNING: compress action planed for filename with .gz ending %-20s (%-20s) ... skipping\n",
-		   get_status_desc($ref->{status}),$file);
-	    $found=0;
-	}
-    }
-
-    next if(!$found);
+    next if !$is_eligible;
     
-    # file found
+    # Track the eligible file using its unique key (ukey)
     $count++;
-    if(!exists($files_found->{$ref->{ukey}})) {
-      $files_found->{$ref->{ukey}}->{ts}=0;
+    
+    if (!exists $files_found->{$ref->{ukey}}) {
+      $files_found->{$ref->{ukey}}->{ts} = 0;
     }
 
-    push(@{$files_found->{ $ref->{ukey} }->{files}},$ref);
+    push(@{$files_found->{$ref->{ukey}}->{files}}, $ref);
     
-    if( $ref->{lastts_saved} > $files_found->{$ref->{ukey}}->{ts} ) {
-      $files_found->{ $ref->{ukey} }->{ts}=$ref->{lastts_saved};
+    # Keep track of the newest timestamp among grouped files
+    if ($ref->{lastts_saved} > $files_found->{$ref->{ukey}}->{ts}) {
+      $files_found->{$ref->{ukey}}->{ts} = $ref->{lastts_saved};
     }
-    $files_found->{$ref->{ukey}}->{datasets}->{$name}=$st;
+    
+    # Link the dataset table metadata to the found file
+    $files_found->{$ref->{ukey}}->{datasets}->{$name} = $st;
   }
-  return($files_found,$count);
+  
+  return ($files_found, $count);
 }
 
 

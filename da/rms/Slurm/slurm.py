@@ -26,31 +26,54 @@ from typing import Dict, Any
 
 def expand_NodeList(nodelist: str) -> str:
   r"""
-  Split node list by commas only between groups of nodes, not within groups
-  Returns all complete node names separated by a single space
+  Split node list by commas only between groups of nodes, not within groups.
+  Returns all complete node names separated by a single space.
+  
   Regex notes:
-    [^\[]+ - matches anything (at lest one character) but the '[' literal
-    (?:\[[\d,-]*\])? - matches zero or one (optional) node groupings like '[1,3,5-8,10]'
-    General Documentation https://docs.python.org/3/library/re.html#regular-expression-syntax
+    - First regex in findall: r'([^,\[\]]+(?:\[[\d,-]+\])?)'
+      [^,\[\]]+        - Matches the node prefix (1 or more characters that are NOT commas or brackets).
+                         This prevents the parser from greedily eating commas that separate distinct nodes.
+      (?:\[[\d,-]+\])? - Matches zero or one (optional) node groupings like '[08,21,31]' or '[1-5]'.
+      The outer () capture the entire valid node string (e.g., 'node-01' or 'node-[02-04]').
+       
+    - Second regex in match: r"(.+?)\[(.*?)\]"
+      (.+?)            - Captures the prefix before the bracket non-greedily (e.g., 'jpbo-050-').
+      \[(.*?)\]        - Captures the exact contents inside the brackets (e.g., '08,21,31').
+       
+    General Documentation: https://docs.python.org/3/library/re.html#regular-expression-syntax
   """
   expandedlist = ""
-  for nodelist in re.findall(r'([^\[]+(?:\[[\d,-]*\])?),?',nodelist):
-    match = re.findall( r"(.+?)\[(.*?)\]|(.+)", nodelist)[0]
-    if match[2] == nodelist:
-      # single node
-      expandedlist += f"{nodelist} "
+  
+  # Find all distinct node strings, whether they are single nodes or bracketed groups
+  for node_group in re.findall(r'([^,\[\]]+(?:\[[\d,-]+\])?)', nodelist):
+    
+    # Check if the current node string contains a bracketed grouping
+    match = re.match(r"(.+?)\[(.*?)\]", node_group)
+    if not match:
+      # single node without brackets (e.g., 'jpbo-049-35')
+      expandedlist += f"{node_group} "
       continue
-    # multiple nodes in node list as in "node[a,b,m-n,x-y]"
-    for node in match[1].split(','):
+      
+    # extract the prefix and the inner bracket contents
+    prefix = match.group(1)
+    inner_bracket = match.group(2)
+    
+    # Process multiple nodes inside the grouping like "node-[a,b,m-n,x-y]"
+    for item in inner_bracket.split(','):
       # splitting eventual consecutive nodes with '-'
-      list = node.split('-',1)
-      if len(list)==1:
-        # single node
-        expandedlist += f"{match[0]}{list[0]} "
+      bounds = item.split('-', 1)
+      if len(bounds) == 1:
+        # single node inside bracket (e.g., '08')
+        expandedlist += f"{prefix}{bounds[0]} "
       else:
-        # multi-node separated by '-'
-        for i in range(int(list[0]),int(list[1])+1):
-          expandedlist += f"{match[0]}{i:0{len(list[0])}} "  
+        # multi-node range inside bracket (e.g., '21-31')
+        start, end = bounds
+        
+        # Maintain zero-padding dynamically (e.g., '08' to '10' -> 08, 09, 10)
+        width = len(start)
+        for i in range(int(start), int(end) + 1):
+          expandedlist += f"{prefix}{i:0{width}d} "  
+          
   return expandedlist.rstrip()
 
 def add_CPUs_to_nodelist(nodelist: str, numcpus: int) -> str:  

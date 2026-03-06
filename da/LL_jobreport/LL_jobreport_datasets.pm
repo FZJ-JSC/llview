@@ -545,6 +545,11 @@ sub check_filepath {
   }
   my $shortfile=$file;$shortfile=~s/$self->{OUTDIR}\///s;
 
+  # Check if a compressed version of this file already exists in the DB
+  if (exists($ds->{"$shortfile.gz"})) {
+    $shortfile = "$shortfile.gz";
+  }
+
   printf("%s check_filepath:         WARNING %s\n",$self->{INSTNAME},$shortfile) if($shortfile=~/unknown/);
 
   my $init_file=0;
@@ -646,6 +651,11 @@ sub check_filemapping {
   }
 
   my $shortfile=$file;$shortfile=~s/$self->{OUTDIR}\///s;
+  
+  # Check if a compressed version of this file already exists in the DB
+  if (exists($ds->{"$shortfile.gz"})) {
+    $shortfile = "$shortfile.gz";
+  }
   
   if(!exists($ds->{$shortfile})) {
     $ds->{$shortfile}->{dataset}=$shortfile;

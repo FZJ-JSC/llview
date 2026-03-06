@@ -11,12 +11,10 @@
 - dataset:
     name: sysenvstat_csv
     set:        sysstat
-    FORALL:     'S:VAR_sysenvstat_system'
-    filepath:   '$outputdir/_sysstat/sysenvstat_${S}.csv'
+    filepath:   '$outputdir/_sysstat/sysenvstat.csv'
     columns:        'ts,power_avg,water_flowrate_avg,water_inlet_temp_avg,water_outlet_temp_avg,water_power_avg'
     header:         'date,power,water_flowrate,water_inlet_temp,water_outlet_temp,water_power'
     column_convert: 'ts->todate_1'
-    column_filemap: 'S:sysname'
     format_str:      '%s,%f,%f,%f,%f,%f'
     column_ts:      'ts'
     format:         'csv'

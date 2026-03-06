@@ -72,7 +72,7 @@
     children: [
       { 
         field: "starttime",
-        cellDataType: "date",
+        cellDataType: "dateString",
         headerName: "Start Date",
         # minWidth: 125,
         # flex: 2,
@@ -89,9 +89,9 @@
         field: "endtime",
         columnGroupShow: "open",
         cellDataType: "dateString",
-        headerName: "Est. End Date",
+        headerName: "End Date (est)",
         # minWidth: 125,
-        headerTooltip: "Estimated end date of the job (Start Date + Walltime)"
+        headerTooltip: "End date (or estimate) of the job"
       },
       { 
         field: "lastts",
@@ -105,7 +105,7 @@
         columnGroupShow: "open",
         # cellDataType: "timeInterval",
         # valueGetter: (params) => {console.log(params.newValue,params.parseValue(params.newValue)) ; return params.parseValue(params.newValue)},
-        valueFormatter: "(params) => hhmm_short(params)",
+        # valueFormatter: "(params) => hhmm_short(params)",
         headerName: "Walltime",
         headerTooltip: "Requested walltime"
       },
@@ -113,11 +113,11 @@
         field: "runtime",
         # valueGetter: "(params) => {console.log("ValueGetter",params); return params.data['runtime'];}",
         headerName: "Runtime",
-        cellDataType: "number",
-        valueFormatter: "(params) => hhmm_short(params)",
-        filter: "agNumberColumnFilter",
-        filterParams: numberFilterParams,
-        floatingFilterComponent: NumberFloatingFilterComponent,
+        cellDataType: "timeInterval",
+        #valueFormatter: "(params) => hhmm_short(params)",
+        #filter: "agNumberColumnFilter",
+        #filterParams: numberFilterParams,
+        #floatingFilterComponent: NumberFloatingFilterComponent,
         headerTooltip: "Overall runtime"
       },
       { 
@@ -132,6 +132,13 @@
         cellDataType: "number",
         headerTooltip: "Number of steps within the job",
         columnGroupShow: "open",
+      },
+      {
+        field: "restart",
+        headerName: "Restarts",
+        cellDataType: "number",
+        columnGroupShow: "open",
+        headerTooltip: "Number of times the job was restarted"
       },
       { 
         field: "waittime",
@@ -442,6 +449,13 @@
         valueFormatter: "(params) => round_number_or_null(params)",
         cellClass: "text-right",
         headerTooltip: "Maximum reception rate over NVlink"
+      },
+      {
+        field: "gpu_numgpus",
+        cellDataType: "number",
+        columnGroupShow: "open",
+        headerName: "#GPUs",
+        headerTooltip: "Number of GPUs used by the job"
       },
     ]
   }

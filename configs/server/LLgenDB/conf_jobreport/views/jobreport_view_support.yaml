@@ -79,22 +79,41 @@
     #               section: "sysinterconnect"
     #               default: false
     #               graph_page_config: "/data/ll/graphpage_sysinterconnect.json"
+    #           - page:
+    #               name: "Statistics"
+    #               description: "Graphics containing statistics on memory and node usage"
+    #               section: "sysstatistics"
+    #               default: false
+    #               graph_page_config: "/data/ll/graphpage_sysstatistics.json"
               - page:
                   name: "Statistics"
-                  description: "Graphics containing statistics on memory and node usage"
-                  section: "sysstatistics"
+                  section: "stats"
+                  description: "Statistics of jobs and applications on the system."
+                  tabs:
+                  - name: "Applications"
+                    section: "app_stats"
+                    description: "Application usage statistics on the system in the last 72 hours, obtained from Slurm job steps (i.e., executed by srun). Node-h column for an application is the sum of the node usage of each job step running that application, multiplied by the step duration in hours."
+                    default: false
+                    template: "/data/LLtemplates/app_stats"
+                    context: "data/_sysstat/app_stats.json"
+                    ref: [ datatable ]
+                    data:
+                      default_columns: [ 'Application', 'Usage', 'Lists' ]
+                  - name: "Job Distribution"
+                    section: "job_dist"
+                    description: "Resource utilization map of jobs in the last 3 weeks (with runtime above 5min) against different performance metrics. The axes metrics are selectable to display different workload distribution landscapes."
+                    default: false
+                    graph_page_config: "/data/ll/graphpage_job_dist.json"
+              - page:
+                  name: "Detailed Usage"
+                  section: "sysstat"
+                  template: "/data/LLtemplates/sysstat"
+                  context: "data/_sysstat/sysstat.json"
                   default: false
-                  graph_page_config: "/data/ll/graphpage_sysstatistics.json"
-    #           - page:
-    #               name: "Detailed Usage"
-    #               section: "sysstat"
-    #               template: "/data/LLtemplates/sysstat"
-    #               context: "data/_sysstat/sysstat.json"
-    #               default: false
-    #               footer_graph_config: "/data/ll/footer_sysstat.json"
-    #               ref: [ table ]
-    #               data:
-    #                 default_columns: [ sysstat ]
+                  footer_graph_config: "/data/ll/footer_sysstat.json"
+                  ref: [ table ]
+                  data:
+                    default_columns: [ sysstat ]
     #           - page:
     #               name: "Rack-Power"
     #               section: "sysrackpwr"

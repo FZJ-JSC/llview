@@ -147,9 +147,13 @@ sub checkDB {
             $table_diffs++;
             printf("  LLmonDB:     CHECK: table column $col missing in DB ('$configcoldefs->{coldata}->{$col}->{sql}')\n");
             if(!$dryrun) {
-              $dbobj->add_column($table,$col,$configcoldefs->{coldata}->{$col}->{sql});
-              $done++;
-              $table_diffs--; # Decrement because we just fixed it immediately (don't count in recreate)
+              # Capture the return value (1 = success, 0 = failure/skipped)
+              my $success = $dbobj->add_column($table,$col,$configcoldefs->{coldata}->{$col}->{sql});
+              # Only increment done if we actually did something
+              if ($success) {
+                $done++;
+                $table_diffs--; # Decrement because we just fixed it immediately (don't count in recreate)
+              }
             } else {
               printf("  LLmonDB:     [DRY: add column $col to table $table ]\n");
             }
@@ -174,8 +178,13 @@ sub checkDB {
         if($do_recreate_table) {
           printf("  LLmonDB:     CHECK: re-create table $table in DB due to modification of columns, data of existing columns will be copied\n");
           if(!$dryrun) {
-            $dbobj->recreate_table($clean_table,$configcoldefs);
-            $done += $table_diffs; # Adding all pending differences for this table
+            # Capture the return value (1 = success, 0 = failure/skipped)
+            my $success = $dbobj->recreate_table($clean_table,$configcoldefs);
+            
+            # Only increment done if we actually did something
+            if ($success) {
+              $done += $table_diffs; # Adding all pending differences for this table
+            }
           } else {
             $found++;
             printf("  LLmonDB:     [DRY: re-create database table ($db,$table)]\n");
@@ -186,8 +195,13 @@ sub checkDB {
         $found++; 
         printf("  LLmonDB:     CHECK: table $table missing in DB\n");
         if(!$dryrun) {
-          $dbobj->create_table($table,$configcoldefs);
-          $done++;
+          # Capture the return value (1 = success, 0 = failure/skipped)
+          my $success = $dbobj->create_table($table,$configcoldefs);
+          
+          # Only increment done if we actually did something
+          if ($success) {
+            $done++;
+          }
         } else {
           printf("  LLmonDB:     [DRY: create database table ($db,$table)]\n");
         }
@@ -209,8 +223,13 @@ sub checkDB {
         printf("  LLmonDB:     CHECK: WARNING [data loss], remove table will destroy data in this table !!!\n");
         $found++;$dataloss++;
         if(!$dryrun) {
-          $dbobj->remove_table($table);
-          $done++;
+          # Capture the return value (1 = success, 0 = failure/skipped)
+          my $success = $dbobj->remove_table($table);
+          
+          # Only increment done if we actually did something
+          if ($success) {
+            $done++;
+          }
         } else {
           printf("  LLmonDB:     [DRY: remove database table ($db,$table)]\n");
         }

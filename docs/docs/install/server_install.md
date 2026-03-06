@@ -39,7 +39,7 @@ The dependencies of LLview Server are:
         - Tk::Table
         - Cwd
 
-- Python (>3.9) (For JuRepTool and plugins for Prometheus and Git)
+- Python (>3.9) (For JuRepTool and plugins for APIs, log files and Git)
     - Packages (install with `pip install <PackageName>`)
         - matplotlib (>3.5.0)
         - numpy

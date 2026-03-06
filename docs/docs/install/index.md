@@ -8,8 +8,8 @@ scripts and plugins for a basic functioning. This version includes
 - JuRepTool to create PDF and interactive HTML reports
 - Plugins for:
     - Slurm
-    - Prometheus and other REST-API
-    - Flat files (via regex)
+    - Generic API (http requests, REST-API, Prometheus, etc.)
+    - Flat log files (via regex)
     - Git repos
 
 It still does not cover:

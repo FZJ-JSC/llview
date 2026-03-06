@@ -1,0 +1,110 @@
+# Copyright (c) 2023 Forschungszentrum Juelich GmbH.
+# This file is part of LLview. 
+#
+# This is an open source software distributed under the GPLv3 license. More information see the LICENSE file at the top level.
+#
+# Contributions must follow the Contributor License Agreement. More information see the CONTRIBUTING.md file at the top level.
+#
+# Contributors:
+#    Wolfgang Frings (Forschungszentrum Juelich GmbH) 
+#    Filipe Guimarães (Forschungszentrum Juelich GmbH) 
+
+############
+# Graph Page
+############
+- graphpage:
+    name:          "job_dist"
+    filepath:      "$outputdir/ll/graphpage_job_dist.json"
+    stat_database: jobreport_json_stat
+    stat_table:    datasetstat_graphpages
+    columns: 1
+    graphs: 
+    - name: "job_distribution"
+      height: "600px"
+      fillNA: 0
+      layout:
+        updatemenus:
+        - y: 1
+          yanchor: 'top'
+          buttons:
+          - method: 'restyle'
+            args: ['visible', [true, false]]
+            label: 'GPU usage'
+          - method: 'restyle'
+            args: ['visible', [false, true]]
+            label: 'Max memory usage'
+        yaxis: 
+          # title: "GPU usage"
+          showspikes:  false
+        xaxis:
+          title: "CPU usage"
+          showspikes:  false
+        hovermode: "closest"
+        showlegend: false
+        title:
+          text: "<b>Resources utilization map<b>"
+          font: 
+            family: 'Arial'
+            size: 16
+          xref: "x domain"
+          x:    "0.5"
+          xanchor: "center"
+      traces:
+      - name:   "gpu_vs_cpu"
+        xcol: "usage_avg"
+        ycol: "gpu_active_avg"
+        yaxis:  "y"
+        color:  "#B00000"
+        datapath: "data/support/all.csv"
+        csv_delimiter: ';'
+        mode: 'markers'
+        visible: true
+        marker:
+          size: 5
+          opacity: 0.7
+          line:
+            width: 0.5
+            color: 'black'
+        where:
+          runtime: ">300"
+        onhover:
+        - jobid: { name: 'JobID'}
+        - owner: { name: 'Owner'}
+        - account: { name: 'Project'}
+        - queue: { name: 'Queue'}
+        - usage_avg: { name: 'CPU usage', format: ':.2f'}
+        - gpu_active_avg: { name: 'GPU usage', format: ':.2f'}
+        - used_mem_max: { name: 'Max memory usage', format: ':.2f'}
+        - starttime: { name: 'Start time'}
+        - endtime: { name: 'End time'}
+        - runtime: { name: 'Runtime', factor: 0.01666666667, format: ':.2f', units: 'm'}
+        - numnodes: { name: '#Nodes'}
+      - name:   "maxmem_vs_cpu"
+        xcol: "usage_avg"
+        ycol: "used_mem_max"
+        yaxis:  "y"
+        color:  "#0000B0"
+        datapath: "data/support/all.csv"
+        csv_delimiter: ';'
+        mode: 'markers'
+        visible: false
+        marker:
+          size: 5
+          opacity: 0.7
+          line:
+            width: 0.5
+            color: 'black'
+        where:
+          runtime: ">300"
+        onhover:
+        - jobid: { name: 'JobID'}
+        - owner: { name: 'Owner'}
+        - account: { name: 'Project'}
+        - queue: { name: 'Queue'}
+        - usage_avg: { name: 'CPU usage', format: ':.2f'}
+        - gpu_active_avg: { name: 'GPU usage', format: ':.2f'}
+        - used_mem_max: { name: 'Max memory usage', format: ':.2f'}
+        - starttime: { name: 'Start time'}
+        - endtime: { name: 'End time'}
+        - runtime: { name: 'Runtime', factor: 0.01666666667, format: ':.2f', units: 'm'}
+        - numnodes: { name: '#Nodes'}

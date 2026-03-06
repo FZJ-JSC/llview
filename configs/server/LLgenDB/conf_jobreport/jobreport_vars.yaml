@@ -133,15 +133,6 @@
           FROM stat_by_queue_ts"
   }
 - {
-    name: VAR_sysenvstat_system,
-    type: 'hash_values',       
-    database: sysstatstate,
-    table: sysstat_last,
-    columns:  'sysname',
-    sql: "SELECT distinct sysname 
-          FROM sysstat_last"
-  }
-- {
     name: VAR_sysrackpwr_system,
     type: 'hash_values',       
     database: sysstatstate,

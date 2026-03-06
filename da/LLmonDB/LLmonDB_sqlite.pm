@@ -179,105 +179,106 @@ sub create_table {
   $sql .= join(",", @help);
   $sql .= ")";
 
-  $self->{DBH}->do($sql) 
-      or die "CREATE TABLE FAILED via DBI!\nSQL: $sql\nError: " . $self->{DBH}->errstr;
+  # Execute SQL command inside eval to catch crashes
+  my $rc = eval { $self->{DBH}->do($sql); };
+  my $err = $@ || $self->{DBH}->errstr;
+
+  # Check the result
+  if ($err || !defined($rc)) {
+    # There was an error, die
+    die "CREATE TABLE FAILED via DBI!\nSQL: $sql\nError: " . $err;
+  } 
+  
+  # Only print this if it actually succeeded
+  print "\t   LLmonDB_sqlite: created table $table for $self->{FNAME} ($sql)\n";
 
   $self->mycommit();
-
-  print "\t   LLmonDB_sqlite: created table $table for $self->{FNAME} ($sql)\n";
   
-  return();
+  return 1;
 }
 
-# create a new table
+# Recreate a table (Create New -> Copy Data -> Drop Old -> Rename New)
 sub recreate_table {
   my($self) = shift;
   my($table, $sqlcoldefs) = @_;
 
-  #  Clean the original table name (remove external quotes)
+  # Prepare Names
   my $clean_table = $table;
   $clean_table =~ s/^"|"$//g;
   
-  # Create the Clean "New" name
-  my $clean_newtable = sprintf("_new_%s", $clean_table);
+  # Use a random suffix or distinct name to avoid collisions
+  my $clean_newtable = sprintf("_new_%s_%d", $clean_table, time());
 
-  # Create "Safe" (DBI Quoted) versions for SQL injection
+  # Quote Identifiers
   my $safe_table    = $self->{DBH}->quote_identifier($clean_table);
   my $safe_newtable = $self->{DBH}->quote_identifier($clean_newtable);
 
-  # Create new table
-  my $sql = "CREATE TABLE $safe_newtable (";
-  my (@help, $rc, @safe_select_cols);
+  # Build Column Definitions and Column List for SELECT
+  my @col_defs;
+  my @col_names;
 
   foreach my $col (@{$sqlcoldefs->{collist}}) {
-    # Get the raw name from definitions
+    # Get raw name from config
     my $raw_col_name = $sqlcoldefs->{coldata}->{$col}->{name};
-    
-    # Strip existing quotes
     $raw_col_name =~ s/^"|"$//g;
     
-    # Re-quote safely
     my $safe_col_name = $self->{DBH}->quote_identifier($raw_col_name);
     
-    # Store this safe name for the SELECT query later
-    push(@safe_select_cols, $safe_col_name);
-
-    # Build the definition line (e.g. "my-col" INTEGER)
-    push(@help, sprintf("%s %s",
-                  $safe_col_name,
-                  $sqlcoldefs->{coldata}->{$col}->{sql}));
+    push(@col_names, $safe_col_name);
+    push(@col_defs, sprintf("%s %s", 
+      $safe_col_name, 
+      $sqlcoldefs->{coldata}->{$col}->{sql}
+    ));
   }
   
-  $sql .= join(",", @help);
-  $sql .= ")";
-  
-  $rc = $self->{DBH}->do($sql);
-  
-  if(!defined($rc)) {
-    print STDERR "[recreate_table] \t   LLmonDB_sqlite: ERROR creating table.\nSQL: $sql\nError: " . $self->{DBH}->errstr . "\n";
-    return(-1);
-  }
-  print "\t   LLmonDB_sqlite: created table $safe_newtable RC=$rc\n";
+  my $cols_str = join(",", @col_names);
+  my $defs_str = join(",", @col_defs);
 
-  # Copy data
-  # Use the list of safe columns we built in the previous loop
-  my $cols_str = join(",", @safe_select_cols);
-  
-  $sql = "INSERT INTO $safe_newtable SELECT $cols_str FROM $safe_table";
-  
-  $rc = $self->{DBH}->do($sql);
-  
-  if(!defined($rc)) {
-    print STDERR "[recreate_table] \t   LLmonDB_sqlite: ERROR copying data.\nSQL: $sql\nError: " . $self->{DBH}->errstr . "\n";
-    return(-1);
-  }
-  print "\t   LLmonDB_sqlite: copied data from $safe_table to $safe_newtable RC=$rc\n";
+  # Start Transaction
+  # If anything fails inside the eval, nothing changes in the DB.
+  eval {
+    $self->{DBH}->begin_work;
 
-  if(1) {
-    # Drop old table
-    $sql = "DROP TABLE $safe_table";
-    $rc = $self->{DBH}->do($sql);
+    # Create New Table
+    my $sql_create = "CREATE TABLE $safe_newtable ($defs_str)";
+    $self->{DBH}->do($sql_create);
+    print "\t   LLmonDB_sqlite: created temp table $safe_newtable\n";
+
+    #  Copy Data
+    my $sql_copy = "INSERT INTO $safe_newtable ($cols_str) SELECT $cols_str FROM $safe_table";
+    $self->{DBH}->do($sql_copy);
+    print "\t   LLmonDB_sqlite: copied data to $safe_newtable\n";
+
+    # Drop Old Table
+    my $sql_drop = "DROP TABLE $safe_table";
+    $self->{DBH}->do($sql_drop);
+    print "\t   LLmonDB_sqlite: dropped old table $safe_table\n";
+
+    # Rename New Table to Original Name
+    my $sql_rename = "ALTER TABLE $safe_newtable RENAME TO $safe_table";
+    $self->{DBH}->do($sql_rename);
+    print "\t   LLmonDB_sqlite: renamed $safe_newtable to $safe_table\n";
+
+    # Commit Transaction
+    $self->{DBH}->commit;
+  };
+
+  # Handle Errors
+  if ($@) {
+    # Something went wrong. Rollback everything.
+    # The DB returns to exactly how it was before we started.
+    eval { $self->{DBH}->rollback; };
     
-    if(!defined($rc)) {
-      print STDERR "[recreate_table] \t   LLmonDB_sqlite: ERROR dropping old table.\nSQL: $sql\nError: " . $self->{DBH}->errstr . "\n";
-      return(-1);
-    }
-    print "\t   LLmonDB_sqlite: dropped old table $safe_table RC=$rc\n";
-
-    # Rename new table
-    $sql = "ALTER TABLE $safe_newtable RENAME TO $safe_table";
-    $rc = $self->{DBH}->do($sql);
+    print STDERR "\n" . ("!" x 60) . "\n";
+    print STDERR "  LLmonDB_sqlite: ERROR in recreate_table for $table\n";
+    print STDERR "  Error details: $@\n";
+    print STDERR "  ACTION: Transaction Rolled Back. No changes made.\n";
+    print STDERR ("!" x 60) . "\n\n";
     
-    if(!defined($rc)) {
-      print STDERR "[recreate_table] \t   LLmonDB_sqlite: ERROR renaming table.\nSQL: $sql\nError: " . $self->{DBH}->errstr . "\n";
-      return(-1);
-    }
-    print "\t   LLmonDB_sqlite: renamed table ($sql) RC=$rc\n";
+    return 0; # Return failure
   }
-  
-  $self->mycommit();
 
-  return();
+  return 1; # Return success
 }
 
 
@@ -299,23 +300,29 @@ sub add_column {
   # Build SQL 
   my $sql = "ALTER TABLE $safe_table ADD COLUMN $safe_col $sqldef";
 
-  # Execute SQL command
-  my $rc = $self->{DBH}->do($sql);
+  # Execute SQL command inside eval to catch crashes
+  my $rc = eval { $self->{DBH}->do($sql); };
+  my $err = $@ || $self->{DBH}->errstr;
 
   # Check the result
-  if (!defined($rc)) {
-    # If the error is just that the column exists, ignore it
-    if (! $self->{DBH}->errstr =~ /duplicate column name/i) {
-      # Otherwise, this is a real error (like syntax), die
-      die "ADD COLUMN FAILED!\nSQL: $sql\nError: " . $self->{DBH}->errstr;
+  if ($err || !defined($rc)) {
+    # If the error is just that the column exists, we Log it but return 0 (not done)
+    if ($err =~ /duplicate column name/i) {
+       # We return 0 because it didn't "solve" a missing column
+       return 0; 
     }
-  } else {
-    # Only print this if it actually succeeded
-    print "\t   LLmonDB_sqlite: add column $safe_col to table $safe_table for $self->{FNAME} ($sql)\n";
-  }
+    
+    # Otherwise, this is a real error (like syntax), die
+    die "ADD COLUMN FAILED!\nSQL: $sql\nError: " . $err;
+  } 
+  
+  # Only print this if it actually succeeded
+  print "\t   LLmonDB_sqlite: add column $safe_col to table $safe_table for $self->{FNAME} ($sql)\n";
 
   $self->mycommit();
-  return();
+  
+  # Return 1 to indicate success
+  return 1;
 }
 
 
@@ -351,14 +358,22 @@ sub remove_table {
   # Build SQL
   my $sql = "DROP TABLE $safe_table";
 
-  $self->{DBH}->do($sql)
-    or die "DROP TABLE FAILED!\nSQL: $sql\nError: " . $self->{DBH}->errstr;
+  # Execute SQL command inside eval to catch crashes
+  my $rc = eval { $self->{DBH}->do($sql); };
+  my $err = $@ || $self->{DBH}->errstr;
+
+  # Check the result
+  if ($err || !defined($rc)) {
+    # There was an error, die
+    die "DROP TABLE FAILED!\nSQL: $sql\nError: " . $err;
+  } 
+  
+  # Only print this if it actually succeeded
+  print "\t   LLmonDB_sqlite: removed table $safe_table for $self->{FNAME} ($sql)\n";
 
   $self->mycommit();
-
-  print "\t   LLmonDB_sqlite: removed table $safe_table for $self->{FNAME} ($sql)\n";
   
-  return();
+  return 1;
 }
 
 

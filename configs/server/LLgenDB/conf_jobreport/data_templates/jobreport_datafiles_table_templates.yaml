@@ -87,7 +87,7 @@
       - { name: queuedate,       group: "queued", sort: "D", title: "Queue Date",   desc: "Date job was enqueued"  }
       - { name: runtime,         group: "queued", sort: "N", title: "Runtime",      desc: "Overall runtime"  }
       - { name: starttime,       group: "queued", sort: "D", title: "Start Date (est)",  desc: "Start date (or estimate) of the job"  }
-      - { name: endtime,         group: "queued", sort: "D", title: "Est. End Date", desc: "Estimated end date of the job (Start Date + Walltime)"  }
+      - { name: endtime,         group: "queued", sort: "D", title: "End Date (est)", desc: "End date (or estimate) of the job"  }
       - { name: ArrayJobId,      group: "queued", sort: "N", title: "ArrayJobID",   desc: "Array jobID (Slurm)"  }
       - { name: ArrayTaskId,     group: "queued", sort: "N", title: "ArrayTaskID",  desc: "Array taskID (Slurm)"  }
       - { name: resid,           group: "queued", sort: "S", title: "Reservation",  format: "text-left", desc: "Reservation used by the job"  }
@@ -123,7 +123,7 @@
       - { name: runtime,         group: "queued", sort: "N", title: "Runtime",     desc: "Overall runtime"  }
       
       - { name: starttime,       group: "queued", sort: "D", title: "Start Date (est)", desc: "Start date (or estimate) of the job"  }
-      - { name: endtime,         group: "queued", sort: "D", title: "Est. End Date", desc:  "Estimated end date of the job (Start Date + Walltime)"   }
+      - { name: endtime,         group: "queued", sort: "D", title: "End Date (est)", desc: "End date (or estimate) of the job"   }
       - { name: reason,          group: "queued", sort: "S", title: "Reason",       format: "text-left",  desc: "Reason job could not be scheduled yet"  }
       - { name: dependency,      group: "queued", sort: "S", title: "Dependency",   format: "text-left",  desc: "Slurm job dependency"  }
       - { name: chainid,         group: "queued", sort: "S", title: "ChainID",      desc: "ID of the job chain, computed from dependency information"  }
@@ -240,8 +240,12 @@
     stat_table:    datasetstat_templates
     format:        'template'
     columns:
-      - { name: name,            group: "sysstat",  sort: "S", title: "Rack Name",  desc: "Name of the Rack"      }
-      - { name: power,           group: "sysstat",  sort: "N", title: "Power Usage", desc: "Power used by the rack (in kW)" }
+      - { name: rackid,          group: "sysstat",  sort: "N", title: "Rack Name",  desc: "Name of the Rack"      }
+      - { name: power_last,      group: "sysstat",  sort: "N", title: "Power Usage (last update)", desc: "last update of power used by the rack (in kW)", data_format: "round_number" }
+      - { name: power_avg,       group: "sysstat",  sort: "N", title: "Power Usage Average (25h)", desc: " Average of last 25h of power used by the rack (in kW)", data_format: "round_number" }
+      - { name: power_min,       group: "sysstat",  sort: "N", title: "Power Usage Min (25h)", desc: "Minimum in last 25h of power used by the rack (in kW)", data_format: "round_number" }
+      - { name: power_max,       group: "sysstat",  sort: "N", title: "Power Usage Max (25h)", desc: "Maximum in last 25h of power used by the rack (in kW)", data_format: "round_number" }
+      - { name: cnt,             group: "sysstat",  sort: "N", title: "# samples",  desc: "# samples (1-min probes)"      }
       - { name: ts,              group: "sysstat",  sort: "D", title: "Last Update"    }
 
 - dataset:
@@ -495,6 +499,7 @@
       - { name: n_8192,          group: "heatmap", sort: "N", title: "N_8192",    desc: "Percentage used by jobs of size 8192",  data_format: "percent_or_null", bg_color_map: "n_8192 'RdYlGn'" }
       - { name: n_all,           group: "heatmap", sort: "N", title: "N_ALL",     desc: "Percentage used by jobs of any size",   data_format: "percent_or_null", bg_color_map: "n_all 'RdYlGn'" }
 
+
 - dataset:
     name: template_joblist_source_stat
     set:           template
@@ -514,14 +519,97 @@
       - { name: s_fa,         group: "jobliststat", sort: "N", title: "S_fa",           data_format: "round_number_or_null_int", desc: "Source fabric available" }
       - { name: s_ic,         group: "jobliststat", sort: "N", title: "S_ic",           data_format: "round_number_or_null_int", desc: "Source ICmap available" }
       - { name: s_fs,         group: "jobliststat", sort: "N", title: "S_fs",           data_format: "round_number_or_null_int", desc: "Source file system available" }
-      - { name: s_gpu,        group: "jobliststat", sort: "N", title: "S_gpu",          ddata_format: "round_number_or_null_int", esc: "Source GPU available"}
+      - { name: s_gpu,        group: "jobliststat", sort: "N", title: "S_gpu",          data_format: "round_number_or_null_int", desc: "Source GPU available"}
       - { name: num_jobs,     group: "jobliststat", sort: "N", title: "#jobs",          data_format: "round_number_or_null_int", desc: "number of jobs" }
       - { name: min_ts_start, group: "jobliststat", sort: "D", title: "min_ts_start",   desc: "min job start time stamp" }
       - { name: min_ts,       group: "jobliststat", sort: "D", title: "min_ts",         desc: "min update timestamp" }
+      - { name: max_ts_start, group: "jobliststat", sort: "D", title: "max_ts_start",   desc: "max job start time stamp" }
+      - { name: max_ts,       group: "jobliststat", sort: "D", title: "max_ts",         desc: "max update timestamp" }
       - { name: min_jobid,    group: "jobliststat", sort: "S", title: "min_jobid",      desc: "min jobid"}
       - { name: max_jobid,    group: "jobliststat", sort: "S", title: "max_jobidN",     desc: "max jobid"}
       - { name: avg_jwallm,   group: "jobliststat", sort: "N", title: "avg_wall(min)",  data_format: "round_number_or_null", desc: "avg wall time of job" }
       - { name: max_jwallm,   group: "jobliststat", sort: "N", title: "max_wall(min)",  data_format: "round_number_or_null", desc: "max wall time of job" }
+      
+
+- dataset:
+    name: template_app_stats
+    set:           app_stats
+    filepath:      '$outputdir/LLtemplates/app_stats.handlebars'
+    stat_database: jobreport_json_stat
+    stat_table:    datasetstat_templates
+    format:        'datatable'
+    ag-grid-theme: 'balham' #quartz, balham, material, alpine (with -dark or -auto-dark suffix too)
+    columns:
+        - { 
+            field: "application", 
+            headerName: "Application", 
+            flex: 1,  
+            headerTooltip: "Application name",
+            cellDataType: "text", 
+        }
+        - { 
+            children: [
+            {
+                field: "run_count", 
+                headerName: "Run Count", 
+                flex: 1,  
+                headerTooltip: "Number of job steps executed for this application", 
+                cellDataType: "number",
+                maxWidth: 100,
+            },
+            { 
+                field: "nodeh",
+                headerName: "Node-h", 
+                flex: 1,  
+                headerTooltip: "Total Node-h for this application", 
+                cellDataType: "number",
+                valueFormatter: "(params) => round_number(params,2)",
+                maxWidth: 100,
+                sort: 'desc', 
+                sortIndex: 0,
+            }], 
+            headerName: "Usage", 
+            groupId: "usage", 
+        }
+        - { 
+            children: [
+            { 
+                field: "userlist",
+                headerName: "Users",
+                cellDataType: "text", 
+                cellClass: "text-left",
+                flex: 1, 
+                wrapText: true, 
+                autoHeight: true, 
+                headerTooltip: "List of users who ran this application", 
+                valueFormatter: "(params) => { if (Array.isArray(params.value)) { return params.value.join(', '); } return params.value;}",
+            },
+            { 
+                field: "accountlist",
+                headerName: "Accounts",
+                cellDataType: "text", 
+                cellClass: "text-left",
+                flex: 1,
+                wrapText: true,
+                autoHeight: true,
+                headerTooltip: "List of accounts who ran this application", 
+                cellRenderer: "(params) => gen_projects_link(params,'/data/ll/project')",
+            },
+            { 
+                field: "joblist",
+                headerName: "Jobs",
+                cellDataType: "text", 
+                cellClass: "text-left",
+                flex: 1,
+                wrapText: true,
+                autoHeight: true,
+                headerTooltip: "List of accounts who ran this application", 
+                columnGroupShow: "open",
+                cellRenderer: "(params) => gen_jobid_list_link(params)",
+            }], 
+            headerName: "Lists", 
+            groupId: "lists"
+        }
 
 - dataset:
     name: template_CB
@@ -546,14 +634,14 @@
           children: [
             {
               field: "min_ts",
-              headerName: "Date of First Run", 
+              headerName: "Date of First Run",
               headerTooltip: "Minimum timestamp on the benchmark",
               cellDataType: "text",
               flex: 1
             },
             {
               field: "max_ts",
-              headerName: "Date of Last Run", 
+              headerName: "Date of Last Run",
               headerTooltip: "Maximum timestamp on the benchmark",
               cellDataType: "text",
               flex: 1
@@ -566,13 +654,13 @@
         children: [
           {
             field: "count",
-            headerName: "Total", 
+            headerName: "Total",
             headerTooltip: "Total number of runs",
             flex: 1
           },
           {
             field: "valid_count",
-            headerName: "Valid", 
+            headerName: "Valid",
             headerTooltip: "Number of valid runs",
             flex: 1
           },
