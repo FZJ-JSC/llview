@@ -1,6 +1,61 @@
 # LLview Public Releases
 
-### 2.4.3-base (January 18, 2025)
+### 2.4.4-base (March 11, 2026)
+
+Important bug fixes, improvements on plugins (Prometheus plugin is now GenericAPI, as it is much more general), and more!
+
+<h4> Added </h4>
+
+- Added possibility to give unique indices for the SQL tables via `unique_index` key (to avoid adding duplicated data)
+- JuRepTool: Added dependency on `pytz`
+- Added autocompletion for `listerrors` script
+- Git plugin: New `default` and `validation` metric keys ([See here for more details](../benchmarks/configuration.md))
+- Git plugin: New layout option under plot_settings, that is passed to plotly.js layout directly
+- Git plugin: Added possibility to define benchmark tab name via argument
+- Example config: Use `unique_index` on some tables
+- Example config: Included checkMK example config (that is used with `generic_api.py` plugin)
+- Example config: Added statistics of application names (table on DB, and website)
+- Example config: Added job distribution graph page
+
+<h4> Changed </h4>
+
+- Updated SQLite queries and checks to allow also changing of capilatisation without errors
+- Improved quotation of tables
+- Fixed reporting of errors and fixes in `checkDB`/`updatedb`
+- Improved substitution of envvars to emit meaningful error messages
+- Changed plugin folder names: `SLURM` to `Slurm`, and `Prometheus` to `GenericAPI` (the plugin is more general than prometheus)
+- Git plugin: now traverse folders and subfolders recursively
+- Git plugin: stores 'host' in folder using tab name too, to allow one page to collect data from different hosts; 
+- Git plugin: Added sorts to make colors consistent, replace spaces into '_' on `_timestamps` tables
+- GenericAPI plugin: Extended plugin to use wildcards to traverse json
+- GenericAPI plugin: Define time multipliers to automatically generate timestamps
+- GenericAPI plugin: Generalised REST API to handle Argos (without breaking checkMK)
+- JuRepTool: Collect data that should be put on the HTML reports in a single variable, and use them for the different plots and avoid duplicated data (use less space)
+- JuRepTool: Removed custom hovertext in favour of hovertemplate, since that increases considerably the HTML report size
+- Example config: Fixed `pcpucores` tables, to prevent it exploding
+
+<h4> Fixed </h4>
+
+- Added replacement of slashes to `%2F` on FORALL variables that are used in paths, to avoid breaking the file creations
+- Fixed `hourfrac` conversion to allow 'UNLIMITED'
+- Fixed compression workflow to avoid recompressing
+- Git plugin: More safeguards to avoid crashing when wrong configs are given
+- Git plugin: Fixed timezone of timestamp
+- Git plugin: Added 'stub' to be able to keep some common data when all data is filtered
+- Git plugin: Made checks more general for x-axis quantity instead of 'ts'
+- Git plugin: Changed type of int to `%s` on the csv files to allow empty strings (missing values)
+- Slurm plugin: Fixed plugin to not crash when conversion fails and to return used memory
+- Slurm plugin: Fixed expansion of nodelist
+- JuRepTool: Further issues fixed, also in `errormessage` example
+- JuRepTool: Fix yaxis zoom on timeline when zoomlock is on
+- Example config: Fixed queries of the node status to avoid duplicate counting of nodes on the Usage graph
+- Example config: Fixed GPU list (had issues when job restarted)
+- Example config: Further improvements
+
+
+
+
+### 2.4.3-base (January 18, 2026)
 
 More improvements on Continuous Benchmarks, better XML parsing and improvements on JuRepTool!
 
