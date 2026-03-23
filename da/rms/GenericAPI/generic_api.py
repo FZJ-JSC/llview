@@ -191,13 +191,13 @@ def gpu(options: dict, gpus_info) -> dict:
   if gpus_info._token:
     # with token
     headers = {'accept': 'application/json', 'Authorization': gpus_info._token}
-    r = requests.get(url, headers=headers, timeout=(10,20), verify=gpus_info._verify)
+    r = requests.get(url, headers=headers, timeout=(15,30), verify=gpus_info._verify)
   else:
     # with credentials
     credentials = None
     if gpus_info._user and gpus_info._pass:
       credentials = (gpus_info._user, gpus_info._pass)
-    r = requests.get(url, auth=credentials, timeout=(10,20), verify=gpus_info._verify)
+    r = requests.get(url, auth=credentials, timeout=(15,30), verify=gpus_info._verify)
 
   # If current query does not succeed, log error and skip next steps
   if not r.ok:
@@ -408,14 +408,14 @@ class Info:
             # with token
             headers = {'accept': 'application/json', 'Authorization': self._token}
             self.log.debug(f"Headers: {headers}, Proxies: {self._proxies}, Verify: {self._verify}\n")
-            resp = requests.get(url, headers=headers, timeout=(10,20), proxies=self._proxies, verify=self._verify)
+            resp = requests.get(url, headers=headers, timeout=(15,30), proxies=self._proxies, verify=self._verify)
           else:
             # with credentials
             credentials = None
             if self._user and self._pass:
               credentials = (self._user, self._pass)
             self.log.debug(f"Proxies: {self._proxies}, Verify: {self._verify}\n")
-            resp = requests.get(url, auth=credentials, timeout=(10,20), proxies=self._proxies, verify=self._verify)
+            resp = requests.get(url, auth=credentials, timeout=(15,30), proxies=self._proxies, verify=self._verify)
 
           # If current query does not succeed, log error and continue to next query
           if not resp.ok:

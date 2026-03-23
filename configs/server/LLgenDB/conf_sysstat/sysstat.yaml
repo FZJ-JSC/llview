@@ -120,7 +120,13 @@ sysstatstate:
                            (_time_res, _time_cnt, ts, name, power_avg)
                                  SELECT 1, 1, ts, name, power
                                  FROM rackpwr
-                                 WHERE (ts >=  mintsinserted)
+                                 WHERE (ts >= mintsinserted)
+                                   AND NOT EXISTS (
+                                       SELECT 1 FROM rackpwr_time_aggr rta
+                                       WHERE rta._time_res = 1 
+                                         AND rta.ts = rackpwr.ts 
+                                         AND rta.name = rackpwr.name
+                                   )
           archive:
             limit_aggr_time: [ 6120, 133920, 2628000 ]     # in minutes (3 days, 93 days, 5 years)
             limit_aggr_time_var: ts

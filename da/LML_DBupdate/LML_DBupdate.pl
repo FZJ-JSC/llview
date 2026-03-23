@@ -127,12 +127,18 @@ $msg=sprintf("%s readingInput                                    in %7.4fs (ts=%
 $starttime=time();
 my $checklmldata=($count_lml>0);
 my $LMLmon_input_data=$fileobj->get_data($checklmldata,$opt_updatealways);
+$endtime=time();
+$msg=sprintf("%s getdata                                         in %7.4fs (ts=%.5f,%.5f,l=0,nr=2)\n",$instname,$endtime-$starttime,$starttime,$endtime); logmsg($msg);
 
 if($opt_dump) {
-  &check_folder("./dump/");
-  $fileobj->dump_entries_by_cap("./dump/");
+    $starttime=time();
+    &check_folder("./dump/");
+    $fileobj->dump_entries_by_cap("./dump/");
+    $endtime=time();
+    $msg=sprintf("%s dumpdata                                        in %7.4fs (ts=%.5f,%.5f,l=0,nr=2)\n",$instname,$endtime-$starttime,$starttime,$endtime); logmsg($msg);
 }
 
+$starttime=time();
 $DB->process_LMLdata($LMLmon_input_data,$opt_maxproc);  
 $endtime=time();
 $msg=sprintf("%s processLML                                      in %7.4fs (ts=%.5f,%.5f,l=0,nr=3)\n",$instname,$endtime-$starttime,$starttime,$endtime); logmsg($msg);

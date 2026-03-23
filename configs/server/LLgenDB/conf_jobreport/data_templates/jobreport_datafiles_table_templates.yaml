@@ -555,7 +555,7 @@
                 flex: 1,  
                 headerTooltip: "Number of job steps executed for this application", 
                 cellDataType: "number",
-                maxWidth: 100,
+                maxWidth: 150,
             },
             { 
                 field: "nodeh",
@@ -564,7 +564,7 @@
                 headerTooltip: "Total Node-h for this application", 
                 cellDataType: "number",
                 valueFormatter: "(params) => round_number(params,2)",
-                maxWidth: 100,
+                maxWidth: 150,
                 sort: 'desc', 
                 sortIndex: 0,
             }], 
