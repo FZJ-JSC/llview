@@ -1792,7 +1792,7 @@ class BenchRepo:
         # This ensures we have a place to append the tab
         benchmark_page = pages_data.setdefault(benchname, {
           'name': custom_display_name,
-          'section': f'cb_{benchname.replace(" ","_")}',
+          'section': f'cb_{custom_display_name.replace(" ","_")}',
           'tabs': [] # Initialize the list of tabs
         })
 
@@ -1807,7 +1807,7 @@ class BenchRepo:
         # --- This is a standalone page (no tabs) ---
         # Add the page's name to its content
         content_definition['name'] = custom_display_name
-        content_definition['section'] = f'cb_{benchname.replace(" ","_")}'
+        content_definition['section'] = f'cb_{custom_display_name.replace(" ","_")}'
         
         # Store it directly under its benchmark name
         pages_data[benchname] = content_definition
@@ -1822,13 +1822,26 @@ class BenchRepo:
       joined_msgs = "<br>".join(error_msgs)
       formatted_error = f"<div style='color:red; margin-top:10px; padding:10px; border:1px solid red;'>{joined_msgs}</div>"
       
+      # Try to get the custom name if the config survived parsing.
+      # If the repo failed immediately (e.g. bad Git URL), _data won't have it,
+      # so we safely fall back to the internal benchname.
+      custom_name = benchname
+      if benchname in self._data:
+        # Get the config from the first available tab (or root if no tabs)
+        first_key = list(self._data[benchname].keys())[0]
+        root_cfg = self._data[benchname][first_key].get('config', {})
+        custom_name = root_cfg.get('name', benchname)
+      
+      # Sanitize for the section ID (consistent with 'gen_benchmark_link' on JURI)
+      safe_section_name = custom_name.replace(" ", "_")
+
       if tabname:
         # Tab level:
         if benchname not in pages_data:
           # If the benchmark does not exist, the entire repo failed to initialize -> create parent stub
           pages_data[benchname] = {
-            'name': benchname, 
-            'section': f'cb_{benchname.replace(" ","_")}',
+            'name': custom_name, 
+            'section': f'cb_{safe_section_name.replace(" ","_")}',
             'description': "Benchmark partially or fully failed to load.",
             'tabs': []
           }
@@ -1862,8 +1875,8 @@ class BenchRepo:
         else:
           # If the standalone page failed completely
           pages_data[benchname] = {
-            'name': benchname,
-            'section': f'cb_{benchname.replace(" ","_")}',
+            'name': custom_name,
+            'section': f'cb_{safe_section_name.replace(" ","_")}',
             'default': False,
             'description': formatted_error,
             'ref': []
