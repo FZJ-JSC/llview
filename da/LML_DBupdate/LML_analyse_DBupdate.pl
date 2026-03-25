@@ -39,6 +39,7 @@ my $caller=$0;$caller=~s/^.*\/([^\/]+)$/$1/gs;
 # option handling
 my $opt_infile="./tmp/steplogs/LMLDBupdate_last.log";
 my $opt_outfile="./tmp/LMLDBupdate_stat_LML.xml";
+my $opt_outfile_ascii="./tmp/LMLDBupdate_stat_ASCII.dat";
 my $opt_cntfile="./perm/stepcounter.dat";
 my $opt_name="default";
 my $opt_verbose=0;
@@ -48,6 +49,7 @@ usage($0) if( ! GetOptions(
               'verbose'          => \$opt_verbose,
               'infile=s'         => \$opt_infile,
               'outfile=s'        => \$opt_outfile,
+              'outfileascii=s'   => \$opt_outfile_ascii,
               'cntfile=s'        => \$opt_cntfile,
               'name=s'           => \$opt_name,
               ) );
@@ -79,7 +81,7 @@ while(my $line=<IN>) {
   }
   if($line=~/\[LML_DBupdate.pl\]\[PRIMARY\s*\]\s+$patwrd\s+in \s*$patfp[s] \(ts=$patfp,$patfp,l=$patint,nr=$patint\)/) {
     my($a,$b,$c,$d,$e,$f)=($1,$2,$3,$4,$5,$6);
-    # print "TMPDEB1: ($a,$b,$c,$d,$e,$f)\n";
+#    print "TMPDEB1: ($a,$b,$c,$d,$e,$f)\n";
     my $name=sprintf("%s",$a);
     $stat->{$name}->{start}=$c;
     $stat->{$name}->{end}=$d;
@@ -94,8 +96,11 @@ while(my $line=<IN>) {
     $stat->{$name}->{end}=$e;
     $stat->{$name}->{startgroupnum}=$f;
     $stat->{$name}->{nr}=$g;
-    # print "TMPDEB2: ($a,$b,$c,$d,$e,$f,$g)\n";
+    $stat->{$name}->{level}=0;
+#    print "TMPDEB2: ($a,$b,$c,$d,$e,$f,$g)\n";
     foreach my $k (keys(%{$dblist->{$a}})) {
+      $dblist->{$a}->{$k}->{topstart}=$d;
+      $dblist->{$a}->{$k}->{topend}=$e;
       $dblist->{$a}->{$k}->{start}+=$d;
       $dblist->{$a}->{$k}->{end}+=$d;
     }
@@ -110,13 +115,15 @@ while(my $line=<IN>) {
       $stat->{$name}->{start}=0;
     }
     $stat->{$name}->{end}=$stat->{$name}->{start}+$g;
-    $dbts->{$b}=$stat->{$name}->{end};
+    $dbts->{$a}=$stat->{$name}->{end};
     $stat->{$name}->{startgroupnum}=3;
     $stat->{$name}->{nr}=$dbnr->{$a}++;
     $stat->{$name}->{cmplx}=$c;
+    $stat->{$name}->{level}=1;
+    $stat->{$name}->{topname}=lc($a);
 
     $dblist->{$a}->{$name}=$stat->{$name};
-    # print "TMPDEB3: ($a,$b,$c,$d,$e,$f,$g) -> $stat->{$name}->{start}, $stat->{$name}->{end} $stat->{$name}->{startgroupnum} $stat->{$name}->{nr}\n";
+#    print "TMPDEB3: ($a,$b,$c,$d,$e,$f,$g) -> $stat->{$name}->{start}, $stat->{$name}->{end} $stat->{$name}->{startgroupnum} $stat->{$name}->{nr}\n";
   }
   if($line=~/\[LML_DBupdate.pl\]\[$patwrd\s*\]\s+LLmonDB:\s+$patwrd\.\s*$patint entries.*in\s+$patfp[s]/) {
     my($a,$b,$c,$d)=($1,$2,$3,$4);
@@ -128,7 +135,27 @@ close(IN);
 #print Dumper($stat);
 #exit;
 
+# define order
+my $num=0;
+foreach my $step ( sort {&my_sort($a,$b)} (keys(%{$stat}))) {
+    next if($stat->{$step}->{level}>0);
+    $num++;
+    $stat->{$step}->{order}=$num*100;
+    $stat->{$step}->{ordercnt}=$num*100;
+}
+
+foreach my $step ( sort {&my_sort($a,$b)} (keys(%{$stat}))) {
+    if($stat->{$step}->{level}==1) {
+	my $top=$stat->{$step}->{topname};
+	$stat->{$top}->{ordercnt}++;
+	$stat->{$step}->{order}=$stat->{$top}->{ordercnt}++;
+    }
+}
+
+		
 &write_steptimings_lml($opt_outfile,$opt_name,$starttime,$endtime,$stat);
+
+&write_steptimings_ascii($opt_outfile_ascii,$opt_name,$starttime,$endtime,$stat);
 
 # handle also stdout/stderr 
 sub write_steptimings_lml {
@@ -144,7 +171,7 @@ sub write_steptimings_lml {
   printf(OUT "	version=\"0.7\"\>\n");
   printf(OUT "<objects>\n");
   $count=0;
-  foreach $step (sort {$steprefs->{$a}->{start} <=> $steprefs->{$b}->{start}} (keys(%{$steprefs}))) {
+  foreach $step (sort {$steprefs->{$a}->{order} <=> $steprefs->{$b}->{order}} (keys(%{$steprefs}))) {
     $count++;$stepnr{$step}=$count;
     printf(OUT "<object id=\"fb%06d\" name=\"%s\" type=\"steptime\"/>\n",$count,$step);
   }
@@ -152,7 +179,7 @@ sub write_steptimings_lml {
   printf(OUT "</objects>\n");
   printf(OUT "<information>\n");
 
-  foreach $step (sort {$steprefs->{$a}->{start} <=> $steprefs->{$b}->{start}} (keys(%{$steprefs}))) {
+  foreach $step (sort {$steprefs->{$a}->{order} <=> $steprefs->{$b}->{order}} (keys(%{$steprefs}))) {
     printf(OUT "<info oid=\"fb%06d\" type=\"short\">\n",$stepnr{$step});
     printf(OUT " <data %-20s value=\"%s\"/>\n","key=\"wf_name\"", $wf_name);
     printf(OUT " <data %-20s value=\"%s\"/>\n","key=\"name\"", $step);
@@ -170,6 +197,45 @@ sub write_steptimings_lml {
   printf(OUT "</information>\n");
   printf(OUT "</lml:lgui>\n");
   close(OUT);
+}
+
+
+# handle also stdout/stderr 
+sub write_steptimings_ascii {
+  my($filename,$wf_name,$starttime,$endtime,$steprefs)=@_;
+  my($count,%stepnr,$step);
+
+  # print "write_steptimings_lml($filename,$wf_name,$starttime,$endtime,$steprefs)\n";
+  
+  open(OUT,"> $filename") || die "cannot open file $filename";
+  printf(OUT "%4s %3s %-50s %-15s %-15s %10s %10s %10s\n","ord","lvl","step","ts_start","ts_end","start_rel","end_rel","t_delta");
+  print OUT "-"x122,"\n";
+  $count=0;
+
+  foreach $step (sort {$steprefs->{$a}->{order} <=> $steprefs->{$b}->{order}} (keys(%{$steprefs}))) {
+      printf(OUT "%04d %1d %-50s %15.4f %15.4f %10.4f %10.4f %10.4f\n",
+	     $steprefs->{$step}->{order},
+	     $steprefs->{$step}->{level},
+	     $step,
+	     $steprefs->{$step}->{start},
+	     $steprefs->{$step}->{end},
+	     $steprefs->{$step}->{start}-$starttime,
+	     $steprefs->{$step}->{end}-$starttime,
+	     $steprefs->{$step}->{end} - $steprefs->{$step}->{start});
+  }
+  
+  close(OUT);
+}
+
+
+sub my_sort {
+    my($a,$b)=@_;
+    if($stat->{$a}->{start} != $stat->{$b}->{start}) {
+	return( $stat->{$a}->{start} <=> $stat->{$b}->{start} );
+    } else {
+	return($a cmp $b);
+    }
+    
 }
 
 sub modint {

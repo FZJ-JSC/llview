@@ -98,7 +98,7 @@
                     context: "data/_sysstat/app_stats.json"
                     ref: [ datatable ]
                     data:
-                      default_columns: [ 'Application', 'Usage', 'Lists' ]
+                      default_columns: [ 'Application', 'Usage' ]
                   - name: "Job Distribution"
                     section: "job_dist"
                     description: "Resource utilization map of jobs in the last 3 weeks (with runtime above 5min) against different performance metrics. The axes metrics are selectable to display different workload distribution landscapes."
