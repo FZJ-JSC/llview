@@ -649,9 +649,9 @@ class BenchRepo:
       if 'branch' in config:
         branch = config['branch']
         # Allow alphanumeric, dash, underscore, slash. Reject everything else.
-        if not re.match(r'^[\w\-\/]+$', branch):
-            self.log.error(f"Invalid characters in branch name: '{branch}'. Aborting.\n")
-            return False
+        if not re.match(r'^[\w\-\/\.]+$', branch):
+          self.log.error(f"Invalid characters in branch name: '{branch}'. Aborting.\n")
+          return False
             
         cmd = ['git', '-C', folder, 'switch', '-q', branch]
         self.log.debug("Changing branch with command: {}\n".format(' '.join(cmd)))
