@@ -271,6 +271,8 @@ def accountinfo(options: dict, accounts_info) -> dict:
   accountextra = {}
   accountmodified = {}
 
+  ts = time.time()
+
   # Updating the accounts dictionary by adding or removing keys
   for accountname,accountinfo in accounts_info.items():
     accountmodified.setdefault(accountinfo['USER'],{})
@@ -280,6 +282,20 @@ def accountinfo(options: dict, accounts_info) -> dict:
         accountmodified[accountinfo['USER']][key] = value
       elif key == 'ACCOUNT':
         accountmodified[accountinfo['USER']][key] += f",{value}"
+      # Adding 'id' to dictionary
+      accountmodified[accountinfo['USER']]['id'] = accountinfo['USER']
+      # Adding 'ts' to dictionary
+      accountmodified[accountinfo['USER']]['ts'] = ts
+
+  support_accounts = options.get("support")
+  for support in support_accounts:
+    accountextra.setdefault(support,{})
+    accountextra[support]['__prefix'] = 'SS'
+    accountextra[support]['__type'] = 'supportmap'
+    accountextra[support]['id'] = support
+    accountextra[support]['ts'] = ts
+    accountextra[support]['USER'] = support
+
 
   # Modifying the accounts_info to the one based on username
   accounts_info._dict = accountmodified
