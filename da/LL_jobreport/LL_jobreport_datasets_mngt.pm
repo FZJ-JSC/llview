@@ -724,6 +724,8 @@ sub mngt_scan_datasets {
   my $config_ref=$DB->get_config();
   my $limit_ts=$self->{CURRENTTS};
 
+  my $check_on_set;
+
   # init instantiated variables
   my $varsetref;
   if(exists($config_ref->{$basename}->{paths})) {
@@ -735,8 +737,21 @@ sub mngt_scan_datasets {
   # find datasets which could have updated files
   my $ds;
   foreach my $datasetref (@{$config_ref->{$basename}->{datafiles}}) {
-    my $subconfig_ref=$datasetref->{dataset};
-    $ds->{$subconfig_ref->{stat_database}}->{$subconfig_ref->{stat_table}}=$subconfig_ref;
+      my $subconfig_ref=$datasetref->{dataset};
+      my($ds_db,$ds_tab)=($subconfig_ref->{stat_database},$subconfig_ref->{stat_table});
+      $ds->{$ds_db}->{$ds_tab}=$subconfig_ref;
+      $check_on_set->{names}->{$ds_db}->{$ds_tab}->{$subconfig_ref->{name}}++;
+
+      if(exists($check_on_set->{set}->{$ds_db}->{$ds_tab})) {
+	  if($check_on_set->{set}->{$ds_db}->{$ds_tab} ne $subconfig_ref->{set}) {
+	      printf( STDERR "ERROR stat database used in two different sets (race condition) db=%s, tab=%s sets=%s,%s datasets=%s\n",
+		     $ds_db,$ds_tab,
+		      $check_on_set->{set}->{$ds_db}->{$ds_tab},$subconfig_ref->{set},
+		      join(",",keys(%{$check_on_set->{names}->{$ds_db}->{$ds_tab}}))
+		  );
+	  }
+      }
+      $check_on_set->{set}->{$ds_db}->{$ds_tab}=$subconfig_ref->{set};
   }
   foreach my $datasetref (@{$config_ref->{$basename}->{footerfiles}}) {
     my $subconfig_ref=$datasetref->{footer};
@@ -764,7 +779,7 @@ sub mngt_scan_datasets {
       if(exists($self->{DATASETSTAT}->{$ds_db}->{$ds_tab})) {
         delete($self->{DATASETSTAT}->{$ds_db}->{$ds_tab}); # remove in-memory version
       }
-      
+
       # read info about files into memory
       $self->get_datasetstat_from_DB($ds_db,$ds_tab,$where);
       
