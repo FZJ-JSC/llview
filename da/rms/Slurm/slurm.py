@@ -287,11 +287,14 @@ def accountinfo(options: dict, accounts_info) -> dict:
       # Adding 'ts' to dictionary
       accountmodified[accountinfo['USER']]['ts'] = ts
 
-  support_accounts = options.get("support")
-  for support in support_accounts:
+  support_config = options.get("support",{})
+  support_users = support_config.get("users",[])
+  support_prefix = support_config.get("prefix","SS")
+  support_type = support_config.get("type","supportmap_slurm")
+  for support in support_users:
     accountextra.setdefault(support,{})
-    accountextra[support]['__prefix'] = 'SS'
-    accountextra[support]['__type'] = 'supportmap'
+    accountextra[support]['__prefix'] = support_prefix
+    accountextra[support]['__type'] = support_type
     accountextra[support]['id'] = support
     accountextra[support]['ts'] = ts
     accountextra[support]['USER'] = support

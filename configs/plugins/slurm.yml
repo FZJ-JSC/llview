@@ -19,12 +19,15 @@ sysinfo:
 accountinfo:
   cmd: 'squeue -o "%u|%a"'
   LML: './slurmaccounts_LML.xml'
-  type: 'usermap'
+  type: 'usermap_slurm'
   prefix: 'SU'
   apply_function: accountinfo
-  # support:
-  #   - support_username1
-  #   - support_username2
+#  support:
+#    type: 'supportmap_slurm'
+#    prefix: 'SS'
+#    users:
+#      - support_username1
+#      - support_username2
   mapping:
     id: 'id'
     ts: 'ts'
