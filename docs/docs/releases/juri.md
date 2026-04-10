@@ -2,7 +2,36 @@
 
 Since the JURI (Jülich Reporting Interface) module is the same for the internal and the public versions, a single and separated page describe its changelog.
 
-### 2.4.3 (January 18, 2025)
+### 2.4.4 (March 11, 2026)
+
+<h4> Added </h4>
+
+- Added sorting of data before plotting
+- Add hash entries to follow page after search (this is needed to open links in new pages when modifier keys are used)
+- Added emissio of event `pageLoadComplete` when page is completely loaded
+- Added option `footer_height` on URL to automatically resize the footer
+- Added `footer_tab` on the URL (only when not the first one, default), to be selected automatically
+- Added possibility to change delimiter on csv of graphs directly on configuration (from LLview)
+- Added `fillNA` option (on `self.graph_data`) to be able to plot points without a value (e.g., no GPU usage)
+
+<h4> Changed </h4>
+
+- Improved replaceDataPlaceholder to be able to use slashes `/` on filenames (not split into folders)
+
+<h4> Fixed </h4>
+
+- Fixed xaxis fonts (now that there may be a label on this axis)
+- Fixed links to keep their fragment when open in new window/tab
+- Defer applying data to graph so that is done after the graphs are created
+- Fixed helper functions of workers, that did not have access to view nor window object
+- Fix maximum footer height not to go above the header (and leave 50px for main content)
+- Added check for number of GPUS (default 4) to show min/avg/max or not on footer graphs
+- Added missing helper functions for ag-grid
+- Fixed links to open in new window with modifier keys
+- Pass `visible` key to plotly
+
+
+### 2.4.3 (January 18, 2026)
 
 <h4> Added </h4>
 

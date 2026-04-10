@@ -19,12 +19,20 @@ sysinfo:
 accountinfo:
   cmd: 'squeue -o "%u|%a"'
   LML: './slurmaccounts_LML.xml'
-  type: 'usermap'
-  prefix: 'U'
+  type: 'usermap_slurm'
+  prefix: 'SU'
   apply_function: accountinfo
+#  support:
+#    type: 'supportmap_slurm'
+#    prefix: 'SS'
+#    users:
+#      - support_username1
+#      - support_username2
   mapping:
-    ACCOUNT: 'projects'
-    USER: 'id'
+    id: 'id'
+    ts: 'ts'
+    ACCOUNT: 'project'
+    USER: 'wsaccount'
 
 prioinfo:
   # Transforming the sprio output into csv-like output using '|' as delimiter

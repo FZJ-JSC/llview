@@ -28,8 +28,10 @@ gpustate:
             LLgenDB: set_node2nid(nodeid,nodeinfo,nodeid,nid)
             mode: add
           update_trigger:
+            - gpu_group_by_node_ts
             - gpu_aggr_by_ts
             - node_update_status
+            - nodes_to_update
             - gpu_aggr_by_node
             - gpu_current_jobid
             - gpu_jobmap_by_nd_ts
@@ -42,7 +44,10 @@ gpustate:
             - gpu_history_failed_node_exporter
           archive:
             limit: max(ts)-25h
-          index: nodeid,gpuid,ts
+          # This prevents duplicates
+          unique_index: nodeid,gpuid,ts
+          # This creates a standard index for fast queries by time
+          index: ts
         columns: 
           - { name: nodeid       , type: nodeid_t,  LML_from: pid        , LML_default: 'unknown' }
           - { name: gpuid        , type: nodeid_t,  LML_from: id         , LML_default: 'unknown' }
@@ -57,15 +62,51 @@ gpustate:
           - { name: gpu_sclk     , type: clk_t,     LML_from: gpu_sclk   , LML_default: 0 }
           - { name: gpu_temp     , type: temp_t,    LML_from: gpu_temp   , LML_default: 0 }
           - { name: gpu_active   , type: float_t,   LML_from: gpu_active , LML_default: 0 }
-          - { name: gpu_util     , type: rate_t,    LML_from: gpu_util  , LML_default: 0 }
+          - { name: gpu_util     , type: rate_t,    LML_from: gpu_util   , LML_default: 0 }
           - { name: gpu_pcie_tx  , type: bytes_t,   LML_from: pcietx     , LML_default: 0 }
           - { name: gpu_pcie_rx  , type: bytes_t,   LML_from: pcierx     , LML_default: 0 }
           - { name: gpu_nvlink_tx, type: bytes_t,   LML_from: nvlinktx   , LML_default: 0 }
           - { name: gpu_nvlink_rx, type: bytes_t,   LML_from: nvlinkrx   , LML_default: 0 }
           - { name: ncores       , type: tasks_t,   LML_from: ncores     , LML_default: 0 }
           - { name: features     , type: feature_t, LML_from: features   , LML_default: 0 }
-          - { name: state        ,  type: status_t,  LML_from: state      , LML_default: '-' }
+          - { name: state        , type: status_t,  LML_from: state      , LML_default: '-' }
 
+
+
+    #----------------------------------------------
+    # tables, some info per nodeid info for last ts
+    #----------------------------------------------
+    - table:
+        name: gpu_group_by_node_ts
+        options:
+          update:
+            # updates only a subset of nodes in one step (full turn in 15 steps)
+            sql_update_contents:
+              vars: mintsinserted
+              sql: DELETE FROM gpu_group_by_node_ts;
+                   INSERT INTO gpu_group_by_node_ts
+                                       ( nodeid, ts, gpuids, gpu_active_lst, gpu_active_avg, gpu_pu_lst, gpu_pu_avg )
+                                       SELECT nodeid, ts,
+                                              GROUP_CONCAT(substr(gpuid,-1),","),
+                                              GROUP_CONCAT(gpu_active,","),
+                                              AVG(gpu_active),
+                                              GROUP_CONCAT(gpu_pu,","),
+                                              AVG(gpu_pu)
+                                              
+                                       FROM gpu 
+                                       WHERE (ts >= mintsinserted)
+                                       GROUP by nodeid, ts 
+                                       ORDER by nodeid, gpuid
+                                       
+        columns: 
+          - { name: nodeid,           type: nodeid_t }
+          - { name: ts,               type: ts_t}
+          - { name: gpuids,           type: shortstr_t }
+          - { name: gpu_active_lst,   type: longstr_t }
+          - { name: gpu_active_avg,   type: float_t }
+          - { name: gpu_pu_lst,       type: longstr_t }
+          - { name: gpu_pu_avg,       type: float_t }
+          
     #-------------------------------
     # tables, containing per ts info
     #-------------------------------
@@ -113,10 +154,10 @@ gpustate:
                                               %include "gpu_sql_aggrlist.yaml"
                                        FROM gpu 
                                        WHERE nodeid IN (
-                                                         SELECT nodeid FROM nodeinfo, node_update_status
-                                                         WHERE nid%update_step_max=update_step and step_id=1
+                                                         SELECT nodeid FROM nodes_to_update
                                                        )
                                        GROUP by nodeid, gpuid
+              sqldebug: 0
         columns: 
           - { name: nodeid,           type: nodeid_t }
           - { name: gpuid,            type: nodeid_t }
@@ -149,9 +190,12 @@ gpustate:
                                             gpu g
                                       WHERE  (g.ts >= mintsinserted)
                                             AND (g.ts = jnt.ts) AND (jnt.nodeid=g.nodeid)
+              sqldebug: 0
           archive:
             limit: max(ts)-25h
-          index: jobid,nodeid,gpuid
+          index:
+            - jobid,nodeid,gpuid
+            - ts
         columns: 
           - { name: jobid        ,     type: jobid_t }
           - { name: ts           ,     type: ts_t }
@@ -191,6 +235,7 @@ gpustate:
                                     gpu g
                                WHERE (g.ts = jnt.ts) and (jnt.nodeid=g.nodeid)
                                GROUP by jnt.jobid;
+              sqldebug: 0
           archive:
             limit: max(ts)-25h
         columns: 
@@ -254,11 +299,13 @@ gpustate:
               vars: mintsinserted
               sql: DELETE FROM currentjobs_gpulist;
                    INSERT INTO currentjobs_gpulist (jobid,gpulastts,gpulist)
-                                                    SELECT jobid,gpulastts, 
-                                                    GROUP_CONCAT(gpuid,' ') 
-                                                    FROM gpu_aggr_by_jobid_nodeid_gpuid WHERE jobid
-                                                         IN (select jobid from gpu_current_jobid)
-                                                    GROUP by jobid
+                        SELECT g.jobid, MAX(g.gpulastts),
+                               GROUP_CONCAT(g.gpuid,' ') 
+                        FROM gpu_aggr_by_jobid_nodeid_gpuid g
+                        INNER JOIN jobnodemap jn 
+                                ON g.jobid = jn.jobid AND g.nodeid = jn.nodeid
+                        WHERE g.jobid IN (select jobid from gpu_current_jobid)
+                        GROUP by g.jobid
         columns: 
           - { name: jobid,           type: jobid_t }
           - { name: gpulist,         type: extralongstr_t  }
@@ -272,21 +319,23 @@ gpustate:
               vars: mintsinserted
               sql: DELETE FROM currentjobs_gpuspec;
                    INSERT INTO currentjobs_gpuspec (jobid,gpuspec)
-                                                    SELECT jobid, 
-                                                    GROUP_CONCAT(gpuinfo,' ') 
-                                                    FROM
-                                                    (
-                                                      SELECT jobid,
-                                                      gpuid||":"||
-                                                           round(gpu_util_avg,1)||"% "||
-                                                           round(gpu_memu_avg/1024.0/1024.0/1024.0,1)||"GiB "||
-                                                           round(gpu_sclk_avg,0)||"MHz "||
-                                                           round(gpu_temp_avg,1)||"C|"
-                                                             AS gpuinfo
-                                                      FROM gpu_aggr_by_jobid_nodeid_gpuid
-                                                      WHERE jobid IN (select jobid from gpu_current_jobid)
-                                                      ORDER by gpuid
-                                                    ) GROUP by jobid
+                        SELECT a.jobid, 
+                               GROUP_CONCAT(a.gpuinfo,' ') 
+                        FROM
+                        (
+                          SELECT g.jobid,
+                                 g.gpuid||":"||
+                                 round(g.gpu_util_avg,1)||"% "||
+                                 round(g.gpu_memu_avg/1024.0/1024.0/1024.0,1)||"GiB "||
+                                 round(g.gpu_sclk_avg,0)||"MHz "||
+                                 round(g.gpu_temp_avg,1)||"C|"
+                                   AS gpuinfo
+                          FROM gpu_aggr_by_jobid_nodeid_gpuid g
+                          INNER JOIN jobnodemap jn 
+                                  ON g.jobid = jn.jobid AND g.nodeid = jn.nodeid
+                          WHERE g.jobid IN (select jobid from gpu_current_jobid)
+                          ORDER by g.gpuid
+                        ) a GROUP by a.jobid
         columns: 
           - { name: jobid,           type: jobid_t }
           - { name: gpuspec,         type: extralongstr_t  }
@@ -315,6 +364,7 @@ gpustate:
                                mintsinserted
                                FROM jobnodemap jn, jobtsmap jt
                                WHERE (jt.ts >= mintsinserted-59) AND (jt.jobid=jn.jobid);
+          index: jobid,nodeid,ts
           update_trigger:
         columns: 
           - { name: jobid,    type: jobid_t }

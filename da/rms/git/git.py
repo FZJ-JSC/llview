@@ -21,7 +21,8 @@ import traceback
 import math
 import csv
 import getpass
-from urllib.parse import quote
+import requests
+from urllib.parse import quote, urlparse
 import yaml
 import json
 import ast
@@ -30,7 +31,7 @@ from matplotlib.colors import to_hex # Convert RGB to HEX
 from itertools import count,cycle,product
 from copy import deepcopy
 from subprocess import check_output,run,PIPE
-from typing import List, Dict, Any, Union
+from typing import Tuple, List, Dict, Any, Union
 
 # Optional: keyring
 try:
@@ -38,7 +39,7 @@ try:
 except ImportError:
   keyring = None  # Set to None if not available
 
-def range_validator(values: List[Union[float, int, None]], params: Dict[str, Any]) -> List[bool]:
+def range_validator(values: List[Union[float, int, None]], params: Dict[str, Any]) -> Tuple[List[bool], Dict[str, Any]]:
   """
   Checks if values are within [min, max].
   
@@ -47,7 +48,9 @@ def range_validator(values: List[Union[float, int, None]], params: Dict[str, Any
     params: Dictionary containing 'min' and/or 'max' thresholds.
     
   Returns:
-    List[bool]: True if valid (or None), False if out of bounds.
+    Tuple containing:
+    - List[bool]: True if valid, False if Warning.
+    - Dict: Plotly layout additions (shapes/annotations) to visualize the thresholds.
     
   Raises:
     ValueError: If validation params are invalid.
@@ -58,6 +61,7 @@ def range_validator(values: List[Union[float, int, None]], params: Dict[str, Any
   if min_val is None and max_val is None:
     raise ValueError("range_validator requires 'min' or 'max' parameter.")  
 
+  # Calculate Results
   results = []
   for val in values:
     if val is None:
@@ -76,7 +80,69 @@ def range_validator(values: List[Union[float, int, None]], params: Dict[str, Any
       
     results.append(is_valid)
     
-  return results
+  # Generate visual layout additions (if not explicitly disabled)
+  layout_additions = {'shapes': [], 'annotations': []}
+  
+  if params.get('annotations', True) is not False:
+      
+    # Base style for the threshold lines
+    base_line = {
+      'type': 'line',
+      'xref': 'paper', # Line spans the entire width of the plot area
+      'x0': 0,
+      'x1': 1,
+      'yref': 'y',
+      'layer': 'below', # Keep lines behind the data
+    }
+
+    # Base style for the text labels
+    base_text = {
+      'xref': 'paper',
+      'x': 0.98, # Position slightly outside the right edge of the plot area
+      'xanchor': 'right',
+      'yref': 'y',
+      'showarrow': False,
+      'font': {'color': 'rgba(255, 0, 0, 0.7)', 'size': 10}
+    }
+
+    if max_val is not None:
+      # Shape: Solid red line
+      shape_max = base_line.copy()
+      shape_max.update({
+        'y0': max_val, 'y1': max_val,
+        'line': {'color': 'rgba(255, 0, 0, 0.5)', 'width': 1.5, 'dash': 'solid'}
+      })
+      layout_additions['shapes'].append(shape_max)
+
+      # Annotation: "max" above the line
+      ann_max = base_text.copy()
+      ann_max.update({
+        'y': max_val,
+        'yanchor': 'bottom', # Anchor bottom of text to the line (puts text above)
+        'text': 'max'
+      })
+      layout_additions['annotations'].append(ann_max)
+
+    if min_val is not None:
+      # Shape: Dashed red line
+      shape_min = base_line.copy()
+      shape_min.update({
+        'y0': min_val, 'y1': min_val,
+        'line': {'color': 'rgba(255, 0, 0, 0.5)', 'width': 1.5, 'dash': 'dash'}
+      })
+      layout_additions['shapes'].append(shape_min)
+
+      # Annotation: "min" below the line
+      ann_min = base_text.copy()
+      ann_min.update({
+        'y': min_val,
+        'yanchor': 'top', # Anchor top of text to the line (puts text below)
+        'text': 'min'
+      })
+      layout_additions['annotations'].append(ann_min)
+
+  return results, layout_additions
+
 
 # Fixing/improving multiline output and strings with special characters of YAML dump
 def str_presenter(dumper, data):
@@ -143,7 +209,7 @@ def flatten_json(json_data):
   
   return flattened_data
 
-def gen_tab_config(default=False,suffix="cb",folder="./"):
+def gen_tab_config(default=False,tabname='Benchmarks',suffix="cb",folder="./"):
   """
   This function generates the main tab configuration for LLview (with Overview + each Benchmark).
   """
@@ -153,7 +219,7 @@ def gen_tab_config(default=False,suffix="cb",folder="./"):
 
   pages = [{
     'page': {
-      'name': "Benchmarks",
+      'name': tabname,
       'section': "benchmarks",
       'icon': "bar-chart",
       'pages': [
@@ -186,6 +252,141 @@ def gen_tab_config(default=False,suffix="cb",folder="./"):
     file.write(yaml_string)
 
   return True
+
+def sanitize_config_dict(config_dict, log, context=""):
+  """
+  Recursively checks all strings (keys and values) in a configuration dictionary
+  for potentially dangerous characters. Only applies aggressive sanitization to fields 
+  that will be used as SQL identifiers (tables, columns) or shell commands.
+  
+  Allows: Alphanumeric, spaces, dashes, dots, slashes (/), square brackets ([]), hash (#).
+  Strips: Quotes (single/double), semicolons, and other potentially dangerous symbols.
+  
+  Returns the sanitized dictionary, or raises a ValueError if a critical key is invalid.
+  """
+  # We use a pattern that matches what we ALLOW, and replace anything else.
+  # \w: alphanumeric and underscore
+  # \s: whitespace (spaces)
+  # \-\.\/\[\]\H: dash, dot, slash (needed for URLs, dates, filenames), square brackets, hash
+  # The ^ negates it, so we match anything NOT in this list.
+  unsafe_pattern = re.compile(r'[^\w\s\-\.\/\[\]\#]')
+
+  # Only sanitize keys that are known to be used as SQL identifiers.
+  # This list must include any key whose VALUE becomes a column or table name.
+  # Note: The keys of the 'metrics' dictionary are the column names.
+  # The keys of the top-level dict are the repo/table names.
+  dangerous_contexts = ['table', 'group_by', 'annotations'] # Values in these lists become SQL columns
+
+  def check_and_clean_string(s, is_key=False, field_context=""):
+    if not isinstance(s, str):
+      return s
+    
+    # If this is one of the keys (e.g., metric names)
+    if is_key:
+      # Dictionary keys are often used as metric names (SQL columns) or tab names,
+      # So we need to check all to be safe.
+      cleaned = unsafe_pattern.sub('', s)
+      if cleaned != s:
+        error_msg = f"Invalid characters in config key '{s}'. Only alphanumeric, spaces, -, ., /, [, ], and # allowed."
+        log.error(error_msg + "\n")
+        raise ValueError(error_msg)
+      return cleaned
+
+    # Only sanitize the value if it belongs to a known dangerous context list.
+    # For example, if field_context is 'table', s might be 'Node Count'. We sanitize it.
+    # If field_context is 'regex', we leave it alone.
+    if field_context in dangerous_contexts:
+      cleaned = unsafe_pattern.sub('', s)
+      if cleaned != s:
+        log.warning(f"Sanitized unsafe string in {context or 'config'} under '{field_context}': '{s}' -> '{cleaned}'\n")
+      return cleaned
+      
+    # If it's a value in a safe context (regex, description, mode), return it untouched.
+    return s
+
+  def sanitize_recursive(data, current_context=""):
+    if isinstance(data, dict):
+      clean_dict = {}
+      for k, v in data.items():
+        # Sanitize the key itself
+        clean_k = check_and_clean_string(k, is_key=True, field_context=k)
+        
+        # We pass the key 'k' down as the context for its value 'v'.
+        # If v is a list (like group_by: [A, B]), the items in the list will receive 'group_by' as context.
+        clean_v = sanitize_recursive(v, current_context=clean_k)
+        clean_dict[clean_k] = clean_v
+      return clean_dict
+      
+    elif isinstance(data, list):
+      # Items in a list inherit the context of the list's key
+      return [sanitize_recursive(item, current_context) for item in data]
+      
+    else:
+      return check_and_clean_string(data, is_key=False, field_context=current_context)
+
+  return sanitize_recursive(config_dict)
+
+def fetch_remote_config(repo_config, log):
+  """
+  Fetches a single file directly from a Git repository via API, without cloning.
+  Currently supports GitLab repositories.
+  """
+  host_url = repo_config.get('host')
+  filepath = repo_config.get('include')
+  branch = repo_config.get('branch', 'main')
+  token = repo_config.get('token')
+
+  if not host_url or not filepath:
+    log.error("Missing 'host' or 'include' in configuration for remote fetch.\n")
+    return None
+
+  try:
+    # Parse the host URL to build the GitLab API request
+    # Example host: https://gitlab.jsc.fz-juelich.de/SLPP/pepc/pepc-de-pthread
+    parsed_url = urlparse(host_url)
+    
+    # The project path is everything after the domain, without leading/trailing slashes or .git
+    project_path = parsed_url.path.strip('/').replace('.git', '')
+    
+    # GitLab API requires the project path to be URL-encoded
+    encoded_project_path = quote(project_path, safe='')
+
+    #Normalize the filepath to remove './' or '../' artifacts ---
+    clean_filepath = os.path.normpath(filepath)
+
+    # Build the GitLab API URL for a single file
+    # Format: https://gitlab.example.com/api/v4/projects/<encoded_path>/repository/files/<filepath>/raw?ref=<branch>
+    api_url = f"{parsed_url.scheme}://{parsed_url.netloc}/api/v4/projects/{encoded_project_path}/repository/files/{quote(clean_filepath, safe='')}/raw"
+    
+    params = {'ref': branch}
+    headers = {}
+    
+    # Add Private-Token header if a token is provided
+    if token:
+      headers['PRIVATE-TOKEN'] = token
+
+    log.info(f"Fetching remote configuration via API: {api_url} (ref: {branch})\n")
+    
+    response = requests.get(api_url, headers=headers, params=params, timeout=10)
+    
+    if response.status_code == 200:
+      # Parse the downloaded text as YAML
+      included_config = yaml.safe_load(response.text)
+      if isinstance(included_config, dict):
+        return included_config
+      else:
+        log.error(f"Remote file '{clean_filepath}' is not a valid YAML dictionary.\n")
+        return None
+    else:
+      log.error(f"Failed to fetch remote config (HTTP {response.status_code}): {response.text}\n")
+      return None
+
+  except yaml.YAMLError as ye:
+    log.error(f"YAML Parsing Error in remote configuration '{filepath}':\n{ye}\n")
+    return None
+  except Exception as e:
+    log.error(f"Error fetching remote configuration: {e}\n")
+    return None
 
 class BenchRepo:
   """
@@ -396,6 +597,17 @@ class BenchRepo:
       for plot_config in plots_section:
         yield None, plot_config
 
+  @staticmethod
+  def prepare_git_url(host, username, password):
+    """
+    Injects credentials into a Git URL for HTTPS cloning.
+    Returns the authenticated URL.
+    """
+    if username:
+      credentials = quote(username) + (f":{quote(password)}@" if password else "@")
+      return host.replace("://", f"://{credentials}")
+    return host
+
   def get_or_update_repo(self,folder="./"):
     """
     Getting folder to clone or pull the repo
@@ -412,9 +624,8 @@ class BenchRepo:
     config = benchmark_data['config']
     config['folder'] = folder
 
-    if config['username']:
-      credentials = quote(config['username']) + (f":{quote(config['password'])}@" if config['password'] else "@")
-      config['host'] = config['host'].replace("://",f"://{credentials}")
+    auth_host = self.prepare_git_url(config.get('host', ''), config.get('username'), config.get('password'))
+    config['host'] = auth_host
 
     # If folder does not exist, git clone the repo
     # otherwise try to git pull in the folder
@@ -436,7 +647,13 @@ class BenchRepo:
         return False
       
       if 'branch' in config:
-        cmd = ['git', '-C', folder, 'switch', '-q', config['branch']]
+        branch = config['branch']
+        # Allow alphanumeric, dash, underscore, slash. Reject everything else.
+        if not re.match(r'^[\w\-\/\.]+$', branch):
+          self.log.error(f"Invalid characters in branch name: '{branch}'. Aborting.\n")
+          return False
+            
+        cmd = ['git', '-C', folder, 'switch', '-q', branch]
         self.log.debug("Changing branch with command: {}\n".format(' '.join(cmd)))
         p = run(cmd, stdout=PIPE)
         if p.returncode:
@@ -641,7 +858,13 @@ class BenchRepo:
 
     # Temporary lastts:
     lastts_temp = 0
-    required_keys = headers.keys()
+    # Determine strictly required keys (those without a default value)
+    required_keys = set()
+    for csv_header, metric_name in headers.items():
+      # If the metric has a user-defined default, it is NOT required in the file
+      if metrics_section[metric_name].get('default') is not None:
+          continue
+      required_keys.add(csv_header)
     for source in sources:
       # Initializing variable to collect all data defined for given metric
       current_data = []
@@ -699,7 +922,7 @@ class BenchRepo:
 
         # Check for missing keys
         available_keys = data[0].keys()
-        missing_keys = set(required_keys) - set(available_keys)
+        missing_keys = required_keys - set(available_keys)
         if missing_keys:
           keys_str = ", ".join(f"'{key}'" for key in sorted(list(missing_keys)))
           self.log.error(f"Required keys {keys_str} not found in file header of source {source}. Skipping...\n")
@@ -836,46 +1059,53 @@ class BenchRepo:
 
         # Use `used_metrics` to check all required fields.
         for metric in used_metrics:
+          is_empty = False
+          
+          # Check if metric exists and has content
           if metric in line:
             val = str(line.get(metric, '')).strip()
-            is_empty = (not val or val.lower() in ['none', 'null', 'nan'])
+            if not val or val.lower() in ['none', 'null', 'nan']:
+                is_empty = True
+          else:
+            # Metric is missing entirely from the source (e.g. optional column)
+            is_empty = True
 
-            # If the value is not empty, it's valid
-            if not is_empty:
-              continue
+          # If the value is valid (exists and not empty), skip to next metric
+          if not is_empty:
+            continue
+            
+          # Handling Missing/Empty Values:
+
+          metric_type = metrics_types.get(metric, 'str')
+          
+          # If the config has a 'default' key, use it
+          specific_default = metrics_section[metric].get('default')
+          
+          if specific_default is not None:
+            # Use the user-defined default
+            line[metric] = specific_default
+            # Note: We do NOT set status to 'F' here, because the user provided a fallback.
+            # So, it is treated as a valid value.
+          
+          else:
+            # Fallback to standard logic (Global Defaults)
+
+            # If a non-string value is empty, it's a failure and needs a default.
+            # The default value of the string is '', so missing strings should not
+            # trigger 'F' status - which may be not intended in some cases,
+            # but for others (i.e., 'flags used'), it's necessary
+            # If a non-string parameter is empty AND no specific default exists, it's a failure.
+            if metric_type != 'str':
+              run_status = "F"
             
             # For the plot metrics, set the problematic value to None, so it's not plotted
             if metric in plot_metrics:
               run_status = "F"
               # Set the value to None so it will be skipped during plotting.
               line[metric] = None 
-            
-            # If a non-string value is empty, it's a failure and needs a default.
-            # The default value of the string is '', so missing strings should not
-            # trigger 'F' status - which may be not intended in some cases,
-            # but for others (i.e., 'flags used'), it's necessary
-
-            # For the table parameters, annotations, etc. set the default value
             else:
-              metric_type = metrics_types.get(metric, 'str')
-              
-              # If the config has a 'default' key, use it
-              specific_default = metrics_section[metric].get('default')
-              
-              if specific_default is not None:
-                # Use the user-defined default
-                line[metric] = specific_default
-                # Note: We do NOT set status to 'F' here, because the user provided a fallback.
-                # So, it is treated as a valid value.
-              
-              else:
-                # Fallback to standard logic (Global Defaults)
-                # If a non-string parameter is empty AND no specific default exists, it's a failure.
-                if metric_type != 'str':
-                  run_status = "F"
-                
-                # Set the value to the global type default.
-                line[metric] = self.default.get(metric_type, '')
+              # Set the value to the global type default.
+              line[metric] = self.default.get(metric_type, '')
 
         # Set the final, determined status for the line
         line['_status'] = run_status
@@ -1126,6 +1356,9 @@ class BenchRepo:
     raw_data = benchmark_data['raw']
     metrics_section = benchmark_data['config']['metrics']
     
+    # Initialize a dictionary to store layout additions per metric
+    benchmark_data.setdefault('validation_layouts', {})
+
     if not raw_data:
       return True # No data to validate is technically a success
 
@@ -1167,7 +1400,7 @@ class BenchRepo:
         # Calling validator function
         try:
           # API: func(values_list, params_dict) -> list of booleans
-          validation_results = validator_func(values_to_check, v_spec)
+          validation_results, layout_additions = validator_func(values_to_check, v_spec)
         except Exception as e:
           # Catch errors raised by the validator (like the TypeError/ValueError we added)
           self.log.error(f"Validation failed for metric '{metric_name}' using '{func_name}': {e}\n")
@@ -1177,6 +1410,17 @@ class BenchRepo:
         if len(validation_results) != len(raw_data):
           self.log.error(f"Validator '{func_name}' returned {len(validation_results)} results, expected {len(raw_data)}.\n")
           return False
+
+        # Store the layout additions for this metric
+        if layout_additions:
+          # Using setdefault and list extensions in case multiple validators 
+          # (e.g. range AND outlier) add shapes to the same metric.
+          metric_layouts = benchmark_data['validation_layouts'].setdefault(metric_name, {})
+          
+          if 'shapes' in layout_additions:
+            metric_layouts.setdefault('shapes', []).extend(layout_additions['shapes'])
+          if 'annotations' in layout_additions:
+            metric_layouts.setdefault('annotations', []).extend(layout_additions['annotations'])
 
         for i, is_valid in enumerate(validation_results):
           if not is_valid:
@@ -1196,7 +1440,7 @@ class BenchRepo:
     return True
 
 
-  def gen_configs(self,folder="./",history_n=5):
+  def gen_configs(self,folder="./", history_n=5, failed_info=None):
     """
     Generates the different configuration files needed by LLview:
     - DBupdate configuration containing the DB and tables descriptions
@@ -1219,7 +1463,7 @@ class BenchRepo:
       return_code = False
 
     # Page config
-    success = self.gen_page_conf(os.path.join(folder,f'page_{suffix}.yaml'))
+    success = self.gen_page_conf(os.path.join(folder,f'page_{suffix}.yaml'), failed_info=failed_info)
     if not success:
       self.log.error("Error generating Page configuration file{}. Skipping...\n".format((' for \''+self._name+'\'') if self._name else ''))
       return_code = False
@@ -1300,6 +1544,10 @@ class BenchRepo:
     # Else 'S'.
     status_priority_sql = "CASE WHEN SUM(CASE WHEN \"_status\" = 'F' THEN 1 ELSE 0 END) > 0 THEN 'F' WHEN SUM(CASE WHEN \"_status\" = 'W' THEN 1 ELSE 0 END) > 0 THEN 'W' ELSE 'S' END"
 
+    # Saving custom display names, in case they are given
+    # to use on the cb_benchmarks query below
+    custom_display_names = {}
+
     # Looping over all the benchmarks inside this object
     # (It can be done for each benchmark/tab or for all collected ones when singleLML is used)
     for benchname, tabname, benchmark_data in self._iter_all_data():
@@ -1315,6 +1563,9 @@ class BenchRepo:
       metrics = benchmark_data['metrics']
       config = benchmark_data['config']
       parameters = benchmark_data['parameters']
+
+      # Extract the Custom Display Name
+      custom_display_names[benchname] = config.get('name', benchname)
 
       # Looping over all the metrics that are used in this benchmark, which should be put into the DB
       for metric, mtype in metrics.items():
@@ -1422,7 +1673,7 @@ class BenchRepo:
                 INSERT INTO "cb_{combined_name}_overview" ("id", "name", "_status", "count", "valid_count", "min_ts", "max_ts"
                                 {params_str}{insert_metrics_str}
                                 )
-                        SELECT id, "{combined_name}",
+                        SELECT id, "{custom_display_names[benchname]}",
                                 {history_expr},
                                 COUNT("ts"),
                                 SUM(CASE WHEN "_status" <> 'F' THEN 1 ELSE 0 END),
@@ -1470,14 +1721,15 @@ class BenchRepo:
                                             'update': {
                                                         'sql_update_contents': {
                                                           'sqldebug': 1,
-                                                          'sql': f"""DELETE FROM "cb_benchmarks" WHERE name="{benchname}";
-                          INSERT INTO "cb_benchmarks" ("name", "count", "valid_count", "min_ts", "max_ts", "_status")
+                                                          'sql': f"""DELETE FROM "cb_benchmarks" WHERE "id"="{benchname}";
+                          INSERT INTO "cb_benchmarks" ("id", "name", "count", "valid_count", "min_ts", "max_ts", "_status")
                                     SELECT "{benchname}",
+                                          "{custom_display_names[benchname]}",
                                           COUNT("ts"),
                                           SUM(CASE WHEN "_status" <> 'F' THEN 1 ELSE 0 END),
                                           MIN("ts"), MAX("ts"),
                                           {history_expr_global}
-                                    FROM "cb_{benchname.replace(' ','_')}_timestamps";
+                                    FROM (SELECT * FROM "cb_{benchname.replace(' ','_')}_timestamps" ORDER BY "ts" ASC);
 """.strip(),
                                                                     },
                                                       },
@@ -1497,7 +1749,7 @@ class BenchRepo:
 
     return True
 
-  def gen_page_conf(self,filename):
+  def gen_page_conf(self, filename, failed_info=None):
     """
     Create YAML file to be used in LLview for Page configuration
     """
@@ -1507,6 +1759,8 @@ class BenchRepo:
     # The keys will be the benchmark names
     pages_data = {}
 
+    failed_info = failed_info or {}
+
     # Looping over all the benchmarks and tabs
     for benchname, tabname, benchmark_data in self._iter_all_data():
       # Create the file-safe name for paths
@@ -1514,6 +1768,10 @@ class BenchRepo:
 
       # Getting reference to config
       config = benchmark_data['config']
+
+      # If the user provided 'name:' in the root config, use it
+      # otherwise, fall back to the benchname (the repo name)
+      custom_display_name = config.get('name', benchname)
 
       # Common dictionary structure for a page or a tab's content
       content_definition = {
@@ -1525,7 +1783,7 @@ class BenchRepo:
         'ref': [ 'datatable' ],
         'data': {
           'default_columns': [ 'Name', 'Timings', 'Parameters', '#Points', 'Status' ],
-          'info': [{'Benchmark' : benchname}]
+          'info': [{'Benchmark' : custom_display_name}] 
           }
       }
       if tabname:
@@ -1533,8 +1791,8 @@ class BenchRepo:
         # Get or create the main page entry for this benchmark
         # This ensures we have a place to append the tab
         benchmark_page = pages_data.setdefault(benchname, {
-          'name': benchname,
-          'section': f'cb_{benchname.replace(" ","_")}',
+          'name': custom_display_name,
+          'section': f'cb_{custom_display_name.replace(" ","_")}',
           'tabs': [] # Initialize the list of tabs
         })
 
@@ -1548,11 +1806,91 @@ class BenchRepo:
       else:
         # --- This is a standalone page (no tabs) ---
         # Add the page's name to its content
-        content_definition['name'] = benchname
-        content_definition['section'] = f'cb_{benchname.replace(" ","_")}'
+        content_definition['name'] = custom_display_name
+        content_definition['section'] = f'cb_{custom_display_name.replace(" ","_")}'
         
         # Store it directly under its benchmark name
         pages_data[benchname] = content_definition
+
+    # Process Failed Data and Warnings
+    # failed_info format: { repo_name: { tab_name: ["Error 1", "Error 2"] } }
+    
+    is_global_dict = any(isinstance(v, dict) for v in failed_info.values()) if failed_info else False
+
+    def process_failure(benchname, tabname, error_msgs):
+      # Join multiple error/warning messages with line breaks
+      joined_msgs = "<br>".join(error_msgs)
+      formatted_error = f"<div style='color:red; margin-top:10px; padding:10px; border:1px solid red;'>{joined_msgs}</div>"
+      
+      # Try to get the custom name if the config survived parsing.
+      # If the repo failed immediately (e.g. bad Git URL), _data won't have it,
+      # so we safely fall back to the internal benchname.
+      custom_name = benchname
+      if benchname in self._data:
+        # Get the config from the first available tab (or root if no tabs)
+        first_key = list(self._data[benchname].keys())[0]
+        root_cfg = self._data[benchname][first_key].get('config', {})
+        custom_name = root_cfg.get('name', benchname)
+      
+      # Sanitize for the section ID (consistent with 'gen_benchmark_link' on JURI)
+      safe_section_name = custom_name.replace(" ", "_")
+
+      if tabname:
+        # Tab level:
+        if benchname not in pages_data:
+          # If the benchmark does not exist, the entire repo failed to initialize -> create parent stub
+          pages_data[benchname] = {
+            'name': custom_name, 
+            'section': f'cb_{safe_section_name.replace(" ","_")}',
+            'description': "Benchmark partially or fully failed to load.",
+            'tabs': []
+          }
+        
+        benchmark_page = pages_data[benchname]
+        
+        # Check if the specific tab already exists (e.g., it succeeded but had warnings)
+        existing_tab = next((t for t in benchmark_page.get('tabs', []) if t.get('name') == tabname), None)
+        
+        if existing_tab:
+          # If the tab exists and has real data,
+          # just append the warning box to its existing description.
+          existing_tab['description'] = existing_tab.get('description', '') + formatted_error
+        else:
+          # If the tab completely failed and isn't in pages_data,
+          # create a stub tab to show the error.
+          stub_tab = {
+            'name': tabname,
+            'section': f'cb_{tabname.replace(" ","_")}',
+            'default': False,
+            'description': formatted_error,
+            'ref': [] # No datatable
+          }
+          benchmark_page['tabs'].append(stub_tab)
+            
+      else:
+        # Root level:
+        if benchname in pages_data:
+          # If the standalone page exists (it had warnings, but succeeded)
+          pages_data[benchname]['description'] = pages_data[benchname].get('description', '') + formatted_error
+        else:
+          # If the standalone page failed completely
+          pages_data[benchname] = {
+            'name': custom_name,
+            'section': f'cb_{safe_section_name.replace(" ","_")}',
+            'default': False,
+            'description': formatted_error,
+            'ref': []
+          }
+
+    if failed_info:
+      if is_global_dict:
+        for b_name, tabs in failed_info.items():
+          for t_name, err_list in tabs.items():
+            process_failure(b_name, t_name, err_list)
+      else:
+        # We only have the tabs dict for self._name
+        for t_name, err_list in failed_info.items():
+          process_failure(self._name, t_name, err_list)
 
     # After collecting all data, format it into the final list structure for YAML
     pages = []
@@ -1737,7 +2075,7 @@ class BenchRepo:
     self.log.info(f"Generating Vars configuration file {filename}\n")
 
     format_types = {
-      'int': '%d',
+      'int': '%s',   # We will use the string output to allow empty values without errors on LLview's workflow
       'float': '%s', # We will use the string output to allow empty values without errors on LLview's workflow
       'str': '%s',
       'bool': '%d',
@@ -1972,6 +2310,18 @@ class BenchRepo:
             }
           }
           self.deep_update(layout, current_trace_layout)
+
+          # Retrieve validation layout additions for this specific metric
+          # Inject visual elements generated by validators like threshold lines
+          validation_layouts = benchmark_data.get('validation_layouts', {}).get(graphelem, {})
+          
+          # Extend the layout with custom shapes if any were generated
+          if validation_layouts.get('shapes'):
+            layout.setdefault('shapes', []).extend(validation_layouts['shapes'])
+            
+          # Extend the layout with custom annotations if any were generated
+          if validation_layouts.get('annotations'):
+            layout.setdefault('annotations', []).extend(validation_layouts['annotations'])
 
           graph = {
             'graph': {
@@ -2545,7 +2895,7 @@ def main():
   """
   
   # Parse arguments
-  parser = argparse.ArgumentParser(description="Prometheus Plugin for LLview")
+  parser = argparse.ArgumentParser(description="Git Plugin for LLview")
   parser.add_argument("--config",          default=False, help="YAML config file (or folder with YAML configs) containing the information to be gathered and converted to LML")
   parser.add_argument("--loglevel",        default=False, help="Select log level: 'DEBUG', 'INFO', 'WARNING', 'ERROR' (more to less verbose)")
   parser.add_argument("--singleLML",       default=False, help="Merge all sections into a single LML file")
@@ -2553,6 +2903,7 @@ def main():
   parser.add_argument("--outfolder",       default=False, help="Reference output folder for LML files")
   parser.add_argument("--repofolder",      default=False, help="Folders where the repos will be cloned")
   parser.add_argument("--outconfigfolder", default=False, help="Folder to generate config files")
+  parser.add_argument("--tabname",         default='Benchmarks', help="Default text on LLview tab")
   parser.add_argument("--skipupdate",      action='store_true', help="Skip updating the repos (if they don't exist, they will still be cloned)")
   parser.add_argument("--setdefault",      action='store_true', help="Set Benchmark page with 'default: true'")
   parser.add_argument("--statuspoints",    default=5, help="Set how many previous points are shown on the status column")
@@ -2596,7 +2947,17 @@ def main():
     else:
       log.warning(f"'ts' file {args.tsfile} does not exist! Getting all results...\n")
 
+  # When singleLML is used, the benchmarks are stored in this unique object
   unique = BenchRepo()
+
+  # For separated benchmarks, the information is stored for individual output later
+  successful_repos = {} 
+
+  # Registry for failed repositories/tabs: we will collect the 
+  # errors emmited to generate empty pages with the errors on the "description" box
+  # Format: {'repo_name': {'tab_name': 'Error Message'}}
+  # If it's a root-level error, 'tab_name' will be None.
+  failed_repos = {}
 
   if config:
     # Start generic timer
@@ -2606,8 +2967,56 @@ def main():
     for repo_name, repo_config in config.items():
       log.info(f"Processing '{repo_name}'\n")
 
+      # Initialize registry for this repo
+      failed_repos[repo_name] = {} 
+
       # Getting credentials for the current server
       repo_config['username'], repo_config['password'] = get_credentials(repo_name,repo_config)
+
+      # For security: Define keys that users cannot override via 'include'
+      protected_keys = ['host', 'branch', 'token', 'username', 'password', 'include']
+
+      # Handling root-level remote configuration inclusion, if "include" is given
+      if 'include' in repo_config:
+        # Fetch the file directly into memory
+        remote_config = fetch_remote_config(repo_config, log)
+
+        if not remote_config:
+          # If fetch_remote_config returned None (due to 404, bad YAML, etc.),
+          # log an error and skip to the next repository.
+          log.error(f"Failed to load root included configuration for '{repo_name}'. Skipping repository...\n")
+          # Adding error to registry
+          error_msg = f"<b>Configuration Error:</b> Failed to fetch included file '{repo_config['include']}'."
+          failed_repos[repo_name].setdefault(None, []).append(error_msg)
+          continue
+
+        # Sanitize the fetched remote config, and remove protected keys from the downloaded file
+        try:
+          remote_config = sanitize_config_dict(remote_config, log, context=f"include file for {repo_name}")
+        except ValueError:
+          log.error(f"Failed to sanitize remote configuration for '{repo_name}'. Skipping repository.\n")
+          # Adding error to registry
+          error_msg = f"<b>Configuration Error:</b> Invalid characters in included file. {str(e)}"
+          failed_repos[repo_name].setdefault(None, []).append(error_msg)
+          continue
+        for p_key in protected_keys:
+          if p_key in remote_config:
+            log.warning(f"Remote config attempted to override protected key '{p_key}'. Ignoring...\n")
+            # Adding error to registry
+            error_msg = f"<b>Configuration Warning:</b> Remote config cannot override '{p_key}'. Please contact admin."
+            failed_repos[repo_name].setdefault(None, []).append(error_msg)
+            del remote_config[p_key]
+
+        # Merge the configurations
+        # Apply the central repo_config ON TOP of the included remote config
+        # to ensure secure settings (host, token) are not overwritten
+        merged_config = deepcopy(remote_config)
+        BenchRepo.deep_update(merged_config, repo_config)
+        
+        # Update the original repo_config in-place
+        repo_config.clear()
+        repo_config.update(merged_config)
+        log.info(f"Successfully merged remote configuration for '{repo_name}'.\n")
 
       # Checking if tabs within a page exist to loop through them
       internal_tabs = False
@@ -2616,15 +3025,65 @@ def main():
         # Gathering configuration that will be common for all internal tabs
         common_config = {key:value for key,value in repo_config.items() if key !="tabs"}
         # Distributing common configuration for all internal tabs (rewriting specific configuration with the most internal one)
-        for tab in repo_config['tabs'].keys():
+        for tab in list(repo_config['tabs'].keys()): # Using list of keys so we can safely delete broken tabs during iteration
+          tab_config = repo_config['tabs'][tab]
+
+          # Handling tab-level remote configuration inclusion, if "include" is given
+          if 'include' in tab_config:
+            # Creating a temporary config for fetching, inheriting host/token from common if needed
+            fetch_config = {
+              'host': tab_config.get('host', common_config.get('host')),
+              'branch': tab_config.get('branch', common_config.get('branch', 'main')),
+              'token': tab_config.get('token', common_config.get('token')),
+              'include': tab_config['include']
+            }
+            # Fetch the file directly into memory
+            remote_tab_config = fetch_remote_config(fetch_config, log)
+
+            if not remote_tab_config:
+              # If fetch_remote_config returned None (due to 404, bad YAML, etc.),
+              # log an error and skip to the next repository.
+              log.error(f"Failed to load included configuration for tab '{tab}' in '{repo_name}'. Skipping tab...\n")
+              # Adding error to registry
+              error_msg = f"<b>Configuration Error:</b> Failed to fetch included file for tab '{tab}'."
+              failed_repos[repo_name].setdefault(tab, []).append(error_msg)
+              del repo_config['tabs'][tab] # Remove the broken tab
+              continue
+
+            # Sanitize the fetched remote config, and remove protected keys from the downloaded file
+            try:
+              remote_tab_config = sanitize_config_dict(remote_tab_config, log, context=f"include file for tab {tab}")
+            except ValueError:
+              log.error(f"Failed to sanitize remote configuration for tab '{tab}'. Skipping tab.\n")
+              # Adding error to registry
+              error_msg = f"<b>Configuration Error:</b> Invalid characters in tab '{tab}'. {str(e)}"
+              failed_repos[repo_name].setdefault(tab, []).append(error_msg)
+              del repo_config['tabs'][tab]
+              continue # Skip to the next tab
+            for p_key in protected_keys:
+              if p_key in remote_tab_config:
+                log.warning(f"Remote tab config '{tab}' attempted to override protected key '{p_key}'. Ignoring...\n")
+                # Adding error to registry
+                error_msg = f"<b>Configuration Warning:</b> Remote config cannot override '{p_key}'. Please contact admin."
+                failed_repos[repo_name].setdefault(tab, []).append(error_msg)
+                del remote_tab_config[p_key]
+
+            # Merging the configs: 
+            # Apply the central tab_config on top of the included remote config
+            merged_remote = deepcopy(remote_tab_config)
+            BenchRepo.deep_update(merged_remote, tab_config)
+            tab_config = merged_remote
+            log.info(f"Successfully merged remote configuration for tab '{tab}'.\n")
+
+          # Distributing common configuration for all internal tabs 
+          # (rewriting common configuration with the now fully-resolved specific tab config)
           # Start with a deep copy of the common config
           merged_config = deepcopy(common_config)
-          
           # Deep update it with the specific tab config
           # This ensures keys like 'plot_settings' get merged, not overwritten.
-          BenchRepo.deep_update(merged_config, repo_config['tabs'][tab])
+          BenchRepo.deep_update(merged_config, tab_config)
           
-          # Store the result
+          # Store the final result
           repo_config['tabs'][tab] = merged_config
 
       # Normalizing the tabs or single page for loop
@@ -2638,7 +3097,7 @@ def main():
 
       # Loop over tabs (if existing) or single page
       # (group points to either the tabs or to the single page)
-      for group_name,group_config in group.items():
+      for group_name, group_config in group.items():
         sources = group_config.get('sources') or {}
         group = 'tab' if internal_tabs else 'repository'
         # combined_name is used for logging and tracking specific tabs
@@ -2647,15 +3106,23 @@ def main():
         # Checking if something is to be done on current repo
         if not (sources.get('files') or sources.get('folders')):
           log.warning(f"No 'sources' of metrics to process for this {group}. Skipping...\n")
+          error_msg = f"<b>Configuration Error:</b> No 'sources' defined."
+          failed_repos[repo_name].setdefault(group_name if internal_tabs else None, []).append(error_msg)
           continue
         if not group_config.get('metrics'):
           log.warning(f"No 'metrics' to collect for this {group}. Skipping...\n")
+          error_msg = f"<b>Configuration Error:</b> No 'metrics' defined."
+          failed_repos[repo_name].setdefault(group_name if internal_tabs else None, []).append(error_msg)
           continue
         if not group_config.get('table'):
           log.warning(f"No 'table' to display for this {group}. Skipping...\n")
+          error_msg = f"<b>Configuration Error:</b> No 'table' defined."
+          failed_repos[repo_name].setdefault(group_name if internal_tabs else None, []).append(error_msg)
           continue
         if not group_config.get('plots'):
           log.warning(f"No 'plots' to display for this {group}. Skipping...\n")
+          error_msg = f"<b>Configuration Error:</b> No 'plots' defined."
+          failed_repos[repo_name].setdefault(group_name if internal_tabs else None, []).append(error_msg)
           continue
 
         # Propagate 'plot_settings' into individual plots
@@ -2701,16 +3168,22 @@ def main():
         success = tab_bench.get_or_update_repo(folder=args.repofolder if args.repofolder else './')
         if not success:
           log.error(f"Error cloning or updating repository of '{combined_name}'. Skipping...\n")
+          error_msg = f"<b>Git Error:</b> Failed to clone or pull repository."
+          failed_repos[repo_name].setdefault(group_name if internal_tabs else None, []).append(error_msg)
           continue
 
         success = tab_bench.get_metrics()
         if not success:
           log.error(f"Error collecting metrics for '{combined_name}'. Skipping...\n")
+          error_msg = f"<b>Data Processing Error:</b> Failed to collect or parse metrics. Ask admin for details."
+          failed_repos[repo_name].setdefault(group_name if internal_tabs else None, []).append(error_msg)
           continue
 
         success = tab_bench.validate_metrics()
         if not success:
           log.error(f"Error validating metrics for '{combined_name}'. Skipping...\n")
+          error_msg = f"<b>Validation Error:</b> Critical failure during metric validation."
+          failed_repos[repo_name].setdefault(group_name if internal_tabs else None, []).append(error_msg)
           continue
 
         # Update lastts for this specific tab/combined_name
@@ -2743,19 +3216,8 @@ def main():
         timing[name]['__id'] = f'pstat_get{repo_name.replace(" ","_")}'
         repo_bench.add(timing)
 
-        # Generate One LML file for the whole Repo
-        repo_bench.to_LML(
-          os.path.join(args.outfolder if args.outfolder else './',f"{repo_name.replace(' ','_')}_LML.xml"),
-          prefix=repo_name
-        )
-
-        # Generate One Set of Configs for the whole Repo
-        # Since repo_bench contains data for ALL tabs, gen_configs will iterate
-        # through them and generate the correct merged or separate config entries.
-        success = repo_bench.gen_configs(folder=(args.outconfigfolder if args.outconfigfolder else ''),history_n=args.statuspoints)
-        if not success:
-          log.error(f"Error generating configuration files for '{repo_name}'!\n")
-          continue
+        # Storing the benchmark to create output later
+        successful_repos[repo_name] = repo_bench
       else:
         # Accumulating for a single LML
         unique = unique + repo_bench
@@ -2787,14 +3249,49 @@ def main():
       unique.to_LML(os.path.join(args.outfolder if args.outfolder else './',args.singleLML))
 
       # Creating configuration files
-      success = unique.gen_configs(folder=(args.outconfigfolder if args.outconfigfolder else ''),history_n=args.statuspoints)
+      success = unique.gen_configs(
+        folder=(args.outconfigfolder if args.outconfigfolder else ''), 
+        history_n=args.statuspoints, 
+        failed_info=failed_repos
+      )
       if not success:
         log.error(f"Error generating configuration files!\n")
+    else:
+      # Generate outputs for separated repos
+      
+      # Output successful repositories (saved to 'successful_repos' in the loop above)
+      for r_name, r_bench in successful_repos.items():
+        r_bench.to_LML(
+          os.path.join(args.outfolder if args.outfolder else './',f"{r_name.replace(' ','_')}_LML.xml"),
+          prefix=r_name
+        )
+
+        success = r_bench.gen_configs(
+          folder=(args.outconfigfolder if args.outconfigfolder else ''), 
+          history_n=args.statuspoints, 
+          failed_info={r_name: failed_repos.get(r_name, {})} # Pass only failures for this repo
+        )
+        if not success:
+          log.error(f"Error generating configuration files for '{r_name}'!\n")
+
+      # Output error pages for repositories that failed completely
+      for r_name, failures in failed_repos.items():
+        # If the repo never made it into successful_repos, it failed completely.
+        # We must generate a stub page so the user sees the error.
+        if r_name not in successful_repos and failures:
+          log.info(f"Generating error stub page for failed repository '{r_name}'...\n")
+          
+          error_bench = BenchRepo(name=r_name)
+          # Generating only the page config. No DB or CSV configs are needed.
+          error_bench.gen_page_conf(
+            os.path.join((args.outconfigfolder if args.outconfigfolder else ''), f'page_{r_name.replace(" ","_")}.yaml'),
+            failed_info={r_name: failures}
+          )
   else:
     log.warning(f"No repos given.\n")
 
   # Creating LLview tab configuration file
-  success = gen_tab_config(default=args.setdefault,folder=(args.outconfigfolder if args.outconfigfolder else ''))
+  success = gen_tab_config(default=args.setdefault,tabname=args.tabname, folder=(args.outconfigfolder if args.outconfigfolder else ''))
   if not success:
     log.error(f"Error generating tab configuration file!\n")
 

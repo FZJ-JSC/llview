@@ -22,7 +22,7 @@ use FindBin;
 use lib "$FindBin::RealBin/../lib";
 use LML_da_util qw( logmsg system_call get_date _max _min check_folder );
 
-my ($action,$actions,$msg,$watchfile2action,$pid2action,$options);
+my ($action,$actions,$actions_stat,$msg,$watchfile2action,$pid2action,$options);
 my $logfile="monitor.".&get_date().".log";
 
 # Getting sleep time for each iteration
@@ -149,8 +149,23 @@ while(1) {
     }
 
     # If the change was in an action watchfile, perform respective event
-    $msg=sprintf("New event on action %s file=%s\n","'$action'",$change->name); &logmsg($msg,$logfile);
-    &handle_event($action);
+   
+    # check if already all watchfile are updated
+    $actions_stat->{$action}->{watchfile_updated}->{$change->name}=1;
+    # check if all files are updated
+    my $allupdated=1;
+    foreach my $f (keys(%{$actions_stat->{$action}->{watchfile_updated}})) {
+	$allupdated=0 if($actions_stat->{$action}->{watchfile_updated}->{$f}==0);
+    }
+    if($allupdated) {
+	$msg=sprintf("New event on action %s file=%s\n","'$action'",$change->name); &logmsg($msg,$logfile);
+	&handle_event($action);
+	foreach my $f (keys(%{$actions_stat->{$action}->{watchfile_updated}})) {
+	    $actions_stat->{$action}->{watchfile_updated}->{$f}=0;
+	}
+    } else {
+	$msg=sprintf("New event on action %s file=%s (other watchfile(s) missing)\n","'$action'",$change->name); &logmsg($msg,$logfile);
+    }
   #	print Dumper($change);
   }
 
@@ -308,10 +323,13 @@ sub start_server {
   # interval: the interval (in seconds) at which the action will run
   foreach $action (keys(%{$actions})) {
     if($actions->{$action}->{active}) {
-      if(exists($actions->{$action}->{watchfile})) {
-        $msg=sprintf("Register action %-15s [%s]\n","'$action'",$actions->{$action}->{watchfile}); &logmsg($msg,$logfile);
-        $monitor->watch($actions->{$action}->{watchfile});
-        $watchfile2action->{$actions->{$action}->{watchfile}}=$action;
+	if(exists($actions->{$action}->{watchfile})) {
+	    $msg=sprintf("Register action %-15s [%s]\n","'$action'",$actions->{$action}->{watchfile}); &logmsg($msg,$logfile);
+	    foreach my $file (split(/\s*,\s*/,$actions->{$action}->{watchfile})) {
+		$monitor->watch($file);
+		$watchfile2action->{$file}=$action;
+		$actions_stat->{$action}->{watchfile_updated}->{$file}=0;
+	    }
       } elsif(exists($actions->{$action}->{watchtime})) {
         $msg=sprintf("Register action %-15s [At every :%d s of the minute]\n","'$action'",$actions->{$action}->{watchtime}); &logmsg($msg,$logfile);
         push(@timeactions, $action);

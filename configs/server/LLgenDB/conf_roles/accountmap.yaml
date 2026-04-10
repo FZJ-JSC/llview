@@ -13,9 +13,8 @@ accountmap:
           - { name: id,              type: name_t,            LML_from: id,              LML_default: 'unknown' }
           - { name: u_ts,            type: ts_t,              LML_from: ts,              LML_default: -1        }
           - { name: project,         type: name_t,            LML_from: project,         LML_default: "-"       }
-          - { name: wsaccount,        type: name_t,            LML_from: wsaccount,       LML_default: 'unknown' }
+          - { name: wsaccount,       type: name_t,            LML_from: wsaccount,       LML_default: 'unknown' }
 
-         
     - table:
         name: mentormap
         options:
@@ -28,7 +27,7 @@ accountmap:
           - { name: id,              type: name_t,            LML_from: id,              LML_default: 'unknown' }
           - { name: u_ts,            type: ts_t,              LML_from: ts,              LML_default: -1        }
           - { name: project,         type: name_t,            LML_from: project,         LML_default: "-"       }
-          - { name: wsaccount,        type: name_t,            LML_from: wsaccount,       LML_default: 'unknown' }
+          - { name: wsaccount,       type: name_t,            LML_from: wsaccount,       LML_default: 'unknown' }
 
     - table:
         name: pipamap
@@ -38,7 +37,7 @@ accountmap:
             mode: replace
         columns: 
           - { name: id,              type: name_t,            LML_from: id,              LML_default: 'unknown' }
-          - { name: wsaccount,        type: name_t,            LML_from: wsaccount,       LML_default: 'unknown' }
+          - { name: wsaccount,       type: name_t,            LML_from: wsaccount,       LML_default: 'unknown' }
           - { name: kind,            type: shortstr_t,        LML_from: kind,            LML_default: 'unknown' }
           - { name: u_ts,            type: ts_t,              LML_from: ts,              LML_default: -1        }
           - { name: project,         type: name_t,            LML_from: project,         LML_default: "-"       }
@@ -72,12 +71,18 @@ accountmap:
         options:
           update:
             sql_update_contents:
-              sql: DELETE FROM alluser;
-                   INSERT INTO alluser  SELECT GROUP_CONCAT(wsaccount, " ")
-                   FROM (SELECT DISTINCT wsaccount FROM usermap
-                         WHERE wsaccount NOT IN (SELECT wsaccount from supportmap)
-                         UNION ALL
-                         SELECT wsaccount from supportmap) 
+              sql:  DELETE FROM alluser;
+                    INSERT INTO alluser SELECT GROUP_CONCAT(wsaccount, " ")
+                    FROM (
+                      -- Select distinct standard users not in support
+                      SELECT DISTINCT wsaccount FROM usermap
+                      WHERE wsaccount NOT IN (SELECT wsaccount FROM supportmap)
+                      
+                      UNION ALL
+                      
+                      -- Ensure support users are also distinct to avoid duplication
+                      -- when both Slurm and Accounting LMLs provide the same user
+                      SELECT DISTINCT wsaccount FROM supportmap
         columns: 
           - { name: alluser,         type: extralongstr_t }
 
@@ -86,8 +91,11 @@ accountmap:
         options:
           update:
             sql_update_contents:
-              sql: DELETE FROM support;
-                   INSERT INTO support  SELECT GROUP_CONCAT(wsaccount, " ") FROM supportmap 
+              sql:  DELETE FROM support;
+                    -- Use DISTINCT inside GROUP_CONCAT to prevent duplicate names
+                    -- from appearing in the resulting string
+                    INSERT INTO support SELECT GROUP_CONCAT(DISTINCT wsaccount, " ") 
+                    FROM supportmap
         columns: 
           - { name: support,         type: extralongstr_t }
           
@@ -109,24 +117,32 @@ accountmap:
         options:
           update:
             sql_update_contents:
-              sql: DELETE FROM rolelist;
-                   INSERT INTO rolelist (fid,id,wsaccount,project,u_ts,kind)
-                          SELECT 'U'||id||wsaccount||project,
-                                  id,wsaccount,project,u_ts, 'U'
-                          FROM usermap
-                          UNION ALL
-                          SELECT 'M'||id||wsaccount||project,
-                                 id,wsaccount,project,u_ts, 'M'
-                          FROM mentormap
-                          UNION ALL
-                          SELECT kind||id||wsaccount||project,
-                                 id,wsaccount,project,u_ts,kind
-                          FROM pipamap
-                          UNION ALL
-                          SELECT "S"||id||wsaccount||"-all-",
-                                 id,wsaccount,"-all-",u_ts,"S"
-                          FROM supportmap
-                          
+              sql:  DELETE FROM rolelist;
+                    INSERT INTO rolelist (fid, id, wsaccount, project, u_ts, kind)
+                    
+                    -- Group by id, wsaccount, and project to deduplicate entries
+                    -- MAX(u_ts) ensures we keep the most recent timestamp between Slurm and Accounting
+                    SELECT 'U'||id||wsaccount||project, id, wsaccount, project, MAX(u_ts), 'U'
+                    FROM usermap
+                    GROUP BY id, wsaccount, project
+                    
+                    UNION ALL
+                    
+                    SELECT 'M'||id||wsaccount||project, id, wsaccount, project, MAX(u_ts), 'M'
+                    FROM mentormap
+                    GROUP BY id, wsaccount, project
+                    
+                    UNION ALL
+                    
+                    SELECT kind||id||wsaccount||project, id, wsaccount, project, MAX(u_ts), kind
+                    FROM pipamap
+                    GROUP BY id, wsaccount, project, kind
+                    
+                    UNION ALL
+                    
+                    SELECT "S"||id||wsaccount||"-all-", id, wsaccount, "-all-", MAX(u_ts), "S"
+                    FROM supportmap
+                    GROUP BY id, wsaccount
         columns: 
           - { name: fid,             type: longstr_t      }
           - { name: id,              type: name_t         }

@@ -32,9 +32,8 @@ jobreport:
           - projstat_per_project
           - projstat_per_project_aggr
         archive:
-          limit:      max(ts_start)-21d,max(ts)-21d
-          limit_save: max(ts_start)-25h,max(ts)-25h
-        index: jobid,lastts
+          limit: max(ts)-21d
+        unique_index: jobid
       columns: 
         - { name: jobid,           type: jobid_t,           LLDB_from: jobstate/queuedjobs,    LL_default: 'unknown' }
         - { name: ts,              type: ts_t,              LLDB_from: jobstate/queuedjobs,    LLDB_from_lastts: yes,         LL_default: -1        }
@@ -231,19 +230,19 @@ jobreport:
         - { name: gpulastts,       type: ts_t,              LLDB_from: gpustate/gpu_aggr_by_jobid,   LLDB_from_lastts: yes,   LL_default: -1    }
         - { name: gpu_ndps,        type: count_t,           LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0 }
         - { name: gpu_numgpus,     type: count_t,           LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0 }
-        - { name: gpu_clk_avg,     type: clk_t,             LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
+        - { name: gpu_clk_avg,     type: clk_f_t,           LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
         - { name: gpu_clk_min,     type: clk_t,             LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
         - { name: gpu_clk_max,     type: clk_t,             LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
-        - { name: gpu_clkr_avg,    type: clkr_t,            LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
+        - { name: gpu_clkr_avg,    type: clkr_f_t,          LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
         - { name: gpu_clkr_min,    type: clkr_t,            LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
         - { name: gpu_clkr_max,    type: clkr_t,            LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
-        - { name: gpu_memf_avg,    type: mem_t,             LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
+        - { name: gpu_memf_avg,    type: mem_f_t,           LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
         - { name: gpu_memf_min,    type: mem_t,             LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
         - { name: gpu_memf_max,    type: mem_t,             LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
-        - { name: gpu_memt_avg,    type: mem_t,             LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
+        - { name: gpu_memt_avg,    type: mem_f_t,           LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
         - { name: gpu_memt_min,    type: mem_t,             LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
         - { name: gpu_memt_max,    type: mem_t,             LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
-        - { name: gpu_memu_avg,    type: mem_t,             LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
+        - { name: gpu_memu_avg,    type: mem_f_t,           LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
         - { name: gpu_memu_min,    type: mem_t,             LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
         - { name: gpu_memu_max,    type: mem_t,             LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
         - { name: gpu_memur_avg,   type: rate_t,            LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
@@ -258,9 +257,9 @@ jobreport:
         - { name: gpu_temp_avg,    type: temp_t,            LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
         - { name: gpu_temp_min,    type: temp_t,            LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
         - { name: gpu_temp_max,    type: temp_t,            LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
-        - { name: gpu_util_avg,   type: rate_t,            LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
-        - { name: gpu_util_min,   type: rate_t,            LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
-        - { name: gpu_util_max,   type: rate_t,            LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
+        - { name: gpu_util_avg,    type: rate_t,            LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
+        - { name: gpu_util_min,    type: rate_t,            LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
+        - { name: gpu_util_max,    type: rate_t,            LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
         - { name: gpu_pcie_tx_avg, type: bytes_t,           LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
         - { name: gpu_pcie_tx_min, type: bytes_t,           LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }
         - { name: gpu_pcie_tx_max, type: bytes_t,           LLDB_from: gpustate/gpu_aggr_by_jobid,   LL_default: 0  }

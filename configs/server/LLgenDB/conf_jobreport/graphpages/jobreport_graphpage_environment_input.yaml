@@ -9,4 +9,4 @@
 #    Wolfgang Frings (Forschungszentrum Juelich GmbH) 
 #    Filipe Guimarães (Forschungszentrum Juelich GmbH) 
 
-datapath: "data/_sysstat/sysenvstat_JUWELS_Booster.csv"
+datapath: "data/_sysstat/sysenvstat.csv"

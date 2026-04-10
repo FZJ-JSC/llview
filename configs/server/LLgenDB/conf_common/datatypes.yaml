@@ -100,8 +100,12 @@ errcnt_t:
   sql: INT(12) NOT NULL DEFAULT 0
 clk_t:
   sql: INT(6) NOT NULL DEFAULT 0
+clk_f_t:
+  sql: FLOAT(8) NOT NULL DEFAULT 0
 clkr_t:
   sql: INT(6) NOT NULL DEFAULT 0
+clkr_f_t:
+  sql: FLOAT(8) NOT NULL DEFAULT 0
 num_t:
   sql: INT(10) NOT NULL DEFAULT 0
 rate_t:

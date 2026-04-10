@@ -26,7 +26,7 @@ These are the options for the `${LLVIEW_HOME}/da/rms/git/git.py` plugin script:
 ${PYTHON} ${LLVIEW_HOME}/da/rms/git/git.py --help
 usage: git.py [-h] [--config CONFIG] [--loglevel LOGLEVEL] [--singleLML SINGLELML] [--tsfile TSFILE] [--outfolder OUTFOLDER] [--repofolder REPOFOLDER] [--outconfigfolder OUTCONFIGFOLDER] [--skipupdate]
 
-Prometheus Plugin for LLview
+Git Plugin for LLview
 
 options:
   -h, --help            show this help message and exit

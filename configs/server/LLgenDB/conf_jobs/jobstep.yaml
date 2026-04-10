@@ -19,8 +19,9 @@ jobstep:
             - stepmax
             - stepspec
             - jobspec
+            - app_stats
           archive:
-            limit: max(ts_start)-72h
+            limit: max(ts)-72h
           index: jobid,step,ts
         columns: 
           - { name: jobid,           type: jobid_t,           LML_from: jobid,           LML_default: 'unknown' }
@@ -166,7 +167,52 @@ jobstep:
           - { name: rc_rc,            type: cnt_t }
           - { name: rc_signr,         type: cnt_t }
           - { name: rc_state,         type: jstatus_t }
-          
+
+    - table:
+        name: app_stats
+        options:
+          update:
+            sql_update_contents:
+              vars: mintsinserted
+              sql: DELETE FROM app_stats;
+                   INSERT INTO app_stats (application, run_count, nodeh, userlist, accountlist, joblist, ts)
+                   SELECT
+                       app_steps.jobname,
+                       COUNT(DISTINCT app_steps.jobid),
+                       SUM(app_steps.nnodes * (app_steps.ts - app_steps.ts_start) / 3600.0),
+                       COALESCE(GROUP_CONCAT(DISTINCT job_owner.owner), 'unknown'),
+                       COALESCE(GROUP_CONCAT(DISTINCT app_steps.account), 'unknown'),
+                       GROUP_CONCAT(DISTINCT app_steps.jobid),
+                       MAX(app_steps.ts)
+                   FROM (
+                       SELECT j.jobid, j.jobname, j.nnodes, j.ts, j.ts_start, j.account
+                       FROM jobstep j
+                       INNER JOIN stepmax m
+                               ON j.jobid = m.jobid AND j.step = m.step AND j.ts = m.ts
+                       WHERE j.step NOT IN ('job', 'batch', 'extern')
+                         AND j.jobname NOT IN ('env', 'bash')
+                         AND j.ts_start > 0
+                   ) app_steps
+                   LEFT JOIN (
+                       SELECT j.jobid, j.owner
+                       FROM jobstep j
+                       INNER JOIN stepmax m
+                               ON j.jobid = m.jobid AND j.step = m.step AND j.ts = m.ts
+                       WHERE j.step = 'job'
+                   ) job_owner ON app_steps.jobid = job_owner.jobid
+                   GROUP BY app_steps.jobname;
+              sqldebug: 0
+          archive:
+            limit: max(ts)-72h
+        columns:
+          - { name: application,      type: longstr_t }
+          - { name: run_count,        type: cnt_t }
+          - { name: nodeh,            type: float_t }
+          - { name: userlist,         type: extralongstr_t }
+          - { name: accountlist,      type: extralongstr_t }
+          - { name: joblist,          type: extralongstr_t }
+          - { name: ts,               type: ts_t }
+
           
     # additional common tables jobmapts, jobmapnode 
     %include "../conf_common/jobmap_tables.yaml"

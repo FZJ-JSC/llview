@@ -1,4 +1,4 @@
-- { name: gpu_util_avg,        type: rate_t }
-- { name: gpu_memu_avg,         type: mem_t }
-- { name: gpu_sclk_avg,         type: clk_t }
+- { name: gpu_util_avg,         type: rate_t }
+- { name: gpu_memu_avg,         type: mem_f_t }
+- { name: gpu_sclk_avg,         type: clk_f_t }
 - { name: gpu_temp_avg,         type: temp_t }

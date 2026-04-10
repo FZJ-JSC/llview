@@ -428,10 +428,12 @@ sub dayfrac {
 }
 
 sub hourfrac {
-  my ($ts,$self)=@_;
-  return(0) if(!$ts);
-  if($ts!~/^[0-9\.]+$/) {
-    return($ts); 
+  my ($ts, $self) = @_;
+  # Return 0 if empty or undefined
+  return(0) if (!$ts);
+  # If the input is NOT just numbers and decimal points (e.g., "UNLIMITED")
+  if ($ts !~ /^[0-9\.]+$/) {
+    return(-1); 
   }
   return(&cut3digits(($ts)/3600.0));
 }

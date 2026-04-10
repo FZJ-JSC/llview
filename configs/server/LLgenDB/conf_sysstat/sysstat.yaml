@@ -1,0 +1,166 @@
+sysstatstate:
+  tables:
+
+    #---------------------------
+    # table, filled by LML input
+    #---------------------------
+    - table:
+        name: sysstat
+        options:
+          update:
+            LML: sysstat
+            mode: add
+          update_trigger:
+            - sysstat_max_ts
+            - sysstat_last
+            - sysstat_time_aggr
+          archive:
+            limit: max(ts)-24h
+          index: ts
+        columns: 
+          - { name: ts,                type: ts_t,       LML_from: syst_ts,            LML_default: -1,  LML_minlastinsert: mintsinserted }
+          - { name: power,             type: power_f_t,  LML_from: power,              LML_default: 0 }
+          - { name: water_flowrate,    type: rate_t,     LML_from: water_flowrate,     LML_default: 0 }
+          - { name: water_inlet_temp,  type: temp_f_t,   LML_from: water_inlet_temp,   LML_default: 0 }
+          - { name: water_outlet_temp, type: temp_f_t,   LML_from: water_outlet_temp,  LML_default: 0 }
+          - { name: water_power,       type: power_f_t,  LML_from: water_power,        LML_default: 0 }
+
+    - table:
+        name: sysstat_time_aggr
+        options:
+          update:
+            sql_update_contents:
+              sqldebug: 0
+              vars: mintsinserted
+              aggr_by_time_resolutions: [1, 60, 1440]     # in minutes (1 min, 1 hour, 1 day)
+              aggr_by_time_mintsvar: mintsinserted
+              sql: 
+                   INSERT INTO sysstat_time_aggr
+                           (_time_res, _time_cnt, ts, power_avg,
+                            water_flowrate_avg, water_inlet_temp_avg, water_outlet_temp_avg, water_power_avg)
+                                 SELECT 1, 1,
+                                        ts, power,
+                                        water_flowrate, water_inlet_temp, water_outlet_temp, water_power
+                                 FROM sysstat
+                                 WHERE (ts >=  mintsinserted)
+          archive:
+            limit_aggr_time: [ 6120, 133920, 2628000 ]     # in minutes (3 days, 93 days, 5 years)
+            limit_aggr_time_var: ts
+        columns: 
+          - { name: _time_res,             type: _time_res_t }
+          - { name: _time_cnt,             type: _time_cnt_t }
+          - { name: ts,                    type: ts_t,        time_aggr: TS  }
+          - { name: power_avg,             type: power_f_t,   time_aggr: AVG }
+          - { name: water_flowrate_avg,    type: rate_t,      time_aggr: AVG }
+          - { name: water_inlet_temp_avg,  type: temp_f_t,    time_aggr: AVG }
+          - { name: water_outlet_temp_avg, type: temp_f_t,    time_aggr: AVG }
+          - { name: water_power_avg,       type: power_f_t,   time_aggr: AVG }
+          
+    - table:
+        name: sysstat_max_ts
+        options:
+          update:
+            sql_update_contents:
+               sql: DELETE FROM sysstat_max_ts;
+                    INSERT INTO sysstat_max_ts (ts) SELECT max(ts) FROM sysstat;
+        columns: 
+          - { name: ts,              type: ts_t }
+
+    - table:
+        name: sysstat_last
+        options:
+          update:
+            sql_update_contents:
+               sql: DELETE FROM sysstat_last;
+                    INSERT INTO sysstat_last (ts, power,
+                                       water_flowrate, water_inlet_temp, water_outlet_temp, water_power)
+                                       SELECT ts, power,
+                                              water_flowrate, water_inlet_temp, water_outlet_temp, water_power
+                                       FROM sysstat
+                                       WHERE ts = (SELECT ts FROM sysstat_max_ts);
+          archive:
+            limit: max(ts)-48h
+        columns: 
+          - { name: ts,                type: ts_t      }
+          - { name: power,             type: power_f_t }
+          - { name: water_flowrate,    type: rate_t    }
+          - { name: water_inlet_temp,  type: temp_f_t  }
+          - { name: water_outlet_temp, type: temp_f_t  }
+          - { name: water_power,       type: power_f_t }
+          
+    - table:
+        name: rackpwr
+        options:
+          update:
+            LML: rackpwr
+            mode: add
+          update_trigger:
+            - rackpwr_max_ts
+            - rackpwr_last
+            - rackpwr_time_aggr
+          archive:
+            limit: max(ts)-48h
+          index: ts
+        columns: 
+          - { name: ts,                type: ts_t,       LML_from: rack_ts,            LML_default: -1,  LML_minlastinsert: mintsinserted }
+          - { name: name,              type: name_t,     LML_from: name,               LML_default: 'U' }
+          - { name: power,             type: power_f_t,  LML_from: rack_pwr,           LML_default: 0 }
+
+    - table:
+        name: rackpwr_time_aggr
+        options:
+          update:
+            sql_update_contents:
+              sqldebug: 0
+              vars: mintsinserted
+              aggr_by_time_resolutions: [1, 60, 1440]     # in minutes (1 min, 1 hour, 1 day)
+              aggr_by_time_mintsvar: mintsinserted
+              sql: 
+                   INSERT INTO rackpwr_time_aggr
+                           (_time_res, _time_cnt, ts, name, power_avg)
+                                 SELECT 1, 1, ts, name, power
+                                 FROM rackpwr
+                                 WHERE (ts >= mintsinserted)
+                                   AND NOT EXISTS (
+                                       SELECT 1 FROM rackpwr_time_aggr rta
+                                       WHERE rta._time_res = 1 
+                                         AND rta.ts = rackpwr.ts 
+                                         AND rta.name = rackpwr.name
+                                   )
+          archive:
+            limit_aggr_time: [ 6120, 133920, 2628000 ]     # in minutes (3 days, 93 days, 5 years)
+            limit_aggr_time_var: ts
+        columns: 
+          - { name: _time_res,       type: _time_res_t }
+          - { name: _time_cnt,       type: _time_cnt_t }
+          - { name: ts,              type: ts_t,      time_aggr: TS  }
+          - { name: name,            type: name_t,    time_aggr: KEY  }
+          - { name: power_avg,       type: power_f_t, time_aggr: AVG }
+          
+
+    - table:
+        name: rackpwr_max_ts
+        options:
+          update:
+            sql_update_contents:
+               sql: DELETE FROM rackpwr_max_ts;
+                    INSERT INTO rackpwr_max_ts (ts) SELECT max(ts) FROM rackpwr;
+        columns: 
+          - { name: ts,              type: ts_t }
+          
+        
+    - table:
+        name: rackpwr_last
+        options:
+          update:
+            sql_update_contents:
+               sqldebug: 0
+               sql: DELETE FROM rackpwr_last;
+                    INSERT INTO rackpwr_last (ts, name, power)
+                                       SELECT ts, name, power
+                                       FROM rackpwr
+                                       WHERE ts = (SELECT ts FROM rackpwr_max_ts);
+        columns: 
+          - { name: ts,                type: ts_t,      }
+          - { name: name,              type: name_t,    }
+          - { name: power,             type: power_f_t  }

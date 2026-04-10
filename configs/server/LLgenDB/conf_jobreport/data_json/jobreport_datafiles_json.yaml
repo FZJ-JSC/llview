@@ -88,13 +88,13 @@
     name:            sysrackpwr_json
     set:             json_sysstat
     filepath:       '$outputdir/_sysstat/sysrackpwr.json.gz'
-    data_database:   sysstatstate
-    data_table:      rackpwr_last
+    data_database:   powerstate
+    data_table:      rackpower_aggr_by_rackid
     stat_table:      datasetstat_sysstat
     stat_database:   jobreport_json_stat
     format:         'json'
-    columns:        'name, power, ts'
-    column_convert: 'ts->todate_std_hhmm, power->toThousand'
+    columns:        'rackid, power_last, power_avg, power_min, power_max, cnt, ts'
+    column_convert: 'ts->todate_std_hhmm, power_last->toThousand, power_avg->toThousand, power_min->toThousand , power_max->toThousand'
     order:          "name DESC"
 
 - dataset:
@@ -109,6 +109,19 @@
     columns:        'nodeid, nodeerrts, jobid, cmd, pid, msgcls, msg, user, uid, gid'
     column_convert: 'nodeerrts->todate_std_hhmm'
     order:          "jobid DESC, nodeid DESC, nodeerrts DESC"
+
+- dataset:
+    name:          app_stats_json
+    set:           json_app_stats
+    data_database: jobstep
+    data_table:    app_stats
+    filepath:      '$outputdir/_sysstat/app_stats.json.gz'
+    stat_database: jobreport_json_stat
+    stat_table:    datasetstat_support
+    format:        'json'
+    columns:       'application, run_count, nodeh, userlist, accountlist, joblist'
+    column_convert: 'userlist->as_array,accountlist->as_array,joblist->as_array,nodeh->cut4digits'
+
 ###############################
 # Internal stat
 ###############################
@@ -151,19 +164,7 @@
                      ts_min->todate_std_hhmmss,
                      dt->cut4digits,dt_min->cut4digits,dt_avg->cut4digits,dt_max->cut4digits,
                      cmplx_min->cut1digits,cmplx_avg->cut1digits,cmplx_max->cut1digits'
-
-- dataset:
-    name:            joblist_stat_by_source
-    set:             json_joblist_stat_by_source
-    filepath:       '$outputdir/_internal/joblist_stat_by_source.json.gz'
-    data_database:   jobreport
-    data_table:      joblist_sources_stat
-    stat_table:      datasetstat_sources_stat
-    stat_database:   jobreport_json_stat
-    format:         'json'
-    columns:        's_start, s_ts, s_defer, s_step, s_err, s_ld, s_rc,s_co, s_fa, s_ic, s_fs, s_gpu, num_jobs, min_ts_start, min_ts, min_jobid, max_jobid, avg_jwallm, max_jwallm'
-    column_convert: 'min_ts_start->todate_std_hhmmss,min_ts->todate_std_hhmmss'
-
+    
 - dataset:
     name: support_CorePattern
     set:        corepattern
@@ -192,6 +193,19 @@
     column_convert: ''
     order:          "memcls INCR"
 
+- dataset:
+    name:            joblist_stat_by_source
+    set:             json_joblist_stat_by_source
+    filepath:       '$outputdir/_internal/joblist_stat_by_source.json.gz'
+    data_database:   jobreport
+    data_table:      joblist_sources_stat
+    stat_table:      datasetstat_sources_stat
+    stat_database:   jobreport_json_stat
+    format:         'json'
+    columns:        's_start, s_ts, s_defer, s_step, s_err, s_ld, s_rc,s_co, s_fa, s_ic, s_fs, s_gpu, num_jobs, min_ts_start, min_ts, max_ts_start, max_ts, min_jobid, max_jobid, avg_jwallm, max_jwallm'
+    column_convert: 'min_ts_start->todate_std_hhmmss,min_ts->todate_std_hhmmss,max_ts_start->todate_std_hhmmss,max_ts->todate_std_hhmmss'
+
+    
 # Remarks:
 #   ts_end is -1 for running jobs
 #   jobreporting database will be filled from other databases, depending on update state of these data bases
