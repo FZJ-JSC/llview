@@ -34,10 +34,6 @@ sub process_data_query_and_save_csv_dat {
   if(exists($dataset->{sqldebug})) {
     $sql_debug=1 if($dataset->{sqldebug}=~/yes/i);
   }
-  my $groupby="";
-  if(exists($dataset->{group_by})) {
-    $groupby="GROUP BY ".$dataset->{group_by};
-  }
   my $where="";
   if(exists($dataset->{sql_where})) {
     $where.=$self->{DB}->replace_tsvars($dataset->{sql_where},$self->{CURRENTTS});
@@ -196,7 +192,7 @@ sub process_data_query_and_save_csv_dat {
     $col_filemap_sql = qq("$col_filemap_sql");
 
     # Quoted Identifiers in SQL
-    my $sql=sprintf("SELECT %s FROM %s.%s D1 INNER JOIN %s S ON D1.%s=S.ukey AND D1.%s>S.lastts_saved AND S.\"NAME\"=\"%s\" %s ORDER BY S.\"dataset\",D1.%s %s",
+    my $sql=sprintf("SELECT %s FROM %s.%s D1 INNER JOIN %s S ON D1.%s=S.ukey AND D1.%s>S.lastts_saved AND S.\"NAME\"=\"%s\" %s ORDER BY S.\"dataset\",D1.%s",
                     join(",",@cols),
                     $data_db_sql,
                     $data_tb_sql,
@@ -205,8 +201,7 @@ sub process_data_query_and_save_csv_dat {
                     $ts_col_sql,
                     $dataset->{name},
                     ($where)?"WHERE $where":"",
-                    $ts_col_sql,
-                    ($groupby)?" $groupby":""
+                    $ts_col_sql
                     );
     
     printf("%s process_data_query_and_save_csv_dat: (multi) sql: %s\n",$self->{INSTNAME},$sql) if($sql_debug);
@@ -255,12 +250,11 @@ sub process_data_query_and_save_csv_dat {
     }
 
     # build and call the query
-    my $sql=sprintf("SELECT %s FROM %s %s %s %s;",
+    my $sql=sprintf("SELECT %s FROM %s %s %s;",
                       join(",",@cols),
                       $from,
                       ($where)?"WHERE $where":"",
-                      $order,
-                      ($groupby)?" $groupby":""
+                      $order
                     );
     printf("%s process_data_query_and_save_csv_dat: (single) sql: %s\n",$self->{INSTNAME},$sql)  if($sql_debug);
     #	print "single: $where\n";
