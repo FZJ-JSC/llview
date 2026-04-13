@@ -50,6 +50,8 @@ my $opt_currentts=undef;
 my $opt_currenttsfile=undef;
 my $opt_systemname=undef;
 my $opt_solvestat=0;
+my $opt_statstat=0;
+my $opt_migratestat=0;
 my $opt_force=0;
 my $opt_changedfileslog="changedfiles.log";
 
@@ -64,6 +66,8 @@ usage($0) if( ! GetOptions(
                 'outdir=s'         => \$opt_outdir,
                 'tmpdir=s'         => \$opt_tmpdir,
                 'solvestat'        => \$opt_solvestat,
+                'statstat'         => \$opt_statstat,
+                'migratestat'      => \$opt_migratestat,
                 'force'            => \$opt_force,
                 'journalonly'      => \$opt_journalonly,
                 'journaldir=s'     => \$opt_journaldir,
@@ -126,28 +130,40 @@ $jobreport->update_global_vars_in_config($DB,$opt_outdir,$opt_archdir);
 
 printf("%s open DB                                         in %7.4fs\n",$instname,time()-$starttime);
 
-if(!$opt_solvestat) {
-  $starttime=time();
-  $jobreport->mngt_datasets($DB,$opt_journalonly,$opt_journaldir);  
-  printf("%s managed datasets                                in %7.4fs\n",$jobreport->{INSTNAME},time()-$starttime);
-} else {
-  $starttime=time();
-  $jobreport->solve_datasets($DB,$opt_force);  
-  printf("%s solve datasets                                  in %7.4fs\n",$jobreport->{INSTNAME},time()-$starttime);
+my $done=0;
+if($opt_solvestat) {
+    $starttime=time();
+    $jobreport->solve_datasets($DB,$opt_force);  
+    printf("%s solve datasets                                  in %7.4fs\n",$jobreport->{INSTNAME},time()-$starttime);
+    $done=1;
 }
 
-$starttime=time();
-my($changed_files)=$jobreport->mngt_scan_datasets($DB,$opt_journalonly,$opt_journaldir);  
-printf("%s scan  datasets                                   in %7.4fs\n",$jobreport->{INSTNAME},time()-$starttime);
-
-$starttime=time();
-open(OUT,"> $opt_changedfileslog") or die "cannot open $opt_changedfileslog";
-foreach my $dataset (sort(keys(%{$changed_files}))) {
-  print OUT "$dataset\n";
+if($opt_statstat) {
+    $starttime=time();
+    $jobreport->stat_datasets($DB,$opt_force);  
+    printf("%s stat datasets                                  in %7.4fs\n",$jobreport->{INSTNAME},time()-$starttime);
+    $done=1;
 }
-close(OUT);
-printf("%s wrote changed files log                          in %7.4fs (%s)\n",$jobreport->{INSTNAME},time()-$starttime,$opt_changedfileslog);
 
+if(!$done) {
+    $starttime=time();
+    $jobreport->mngt_datasets($DB,$opt_journalonly,$opt_journaldir);  
+    printf("%s managed datasets                                in %7.4fs\n",$jobreport->{INSTNAME},time()-$starttime);
+
+    $starttime=time();
+    my($changed_files)=$jobreport->mngt_scan_datasets($DB,$opt_journalonly,$opt_journaldir);  
+    printf("%s scan  datasets                                   in %7.4fs\n",$jobreport->{INSTNAME},time()-$starttime);
+
+    $starttime=time();
+    open(OUT,"> $opt_changedfileslog") or die "cannot open $opt_changedfileslog";
+    foreach my $dataset (sort(keys(%{$changed_files}))) {
+	print OUT "$dataset\n";
+    }
+    close(OUT);
+    printf("%s wrote changed files log                          in %7.4fs (%s)\n",$jobreport->{INSTNAME},time()-$starttime,$opt_changedfileslog);
+}
+
+  
 $DB->close();  
 
 sub usage {

@@ -770,6 +770,7 @@ sub mngt_scan_datasets {
   my $changed_files;
   my $stat;
   my $where="(mts >= ($limit_ts) OR (status=".FSTATUS_TOBEDELETED.") OR (status=".FSTATUS_TOBECOMPRESSED.") OR (status=".FSTATUS_DELETED."))";
+  print "WFwhere: $where\n";
   foreach my $ds_db (sort(keys(%{$ds}))) {
     foreach my $ds_tab (sort(keys(%{$ds->{$ds_db}}))) {
       my $subconfig_ref=$ds->{$ds_db}->{$ds_tab};
@@ -789,8 +790,12 @@ sub mngt_scan_datasets {
 
         if($ref->{status}==FSTATUS_EXISTS) {
           # updated of regular files
-          $changed_files->{$ref->{dataset}}++ if($ref->{status} != FSTATUS_NOT_EXISTS);
+          $changed_files->{$ref->{dataset}}++;
           printf ("%s/%s: [%d] changed %s\n",$ds_db,$ds_tab,$ref->{status},$ref->{dataset}) if($self->{VERBOSE}>=1);
+        } elsif($ref->{status}==FSTATUS_COMPRESSED) {
+          # updated of regular files
+          $changed_files->{$ref->{dataset}}++;
+          printf ("%s/%s: [%d] changedCMP %s\n",$ds_db,$ds_tab,$ref->{status},$ref->{dataset}) if($self->{VERBOSE}>=0);
         } elsif($ref->{status}==FSTATUS_TOBECOMPRESSED) {
           my $realfile=sprintf("%s/%s",$self->{OUTDIR},$ref->{dataset});
           if( -f $realfile ) {
