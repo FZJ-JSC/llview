@@ -155,6 +155,9 @@ sub create_table {
   # Make the TABLE name safe (Strip quotes -> Re-quote safely)
   my $safe_table = $table;
   $safe_table =~ s/^"|"$//g;
+  if($safe_table eq '' || !defined $safe_table) {
+    die "CREATE TABLE FAILED: invalid or empty table name '$table' in database $self->{DBNAME}\n";
+  }
   $safe_table = $self->{DBH}->quote_identifier($safe_table);
 
   my $sql = "CREATE TABLE $safe_table (";

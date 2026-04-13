@@ -39,26 +39,28 @@ sub process_LMLdata {
     foreach my $t (@{$self->{CONFIGDATA}->{databases}->{$db}->{tables}}) {
       my $tableref=$t->{table};
       $table=$tableref->{name};
-      if(exists($tableref->{options})) {
-        $options=$tableref->{options};
-        if( exists($options->{update}) ) {
-          if(exists($options->{update}->{LML})) {
-            my $what=$options->{update}->{LML};
-            if(exists($cap->{$what})) {
-              $processDB=1;
+      if(defined($table) && $table ne '') {
+        if(exists($tableref->{options})) {
+          $options=$tableref->{options};
+          if( exists($options->{update}) ) {
+            if(exists($options->{update}->{LML})) {
+              my $what=$options->{update}->{LML};
+              if(exists($cap->{$what})) {
+                $processDB=1;
+              }
+              if(exists($capf->{$what})) {
+                $processDB=1;
+              }
             }
-            if(exists($capf->{$what})) {
-              $processDB=1;
-            }
-          }
-          if(exists($options->{update}->{LLgenDB})) {
-            my $what=$options->{update}->{LLgenDB};
-            if( $what =~ /get_job(node|ts)map/ ) {
-              $self->{DBcontains_map_data}=$db;
-              $foundDBmapdata=1;
-            }
-            if( $what =~ /add_job(node|ts)map/ ) {
-              $map_data_required=1;
+            if(exists($options->{update}->{LLgenDB})) {
+              my $what=$options->{update}->{LLgenDB};
+              if( $what =~ /get_job(node|ts)map/ ) {
+                $self->{DBcontains_map_data}=$db;
+                $foundDBmapdata=1;
+              }
+              if( $what =~ /add_job(node|ts)map/ ) {
+                $map_data_required=1;
+              }
             }
           }
         }
@@ -139,18 +141,20 @@ sub process_LMLdata_DB {
     my $tableref=$t->{table};
     $table=$tableref->{name};
     $columns=$tableref->{columns};
-    if(exists($tableref->{options})) {
-      $options=$tableref->{options};
-      
-      if( exists($options->{update}) ) {
-        if(exists($options->{update}->{LML})) {
-          printf("%-29s LLmonDB:  -> check TABLE $db/$table (LML)\n",$self->{INSTNAME}) if($self->{VERBOSE});
-          $self->process_LMLdata_from_LML($db,$table,$columns,$options,$LMLdata);
-        }
-          
-        if(exists($options->{update}->{LLgenDB})) {
-          printf("%-29s LLmonDB:  -> check TABLE $db/$table (LLgenDB)\n",$self->{INSTNAME}) if($self->{VERBOSE});
-          $self->process_LMLdata_LLgenDB($db,$table,$options,$LMLdata);
+    if(defined($table) && $table ne '') {
+      if(exists($tableref->{options})) {
+        $options=$tableref->{options};
+        
+        if( exists($options->{update}) ) {
+          if(exists($options->{update}->{LML})) {
+            printf("%-29s LLmonDB:  -> check TABLE $db/$table (LML)\n",$self->{INSTNAME}) if($self->{VERBOSE});
+            $self->process_LMLdata_from_LML($db,$table,$columns,$options,$LMLdata);
+          }
+            
+          if(exists($options->{update}->{LLgenDB})) {
+            printf("%-29s LLmonDB:  -> check TABLE $db/$table (LLgenDB)\n",$self->{INSTNAME}) if($self->{VERBOSE});
+            $self->process_LMLdata_LLgenDB($db,$table,$options,$LMLdata);
+          }
         }
       }
     }
