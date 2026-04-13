@@ -23,11 +23,27 @@ if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
     return
 fi
 
-ls -ltr $LLVIEW_DATA/$LLVIEW_SYSTEMNAME/logs/*errlog $LLVIEW_DATA/$LLVIEW_SYSTEMNAME/logs/steps/*errlog
+cm="ls -ltr $LLVIEW_DATA/$LLVIEW_SYSTEMNAME/logs/*errlog $LLVIEW_DATA/$LLVIEW_SYSTEMNAME/logs/steps/*errlog | nl"
+eval ${cm}
 
 while [ $# -gt 0 ] ; do
-  case $1 in
-    delete) echo "Deleting error files..." ; cd $LLVIEW_DATA/$LLVIEW_SYSTEMNAME ; find ./ -name *errlog -delete ; exit 0 ;;
-  esac
-  shift
+	case $1 in
+		delete) echo "Deleting error files..." ; cd $LLVIEW_DATA/$LLVIEW_SYSTEMNAME ; find ./ -name *errlog -delete ; exit 0 ;;
+		open)
+			if [ -z "$2" ]; then
+				echo "Please provide a line number for the file to open."
+				exit 1
+			fi
+			line_number=$2
+			file=$(eval $cm | sed -n "${line_number}p" | awk '{print $NF}')
+			if [ -f "$file" ]; then
+				vim "$file"
+			else
+				echo "File $file not found."
+				exit 1
+			fi
+			exit 0
+			;;
+	esac
+	shift
 done

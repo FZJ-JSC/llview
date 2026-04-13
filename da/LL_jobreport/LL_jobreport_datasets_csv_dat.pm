@@ -7,6 +7,7 @@
 #
 # Contributors:
 #    Wolfgang Frings (Forschungszentrum Juelich GmbH) 
+#    Nabil Abubaker (Forschungszentrum Juelich GmbH)
 
 package LML_jobreport;
 

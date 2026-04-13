@@ -1128,6 +1128,9 @@ jobreport_json_stat:
       name: datasetstat_nodeerr
       %include "./databases/jobreport_databases_stat_tables.yaml"
   - table:
+      name: datasetstat_nodeerr_cnt
+      %include "./databases/jobreport_databases_stat_tables.yaml"
+  - table:
       name: datasetstat_steptimings
       %include "./databases/jobreport_databases_stat_tables.yaml"
   - table:
