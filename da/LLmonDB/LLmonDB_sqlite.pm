@@ -7,6 +7,7 @@
 #
 # Contributors:
 #    Wolfgang Frings (Forschungszentrum Juelich GmbH) 
+#    Filipe Guimarães (Forschungszentrum Juelich GmbH) 
 
 package LLmonDB_sqlite;
 

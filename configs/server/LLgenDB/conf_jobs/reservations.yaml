@@ -7,6 +7,7 @@
 #
 # Contributors:
 #    Wolfgang Frings (Forschungszentrum Juelich GmbH) 
+#    Filipe Guimarães (Forschungszentrum Juelich GmbH) 
 
 resstate:
   tables:
@@ -17,8 +18,8 @@ resstate:
             LML: reservation
             mode: replace
           update_trigger:
+            - all_reservations
         columns: 
-          - { name: resid,           type: resid_t,           LML_from: resid,           LML_default: 'unknown' }
           - { name: startts,         type: ts_t,              LML_from: startts,         LML_default: -1 }
           - { name: endts,           type: ts_t,              LML_from: endts,           LML_default: -1, LML_minlastinsert: mintsinserted }
           - { name: resname,         type: name_t,            LML_from: resname,         LML_default: "-" }
@@ -28,5 +29,44 @@ resstate:
           - { name: numcores,        type: tasks_t,           LML_from: corecnt,         LML_default: 0 }
           - { name: nodelist,        type: extralongstr_t,    LML_from: nodelist,        LML_default: "-" }
           - { name: flags,           type: longstr_t,         LML_from: flags,           LML_default: "-" }
-          - { name: accounts,        type: extralongstr_t,    LML_from: accounts,         LML_default: 0 }
+          - { name: accounts,        type: extralongstr_t,    LML_from: accounts,        LML_default: 0 }
 
+    - table:
+        name: all_reservations
+        options:
+          # Protects against duplicates, ensures historical integrity
+          unique_index: resid
+          index: 
+            - startts
+            - endts
+            - state
+            - resname
+          update:
+            sql_update_contents:
+              sql:  DELETE FROM all_reservations 
+                    WHERE resname IN (SELECT resname FROM reservations)
+                    AND state NOT IN ('EXPIRED', 'DELETED');
+                    
+                    INSERT INTO all_reservations (resid, startts, endts, resname, state, wall, numnodes, numcores, nodelist, flags, accounts)
+                    SELECT resname || '_' || startts || '_' || endts, startts, endts, resname, state, wall, numnodes, numcores, nodelist, flags, accounts
+                    FROM reservations;
+                    
+                    UPDATE all_reservations 
+                    SET state = CASE 
+                                  WHEN endts <= CAST(strftime('%s', 'now') AS INTEGER) THEN 'EXPIRED'
+                                  ELSE 'DELETED'
+                                END
+                    WHERE resname NOT IN (SELECT resname FROM reservations)
+                    AND state NOT IN ('EXPIRED', 'DELETED');
+        columns: 
+          - { name: resid,           type: resid_t          }
+          - { name: startts,         type: ts_t             }
+          - { name: endts,           type: ts_t             }
+          - { name: resname,         type: name_t           }
+          - { name: state,           type: jstatus_t        }
+          - { name: wall,            type: wall_t           }
+          - { name: numnodes,        type: tasks_t          }
+          - { name: numcores,        type: tasks_t          }
+          - { name: nodelist,        type: extralongstr_t   }
+          - { name: flags,           type: longstr_t        }
+          - { name: accounts,        type: extralongstr_t   }

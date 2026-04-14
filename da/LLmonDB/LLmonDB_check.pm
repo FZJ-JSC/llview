@@ -7,6 +7,7 @@
 #
 # Contributors:
 #    Wolfgang Frings (Forschungszentrum Juelich GmbH) 
+#    Filipe Guimarães (Forschungszentrum Juelich GmbH) 
 
 package LLmonDB;
 
@@ -79,9 +80,18 @@ sub checkDB {
     }
     
     # check tables from config
+    my $table_index = 0;
     foreach my $t (@{$self->{CONFIGDATA}->{databases}->{$db}->{tables}}) {
+      $table_index++;
       my $tableref=$t->{table};
       $table=$tableref->{name};
+
+      # validate that the table name actually exists in the config
+      if(!defined($table) || $table =~ /^\s*$/) {
+        printf("  LLmonDB:     ERROR: Missing 'name' for table entry #%d in database '%s' configuration. Please check your YAML file! Skipping...\n", $table_index, $db);
+        $found++;
+        next;
+      }
       
       # Clean table name for consistent lookup (strip quotes)
       my $clean_table = $table;
@@ -217,6 +227,10 @@ sub checkDB {
       my $tab_exists=0;
       foreach my $t (@{$self->{CONFIGDATA}->{databases}->{$db}->{tables}}) {
         my $cfg_table = $t->{table}->{name};
+        
+        # skip if config table name is missing to prevent uninitialized warnings
+        next if(!defined($cfg_table) || $cfg_table =~ /^\s*$/);
+        
         $cfg_table =~ s/^"|"$//g;
         if($cfg_table eq $table) {
           $tab_exists=1; last;
@@ -250,6 +264,10 @@ sub checkDB {
     foreach my $t (@{$self->{CONFIGDATA}->{databases}->{$db}->{tables}}) {
       my $tableref=$t->{table};
       $table=$tableref->{name};
+
+      # skip missing table names in config
+      next if(!defined($table) || $table =~ /^\s*$/);
+
       my $clean_table = $table;
       $clean_table =~ s/^"|"$//g;
       if(!defined $clean_table || $clean_table eq '') {
@@ -349,7 +367,7 @@ sub checkDB {
     if(!$dryrun) {
       printf("  LLmonDB: RESULTS, %d difference(s) solved\n",$done);
       if($found>$done) {
-        printf("  LLmonDB: RESULTS, %d difference(s) were not solved, please check logs\n",$done-$found);
+        printf("  LLmonDB: RESULTS, %d difference(s) were not solved, please check logs\n",$found-$done);
       }
     } else {
       printf("  LLmonDB: RESULTS, please use option --force to solve difference(s)\n");

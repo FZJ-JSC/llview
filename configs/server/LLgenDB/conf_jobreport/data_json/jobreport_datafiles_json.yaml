@@ -57,12 +57,12 @@
     set:             json_reservation
     filepath:       '$outputdir/_queued/reservations.json.gz'
     data_database:   resstate
-    data_table:      reservations
+    data_table:      all_reservations
     stat_table:      datasetstat_reservations
     stat_database:   jobreport_json_stat
     format:         'json'
     columns:        'resid, startts, endts, resname, state, wall, numnodes, numcores, nodelist, flags, accounts'
-    column_convert: 'startts->todate_std_hhmm,endts->todate_std_hhmm,wall,nodelist->wrapcsword10,accounts->wrapcsword10'
+    column_convert: 'startts->todate_std_hhmm,endts->todate_std_hhmm'
     order:          "startts ASC"
 
 ###############################

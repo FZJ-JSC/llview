@@ -228,7 +228,47 @@ sub load_config {
   
   # $self->{CONFIGDATA}=YAML::XS::LoadFile( $self->{CONFIGFILE});
   $YAML::XS::Boolean = "JSON::PP";
-  $self->{CONFIGDATA}=YAML::XS::Load( $data );
+  # Loading the YAML inside an eval block to catch the error and print
+  # better logs in case of errors
+  eval {
+    $self->{CONFIGDATA} = YAML::XS::Load($data);
+  };
+  if($@) {
+    my $errmsg = $@;
+
+    # extract document and line number from the YAML::XS error message
+    my ($doc_num, $err_line, $err_col);
+    if($errmsg =~ /document:\s*(\d+),\s*line:\s*(\d+),\s*column:\s*(\d+)/s) {
+      ($doc_num, $err_line, $err_col) = ($1, $2, $3);
+    }
+
+    printf(STDERR "YAML parsing failed:\n%s\n", $errmsg);
+
+    if(defined($err_line)) {
+      # only split into lines when needed for error context reporting
+      my @data_lines = split(/\n/, $data);
+
+      my $context = 5;
+      my $first   = $err_line - $context - 1;
+      my $last    = $err_line + $context - 1;
+      $first = 0 if($first < 0);
+      $last  = $#data_lines if($last > $#data_lines);
+
+      printf(STDERR "Context around document %d, line %d, column %d:\n",
+                    $doc_num, $err_line, $err_col);
+      for(my $i = $first; $i <= $last; $i++) {
+        my $lineno = $i + 1;
+        my $marker = ($lineno == $err_line) ? ">>>" : "   ";
+        printf(STDERR "%s %6d: %s\n", $marker, $lineno, $data_lines[$i]);
+      }
+
+      if(defined($err_col) && $err_col > 0) {
+        printf(STDERR "   %6s  %s^\n", "", " " x ($err_col - 1));
+      }
+    }
+
+    die "YAML::XS::Load failed, see context above\n";
+  }
 
   if($ENV{LLMONDB_DUMP_CONFIG_TO_DIR}) {
     my $cfile=$self->{CFILE};$cfile=~s/\.yaml$//s;
@@ -367,7 +407,7 @@ sub get_index_columns {
     }
   }
 
-  # Process new 'unique_index' key
+  # Process 'unique_index' key
   if(exists($tableref->{options}->{unique_index})) {
     my $uidx_opt = $tableref->{options}->{unique_index};
     if(ref($uidx_opt)) {
