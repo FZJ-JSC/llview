@@ -32,6 +32,14 @@ sub parprocess {
   my $rc_all=0;
   my $num_notfinished=0;
   my $starttime=time();
+
+  my $current_cnt=0;
+  if(exists($globalvarref->{stepcounter})) {
+      if (-f $globalvarref->{stepcounter} ) {
+	  $current_cnt=`cat $globalvarref->{stepcounter}`;
+	  $msg=sprintf("[$PRIMARKER] stepcounter is $current_cnt\n"); logmsg($msg);
+      }
+  }
   
   $steprefs=$self->{STEPDEFS};
   foreach $step (keys(%{$steprefs})) {
@@ -208,13 +216,6 @@ sub parprocess {
   }    
 
   if(exists($globalvarref->{steptimingfile})) {
-    my $current_cnt=0;
-    if(exists($globalvarref->{stepcounter})) {
-      if (-f $globalvarref->{stepcounter} ) {
-        $current_cnt=`cat $globalvarref->{stepcounter}`;
-      }
-    }
-
     my $wf_name="workflow";
     $wf_name=$globalvarref->{name} if(exists($globalvarref->{name}));
     $self->write_steptimings_lml($globalvarref->{steptimingfile},$current_cnt,$wf_name,$starttime,$endtime,$cycles,$steprefs);

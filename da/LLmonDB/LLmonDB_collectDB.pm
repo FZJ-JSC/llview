@@ -393,9 +393,12 @@ sub process_collectDB_update_from_other_DB {
           scalar keys(%{$newkeys}), " "x54,time()-$sstarttime) if($self->{VERBOSE});
 
   
-  printf("$self->{INSTNAME} LLmonDB: table %25s/%-20s ready (%6d entries)   in  %8.5fs\n",
+  my $endtime=time();
+  printf("$self->{INSTNAME} LLmonDB: table %25s/%-20s ready (%6d entries)   in  %8.5fs (ts=%.5f,%.5f,l=1,nr=1)\n",
           $db,$table,scalar keys(%{$newkeys}),
-          time()-$starttime) if($self->{VERBOSE});
+	 $endtime-$starttime,
+	 $starttime,$endtime
+       ) if($self->{VERBOSE});
 
   printf("$self->{INSTNAME} LLmonDB: end process_LMLdata_DB ($db) \n") if($debug>=3);
 }

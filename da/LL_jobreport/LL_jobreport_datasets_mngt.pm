@@ -795,7 +795,7 @@ sub mngt_scan_datasets {
         } elsif($ref->{status}==FSTATUS_COMPRESSED) {
           # updated of regular files
           $changed_files->{$ref->{dataset}}++;
-          printf ("%s/%s: [%d] changedCMP %s\n",$ds_db,$ds_tab,$ref->{status},$ref->{dataset}) if($self->{VERBOSE}>=0);
+          printf ("%s/%s: [%d] changedCMP %s\n",$ds_db,$ds_tab,$ref->{status},$ref->{dataset}) if($self->{VERBOSE}>=1);
         } elsif($ref->{status}==FSTATUS_TOBECOMPRESSED) {
           my $realfile=sprintf("%s/%s",$self->{OUTDIR},$ref->{dataset});
           if( -f $realfile ) {

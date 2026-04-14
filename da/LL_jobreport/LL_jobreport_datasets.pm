@@ -11,7 +11,7 @@
 package LML_jobreport;
 
 my $VERSION='$Revision: 1.00 $';
-my($debug)=0;
+my($debug)=1;
 
 use strict;
 use Data::Dumper;
@@ -23,6 +23,7 @@ use Parallel::ForkManager;
 use LL_jobreport_datasets_util;
 use LL_jobreport_datasets_mngt;
 use LL_jobreport_datasets_mngt_solve;
+use LL_jobreport_datasets_mngt_stat;
 use LL_jobreport_datasets_csv_dat;
 use LL_jobreport_datasets_json;
 use LL_jobreport_datasets_json_cache;
@@ -38,8 +39,8 @@ sub create_datasets {
   my $DB=shift;
   my $MAX_PROCESSES=shift;
   my $basename=$self->{BASENAME};
-
   my $starttime=time();
+  my ($step_starttime,$step_endtime);
   my $config_ref=$DB->get_config();
 
   # 0: init instantiated variables
@@ -54,6 +55,7 @@ sub create_datasets {
 
   # 1: sort datasets by table_cache and setname (for parallel execution)
   ######################################################################
+  $step_starttime=time();
   my ($sets,@tc_order,$table_cache_first_set);
   
   # scan all datasets in the defintion order
@@ -79,9 +81,12 @@ sub create_datasets {
     # insert dataset in into internal structure
     push(@{ $sets->{$table_cache}->{$set} },$subconfig_ref);
   }
-
+  $step_endtime=time();
+  printf("%s datasets_1_sort                                 in %7.4fs (ts=%.5f,%.5f,l=2,nr=1)\n",$self->{INSTNAME},$step_endtime-$step_starttime,$step_starttime,$step_endtime); 
+  
   # 2: create order of parallel execution
   #######################################
+  $step_starttime=time();
   my $actions; 
   
   #  1st schedule all datasets of sets without a table_cache
@@ -155,9 +160,12 @@ sub create_datasets {
             );
     }
   }
+  $step_endtime=time();
+  printf("%s datasets_2_create_order                         in %7.4fs (ts=%.5f,%.5f,l=2,nr=1)\n",$self->{INSTNAME},$step_endtime-$step_starttime,$step_starttime,$step_endtime); 
 
   # 3: start PARALLEL Processing
   ##############################
+  $step_starttime=time();
   my $pm = Parallel::ForkManager->new($MAX_PROCESSES);
 
   printf("%s create_datasets: start parallel execution MAX_PROCESSES=%d\n",$self->{INSTNAME},$MAX_PROCESSES);
@@ -276,7 +284,8 @@ sub create_datasets {
   }
   printf("%s create_datasets: wait for childs (%d),       after %7.4ss\n",$self->{INSTNAME}, scalar $pm->running_procs(),time()-$parstarttime);
   $pm->wait_all_children;
-  printf("%s create_datasets: parallel ready steps           in %7.4fs\n",$self->{INSTNAME}, time()-$parstarttime);
+  $step_endtime=time();
+  printf("%s datasets_3_parallel_create                      in %7.4fs (ts=%.5f,%.5f,l=2,nr=1)\n",$self->{INSTNAME},$step_endtime-$step_starttime,$step_starttime,$step_endtime); 
 
   return();
 }
@@ -454,12 +463,13 @@ sub process_dataset_cvs_dat {
 
   # save status of datasets in DB again (ts updated)
   $self->save_datasetstat_in_DB($dataset->{stat_database},$dataset->{stat_table},$where);
-
-  printf("%s process_dataset_cvs_dat:  end work (#files created: %4d, #files appended: %4d: #lines=%6d) in %7.4fs on %-25s\n",$self->{INSTNAME},
-          $self->{COUNT_OP_NEW_FILE},
-          $self->{COUNT_OP_EXISTING_FILE},
-          $self->{COUNT_OP_WRITE_LINE},
-          time()-$starttime,$dataset->{name});
+  my $endtime=time();
+  printf("%s process_dataset_cvs_dat:  end work (#files created: %4d, #files appended: %4d: #lines=%6d) in %7.4fs (ts=%.5f,%.5f,l=3,nr=0) on %-25s\n",$self->{INSTNAME},
+	 $self->{COUNT_OP_NEW_FILE},
+	 $self->{COUNT_OP_EXISTING_FILE},
+	 $self->{COUNT_OP_WRITE_LINE},
+	 $endtime-$starttime,$starttime,$endtime,
+	 $dataset->{name});
 }
 
 sub process_dataset_register {
