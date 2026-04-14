@@ -70,3 +70,4 @@ resstate:
           - { name: nodelist,        type: extralongstr_t   }
           - { name: flags,           type: longstr_t        }
           - { name: accounts,        type: extralongstr_t   }
+
