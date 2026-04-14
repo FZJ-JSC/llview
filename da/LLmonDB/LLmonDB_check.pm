@@ -86,6 +86,10 @@ sub checkDB {
       # Clean table name for consistent lookup (strip quotes)
       my $clean_table = $table;
       $clean_table =~ s/^"|"$//g;
+      if(!defined $clean_table || $clean_table eq '') {
+        printf("  LLmonDB: CHECK: invalid or EMPTY table name '$table' in config of database $db, skip index check for this table\n");
+        next;
+      }
 
       my $do_recreate_table=0;
       my $table_diffs = 0; # Counter for differences found in this table
@@ -248,6 +252,10 @@ sub checkDB {
       $table=$tableref->{name};
       my $clean_table = $table;
       $clean_table =~ s/^"|"$//g;
+      if(!defined $clean_table || $clean_table eq '') {
+        printf("  LLmonDB:     CHECK: invalid or EMPTY table name '$table' in config of database $db, skip check for this table\n");
+        next;
+      }
 
       my $indexdefs=$self->{CONFIG}->get_index_columns($db,$table);
       my $icount=0;
