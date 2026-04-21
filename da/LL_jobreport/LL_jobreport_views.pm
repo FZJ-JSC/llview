@@ -64,6 +64,12 @@ sub process_view {
   foreach my $name ("title","image","home","logo","info","search_field","status","systems","demo") {
     $dsref->{$name}=$self->apply_varset($viewref->{$name},$varsetref) if(exists($viewref->{$name}));
   }
+  
+  # Adding demo key to the view information when LML_DBUPDATE_DEMO is defined
+  if (exists($ENV{LML_DBUPDATE_DEMO})) {
+    $dsref->{'demo'}=$self->apply_varset(1,$varsetref)
+  }
+
   if(exists($viewref->{data})) {
     foreach my $name ("system","permission","view") {
       $dsref->{data}->{$name}=$self->apply_varset($viewref->{data}->{$name},$varsetref) if(exists($viewref->{data}->{$name}));
