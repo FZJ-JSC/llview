@@ -169,7 +169,7 @@ sub archive_data_non_existent {
   my($db,$table,$tableref,$ntable,$ncol,$archopts)=@_;
   my($where,$rc);
 
-  $where=sprintf("(%s not in (select %s from %s))",$ncol,$ncol,$ntable);
+  $where=sprintf("(%s not in (select distinct %s from %s))",$ncol,$ncol,$ntable);
   $rc=$self->archive_process_data($db,$table,$tableref,$where,$archopts);
   return($rc);
 }
