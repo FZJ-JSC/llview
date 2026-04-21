@@ -1925,6 +1925,7 @@ class BenchRepo:
         'children': [{
         'field': key,
         'headerName': key,
+        'cellDataType': 'text',
         'headerTooltip': description} for key, description in parameters.items()]
       },
       {
@@ -1935,13 +1936,17 @@ class BenchRepo:
             'field': "min_ts",
             'headerName': "Date of First Run", 
             'headerTooltip': "Minimum timestamp on the benchmark",
-            'cellDataType': "text",
+            'cellDataType': "dateString",
+            'filter': "DateTimeParentFilter",
+            'floatingFilterComponent': "DateFloatingFilterComponent",
           },
           {
             'field': "max_ts",
             'headerName': "Date of Last Run", 
             'headerTooltip': "Maximum timestamp on the benchmark",
-            'cellDataType': "text",
+            'cellDataType': "dateString",
+            'filter': "DateTimeParentFilter",
+            'floatingFilterComponent': "DateFloatingFilterComponent",
           },
         ]
       },
@@ -1953,11 +1958,13 @@ class BenchRepo:
             'field': "count",
             'headerName': "Total", 
             'headerTooltip': "Total number of points",
+            'cellDataType': "number",
           },
           {
             'field': "valid_count",
             'headerName': "Valid", 
             'headerTooltip': "Number of valid points",
+            'cellDataType': "number",
           },
         ]
       },
