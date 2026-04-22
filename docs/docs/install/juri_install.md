@@ -87,6 +87,7 @@ The top-level `.htaccess` is also important to define the decompression of the g
 This is where the `$JURI_HOME` should be defined below, and the instructions also use this notation.
 - Link JURI with the data folder: the website (HTML/CSS and JavaScript) are provided by JURI, while the data is coming from LLview Server via the `transferreports` step.
 These folders must be linked together inside a given parent folder, denoted here by `$LLVIEW_WEB_DATA` (defined, for example, by `~/system`), that will be made accessible via the web. 
+                    
 
 Inside `$LLVIEW_WEB_DATA` must be placed:
     - the `data` folder that is copied/synchronized from `${LLVIEW_DATA}/${LLVIEW_SYSTEMNAME}/tmp/jobreport/data` (see how to [transfer data from LLview Server](#transfer-of-data-from-llview-server)), 
@@ -100,3 +101,53 @@ Inside `$LLVIEW_WEB_DATA` must be placed:
     ```
     ln -s $LLVIEW_WEB_DATA /srv/www/htdocs/system
     ```
+    
+### Enabling LLview-AI Features
+
+The LLview-AI features (the AI Chatbot & AI-Generated Reports) can be enabled and configured using `$JUREI_HOME/ui-config.json`
+```
+  {
+    "llviewai": {
+        "enableChatBot": false,
+        "chatBotEndpoint": "", # required api end point for the chatbot (if chatbot is enabled)
+        "chatBotSupportEmail": "", # optional: support email address to be shown in the disclaimer text
+        "chatBotLLMProvider": { # optional: if you need to provide the name and website of the LLM provider in the disclaimer section
+            "name": "",
+            "url": ""
+        },
+        "enableAIReports": false,
+        "aiReportEndpoint": "", # required api end point for the AI reports (if enabled)
+        "aiReportSupportEmail": "", # optional: support email address to be shown in the disclaimer text
+        "aiReportLLMProvider": { # optional: if you need to provide the name and website of the LLM provider in the disclaimer section
+            "name": "",
+            "url": ""
+        },
+        "enableTableAttachment": false # An option to allow the currently shown table to be attached as context for the chatbot
+    }
+  }
+```
+
+Before enabling these features, make sure to have suitable functional back-end endpoints (e.g., `/api/chat`) that accept post requests with user messages and return proper output. An example POST request is given below for both AI Job Reports and AI Chatbot:
+```
+const pdfResp = await fetch("/path/to/jobreport.pdf");
+if (!pdfResp.ok) { throw new Error(`Could not fetch PDF (${pdfResp.status})`); }
+const pdfBlob = await pdfResp.blob();
+const file = new File([pdfBlob], filename, { type: "application/pdf" });
+const form = new FormData();
+form.append("file", file);
+form.append("userprompt", "Some User Prompt");
+const resp = fetch("/some/api/endpoint", {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    body: form
+})
+    
+```
+```
+const message = "some chat message"
+const resp = fetch ("/some/api/chat/endpoint", {
+    method: "POST",
+    headers: { Accept: "application/json" },
+    body: JSON.stringify({ messages: [{ role: "user", content: message }] })
+    });
+```
