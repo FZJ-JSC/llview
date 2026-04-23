@@ -264,6 +264,54 @@ def sysinfo(options: dict, slurm_info) -> dict:
   return sysextra
 
 
+def reasonsinfo(options: dict, reasons_info: dict) -> dict:
+  """
+  Expands grouped node entries in reasons_info into individual per-node entries.
+
+  In the raw reasons_info, nodes that share the same reason may be grouped
+  under a single key (e.g. 'jpbo-001-[30,34]'), with the expanded node names
+  stored in the 'NODELIST' field as a space-separated string. This function
+  unpacks those groups so that each node gets its own top-level entry.
+
+  The original reasons_info dict is cleared in-place, since the returned
+  reasonsextra dict is intended to be merged back into it by the caller,
+  replacing the grouped entries with the expanded ones.
+
+  Args:
+    options:      General options dict (reserved for future use).
+    reasons_info: Dict mapping grouped node-list keys to node info dicts.
+                  Each info dict must contain a 'NODELIST' field with
+                  space-separated, fully expanded node names.
+
+  Returns:
+    reasonsextra: Dict mapping individual node names to their info dicts,
+                  with the 'NODELIST' field removed (since the node name
+                  is now the key itself).
+  """
+  # Will hold the final one-entry-per-node result
+  reasonsextra = {}
+
+  for _group_key, info in reasons_info.items():
+    # 'NODELIST' contains the fully expanded, space-separated node names,
+    # e.g. 'jpbo-001-30 jpbo-001-34' for a grouped key like 'jpbo-001-[30,34]'
+    expanded_nodes = info.get("NODELIST", "").split()
+
+    # Strip 'NODELIST' from the per-node dict: the node name is now the key,
+    # so keeping it as a field would be redundant
+    node_info = {k: v for k, v in info.items() if k != "NODELIST"}
+
+    # Create an independent entry for each node in the group
+    for node in expanded_nodes:
+      reasonsextra[node] = node_info.copy()
+
+  # Clear the original dict in-place so the caller sees it emptied.
+  # (reasons_info = {} would only rebind the local variable and leave
+  # the caller's dict untouched, which is not what we want here.)
+  reasons_info.clear()
+
+  return reasonsextra
+
+
 def accountinfo(options: dict, accounts_info) -> dict:
   """
   Specific function to modify accounts, and add extra items to accountinfo
@@ -570,6 +618,9 @@ class SlurmInfo:
         add_to[bk] = deepcopy(bv)
     return
 
+  def clear(self):
+    return self._dict.clear()
+
   def empty(self):
     """
     Check if internal dict is empty: Boolean function that returns True if _dict is empty
@@ -628,7 +679,9 @@ class SlurmInfo:
         if os.path.isfile(timestamp['file']):
           try:
             with open(timestamp['file'], 'r') as f:
-              last_ts = float(f.readline())
+              # Subtract 300 seconds (5 minutes) to create an overlapping window.
+              # This guarantees job completions delayed by slurmdbd flushes are caught
+              last_ts = max(0, float(f.readline()) - 300)
           except ValueError:
             self.log.error(f"Error reading timestamp from {timestamp['file']}! Check if file is correct or delete it.\n")
             return
