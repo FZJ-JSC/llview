@@ -237,20 +237,24 @@ sub process_data_query_and_save_csv_dat {
                                     });
   # check all files in $ds: if not exists create it 
   } else { # only a single file
-    if(!exists($dataset->{column_ts})) {
-      print STDERR "$self->{INSTNAME} ERROR: $dataset->{data_table} no column_ts\n";
+    
+    # Check for delta configuration mismatch rather than strictly requiring column_ts
+    if (!exists($dataset->{column_ts})) {
+      if (exists($dataset->{renew}) && $dataset->{renew} eq "delta") {
+        print STDERR "$self->{INSTNAME} ERROR: $dataset->{data_table} uses renew='delta' but has no column_ts defined.\n";
+      }
     }
 
-    if(exists($dataset->{renew})) {
-      if($dataset->{renew} eq "delta") {
+    if (exists($dataset->{renew})) {
+      if ($dataset->{renew} eq "delta" && $ts_col_sql) {
         $where .= " AND " if($where);
         # Quoted column name in WHERE
         $where .= sprintf("%s > %f", $ts_col_sql, $ds->{$filepath_parsed}->{lastts_saved});
       }
     }
 
-    my $order;
-    if(exists($dataset->{order})) {
+    my $order = "";
+    if (exists($dataset->{order})) {
       # Getting order for sorting
       my $orderby;
       my $ordertype;
@@ -265,21 +269,25 @@ sub process_data_query_and_save_csv_dat {
         
         push(@order_cols,"D1.$orderby $ordertype");
       }
-      $order=sprintf("ORDER BY %s",join(",",@order_cols));
+      $order = sprintf("ORDER BY %s", join(",",@order_cols));
     } else {
-      $order = sprintf("ORDER BY D1.%s", $ts_col_sql)
+      # Only apply default sorting if the timestamp column actually exists
+      if ($ts_col_sql) {
+        $order = sprintf("ORDER BY D1.%s", $ts_col_sql);
+      }
     }
 
     # build and call the query
-    my $sql=sprintf("SELECT %s FROM %s %s %s;",
+    my $sql = sprintf("SELECT %s FROM %s %s %s;",
                       join(",",@cols),
                       $from,
-                      ($where)?"WHERE $where":"",
+                      ($where) ? "WHERE $where" : "",
                       $order
                     );
-    printf("%s process_data_query_and_save_csv_dat: (single) sql: %s\n",$self->{INSTNAME},$sql)  if($sql_debug);
-    #	print "single: $where\n";
-    my $count=$self->{DB}->query($dataset->{stat_database},$dataset->{stat_table},
+
+    printf("%s process_data_query_and_save_csv_dat: (single) sql: %s\n",$self->{INSTNAME},$sql) if($sql_debug);
+    
+    my $count = $self->{DB}->query($dataset->{stat_database}, $dataset->{stat_table},
                                   {
                                     attach => $dataset->{data_database},
                                     type => "get_execute",
@@ -291,8 +299,8 @@ sub process_data_query_and_save_csv_dat {
                                                           $filepath_parsed,$delimiter);
                                                 }
                                   });
-    # print "TMPDEB: count=$count\n";
-    if($count==0) {
+
+    if ($count == 0) {
       # re-init file, if no data available 
       $self->write_data_to_single_file_csv_dat( undef,
                                                 $format,$ds,$tscol,$header,
