@@ -123,7 +123,19 @@ def _ProcessReport(njob,total_jobs,job,config):
 
   # Reading information for this job
   with open(job) as json_file:
-    data = json.load(json_file)
+    try:
+      data = json.load(json_file)
+    except json.JSONDecodeError as e:
+      content = json_file.read()  # will be empty string if file is empty
+      if not content.strip():
+        log.error(f"JSON file is empty: {job}")
+      else:
+        log.error(
+          f"Invalid JSON in file: {job}\n"
+          f"  Error: {e}\n"
+          f"  Near: {content[max(0,e.pos-50):e.pos+50]!r}"
+        )
+      raise
 
   # Starting a data manager for this report
   data_manager = ReportDataManager()
@@ -313,8 +325,45 @@ def _ProcessReport(njob,total_jobs,job,config):
       if cols:
         # Get the headers given on the graph list
         icols = [header.index(_) for _ in cols.keys()]
-        # Reading database
-        df_temp = pd.read_csv(file, sep=r'\s+', comment='#', names=header, index_col=False, usecols=icols,dtype=cols)[cols.keys()]
+
+        # pandas C parser does not support float16 as a read dtype — read as float32, cast after
+        read_cols = {k: ('float32' if v == 'float16' else v) for k, v in cols.items()}
+
+        try:
+          # Reading database
+          df_temp = pd.read_csv(file, sep=r'\s+', comment='#', names=header, index_col=False, usecols=icols, dtype=read_cols)[cols.keys()]
+        except (KeyError, ValueError) as e:
+          filepath = f"{folder}/{data['files'][fh]}"
+          # Seek back to re-read a snippet (header line already consumed, so go to start)
+          file.seek(0)
+          raw_lines = [l for l in file if not l.startswith('#')][:10]
+          snippet = ''.join(raw_lines)
+
+          if isinstance(e, KeyError):
+            bad_dtype = str(e)
+            bad_cols = {k: v for k, v in cols.items() if str(v) in bad_dtype}
+            log.error(
+              f"Unsupported dtype {bad_dtype} when reading: {filepath}\n"
+              f"  Affected column(s): {bad_cols}\n"
+              f"  File snippet (first 10 data lines):\n{snippet}"
+            )
+          else:
+            match = re.search(r'column (\d+)', str(e))
+            col_index = int(match.group(1)) if match else None
+            col_name = header[col_index] if col_index is not None and col_index < len(header) else f"index {col_index}"
+            log.error(
+              f"ValueError when reading: {filepath}\n"
+              f"  Error: {e}\n"
+              f"  Column: index={col_index}, name={col_name!r}, dtype={cols.get(col_name)}\n"
+              f"  File snippet (first 10 data lines):\n{snippet}"
+            )
+          raise
+
+        # Cast float16 columns back after reading
+        for col, dtype in cols.items():
+          if dtype == 'float16' and col in df_temp.columns:
+            df_temp[col] = df_temp[col].astype('float16')
+            
       else:
         # If column dict is empty, it means that the section is defined
         # This is then a User-defined/Custom section

@@ -99,9 +99,12 @@ sub process_data_query_and_save_csv_dat {
   my $col_convert_by_colnum;
 
   # check delimiter
-  my $delimiter=',';
-  if(exists($dataset->{csv_delimiter})) {
-    $delimiter=$dataset->{csv_delimiter};
+  my $delimiter='';
+  if($dataset->{format} eq "csv") {
+    $delimiter=',' ;
+    if(exists($dataset->{csv_delimiter})) {
+      $delimiter=$dataset->{csv_delimiter};
+    }
   }
   
   # check columns
@@ -191,15 +194,33 @@ sub process_data_query_and_save_csv_dat {
     $col_filemap_sql =~ s/^"|"$//g;
     $col_filemap_sql = qq("$col_filemap_sql");
 
-    # Quoted Identifiers in SQL
-    my $sql=sprintf("SELECT %s FROM %s.%s D1 INNER JOIN %s S ON D1.%s=S.ukey AND D1.%s>S.lastts_saved AND S.\"NAME\"=\"%s\" %s ORDER BY S.\"dataset\",D1.%s",
+    # Build the multi-table FROM clause correctly with aliases D1, D2, etc.
+    my @from_multi_list;
+    my $c = 0;
+    foreach my $d (@datatables) {
+      $c++;
+      my $d_sql = $d; 
+      $d_sql =~ s/^"|"$//g; 
+      $d_sql = qq("$d_sql");
+      # Attach the database name to each table (e.g., "jobreport"."jobmetrics" D2)
+      push(@from_multi_list, sprintf("%s.%s D%d", $data_db_sql, $d_sql, $c));
+    }
+    
+    # Extract D1 so we can explicitly INNER JOIN it with the Statistics table (S)
+    my $d1_string = shift(@from_multi_list); 
+    
+    # Combine the remaining tables (D2, D3...) with commas if they exist
+    my $rest_of_tables = @from_multi_list ? ", " . join(", ", @from_multi_list) : "";
+
+    # Build the corrected SQL query
+    my $sql=sprintf("SELECT %s FROM %s S INNER JOIN %s ON D1.%s=S.ukey AND D1.%s>S.lastts_saved AND S.\"NAME\"=\"%s\" %s %s ORDER BY S.\"dataset\",D1.%s",
                     join(",",@cols),
-                    $data_db_sql,
-                    $data_tb_sql,
-                    $stat_tb_sql,
+                    $stat_tb_sql,         # S  (e.g., datasetstat_user_csv)
+                    $d1_string,           # D1 (e.g., jobreport.joblist D1)
                     $col_filemap_sql,
                     $ts_col_sql,
                     $dataset->{name},
+                    $rest_of_tables,      # , D2, D3...
                     ($where)?"WHERE $where":"",
                     $ts_col_sql
                     );
@@ -350,8 +371,10 @@ sub write_data_to_multi_file_csv_dat {
   }
   
   # Escape delimiters inside the data columns
-  for (my $colnum = 0; $colnum < scalar @{$dataref}; $colnum++) {
-    $dataref->[$colnum] =~ s/$delimiter/\\$delimiter/gs;
+  if($delimiter) {
+      for (my $colnum = 0; $colnum < scalar @{$dataref}; $colnum++) {
+	  $dataref->[$colnum] =~ s/$delimiter/\\$delimiter/gs;
+      }
   }
   
   $self->{SAVE_LASTFH}->printf($format, @{$dataref}); 
@@ -424,8 +447,10 @@ sub write_data_to_single_file_csv_dat {
   }
 
   # Escape delimiters inside the data columns
-  for (my $colnum = 0; $colnum < scalar @{$dataref}; $colnum++) {
-    $dataref->[$colnum] =~ s/$delimiter/\\$delimiter/gs;
+  if($delimiter) {
+      for (my $colnum = 0; $colnum < scalar @{$dataref}; $colnum++) {
+	  $dataref->[$colnum] =~ s/$delimiter/\\$delimiter/gs;
+      }
   }
   
   $self->{SAVE_LASTFH}->printf($format, @{$dataref}); 
