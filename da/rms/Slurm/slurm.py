@@ -300,9 +300,10 @@ def reasonsinfo(options: dict, reasons_info: dict) -> dict:
     # so keeping it as a field would be redundant
     node_info = {k: v for k, v in info.items() if k != "NODELIST"}
 
-    # Create an independent entry for each node in the group
+    # Create an independent entry for each node in the group, injecting
+    # 'nodeid' so the node name is also accessible from within the dict itself
     for node in expanded_nodes:
-      reasonsextra[node] = node_info.copy()
+      reasonsextra[node] = {**node_info, "nodeid": node}
 
   # Clear the original dict in-place so the caller sees it emptied.
   # (reasons_info = {} would only rebind the local variable and leave

@@ -238,7 +238,7 @@ sub process_data_query_and_save_csv_dat {
   # check all files in $ds: if not exists create it 
   } else { # only a single file
     
-    # Check for delta configuration mismatch rather than strictly requiring column_ts
+    # Check if 'column_ts' is given when renew: 'delta'
     if (!exists($dataset->{column_ts})) {
       if (exists($dataset->{renew}) && $dataset->{renew} eq "delta") {
         print STDERR "$self->{INSTNAME} ERROR: $dataset->{data_table} uses renew='delta' but has no column_ts defined.\n";

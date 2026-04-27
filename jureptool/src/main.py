@@ -94,6 +94,75 @@ def add_color(x):
   edgecolorhtml = f"rgb{(edgecolor[0]*255,edgecolor[1]*255,edgecolor[2]*255)}"
   return pd.Series([color,edgecolor,colorhtml,edgecolorhtml])
 
+def is_file_being_written(filepath):
+  """
+  Check whether a file is currently open for writing by any process, using
+  the /proc filesystem instead of lsof.
+
+  Each process's open file descriptors are inspected via /proc/<pid>/fd, and
+  the corresponding flags are read from /proc/<pid>/fdinfo to detect write
+  access. Processes or descriptors that cannot be accessed due to permissions
+  are silently skipped.
+
+  Args:
+    filepath (str): Path to the file to be checked.
+
+  Returns:
+    bool: True if the file is being written to, False otherwise.
+  """
+  real_path = os.path.realpath(filepath)
+  for pid in os.listdir('/proc'):
+    if not pid.isdigit():
+      continue
+    fd_dir = f'/proc/{pid}/fd'
+    try:
+      for fd in os.listdir(fd_dir):
+        try:
+          # The symlink target is compared against the real file path
+          if os.readlink(f'{fd_dir}/{fd}') != real_path:
+            continue
+          # The open flags are read to determine write access
+          with open(f'/proc/{pid}/fdinfo/{fd}') as f:
+            for line in f:
+              if line.startswith('flags:'):
+                flags = int(line.split()[1], 8)
+                # O_WRONLY (1) and O_RDWR (2) both indicate write access
+                if flags & os.O_WRONLY or flags & os.O_RDWR:
+                  return True
+        except (OSError, PermissionError):
+          continue
+    except (OSError, PermissionError):
+      continue
+  return False
+
+def wait_for_file(filepath, log, max_attempts=3, wait=1):
+  """
+  Wait until a file is no longer being written to by any process.
+
+  The file is checked for active write access before each attempt. If the file
+  is found to be in use, execution is paused and the check is retried. If the
+  file is still being written after all attempts are exhausted, an error is
+  emitted and False is returned.
+
+  Args:
+    filepath     (str):    Path to the file to be checked.
+    log          (Logger): Logger instance used for warnings and errors.
+    max_attempts (int):    Total number of attempts allowed (default: 3).
+    wait         (float):  Seconds to wait between attempts (default: 2).
+
+  Returns:
+    bool: True if the file is free to read, False if all attempts were exhausted.
+  """
+  for attempt in range(1, max_attempts + 1):
+    if not is_file_being_written(filepath):
+      return True
+    if attempt < max_attempts:
+      log.warning(f"File {filepath} still being written, waiting {wait}s... (attempt {attempt}/{max_attempts})")
+      time.sleep(wait)
+    else:
+      log.error(f"File {filepath} still being written after {max_attempts} attempts. Skipping...")
+  return False
+
 
 def ProcessReport(njob,total_jobs,job,config):
   """
@@ -121,7 +190,9 @@ def _ProcessReport(njob,total_jobs,job,config):
   # Getting folder and filename for this job
   folder,file = os.path.split(job)
 
-  # Reading information for this job
+  # Reading information for this job  
+  if not wait_for_file(job, log): # Checks if file is being written
+    return
   with open(job) as json_file:
     try:
       data = json.load(json_file)
@@ -315,7 +386,10 @@ def _ProcessReport(njob,total_jobs,job,config):
       continue
 
     # Reading file with information for all nodes and all times
-    with open(f"{folder}/{data['files'][fh]}",'r') as file:
+    filepath = f"{folder}/{data['files'][fh]}"
+    if not wait_for_file(filepath, log):
+      continue
+    with open(filepath, 'r') as file:
       cols = fh_info['cols']
       x_headers = fh_info['xh']
       y_headers = fh_info['yh']
@@ -333,7 +407,6 @@ def _ProcessReport(njob,total_jobs,job,config):
           # Reading database
           df_temp = pd.read_csv(file, sep=r'\s+', comment='#', names=header, index_col=False, usecols=icols, dtype=read_cols)[cols.keys()]
         except (KeyError, ValueError) as e:
-          filepath = f"{folder}/{data['files'][fh]}"
           # Seek back to re-read a snippet (header line already consumed, so go to start)
           file.seek(0)
           raw_lines = [l for l in file if not l.startswith('#')][:10]
@@ -351,11 +424,38 @@ def _ProcessReport(njob,total_jobs,job,config):
             match = re.search(r'column (\d+)', str(e))
             col_index = int(match.group(1)) if match else None
             col_name = header[col_index] if col_index is not None and col_index < len(header) else f"index {col_index}"
+
+            # Scan the file line by line to find which line has the bad value
+            bad_lines = []
+            file.seek(0)
+            header_skipped = False
+            for lineno, line in enumerate(file, start=1):
+              if line.startswith('#') or not line.strip():
+                continue
+              if not header_skipped:
+                header_skipped = True
+                continue
+              fields = line.split()
+              if col_index is not None and col_index < len(fields):
+                val = fields[col_index]
+                try:
+                  if 'int' in str(cols.get(col_name, '')):
+                    int(val)
+                  elif 'float' in str(cols.get(col_name, '')):
+                    float(val)
+                except (ValueError, TypeError):
+                  bad_lines.append((lineno, val, line.rstrip()))
+              elif col_index is not None and col_index >= len(fields):
+                bad_lines.append((lineno, '<missing field>', line.rstrip()))
+
+            bad_lines_str = '\n'.join(
+              f"    line {ln}: value={val!r}  >>  {raw}" for ln, val, raw in bad_lines[:10]
+            )
             log.error(
               f"ValueError when reading: {filepath}\n"
               f"  Error: {e}\n"
               f"  Column: index={col_index}, name={col_name!r}, dtype={cols.get(col_name)}\n"
-              f"  File snippet (first 10 data lines):\n{snippet}"
+              f"  Unparseable lines (up to 10):\n{bad_lines_str or '    (none found in manual scan)'}"
             )
           raise
 

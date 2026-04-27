@@ -416,7 +416,24 @@ sub update_structure {
           push(@{$data->{TRIGGER_ENTRIES}},$jref);
         }
       } else {
-        printf(STDERR "\t [LML_DBupdate_file] WARNING: scan keys, unknown type %s\n",$ref->{type});
+        # A dynamic routing fallback is used for simple, flat LML objects.
+        # This prevents hardcoding every new metric type.
+        if (exists($fh->{DATA}->{INFODATA}->{$key})) {
+          my $dynamic_ref = $fh->{DATA}->{INFODATA}->{$key};
+          
+          # Converting type string to uppercase to match the internal array naming convention
+          my $dynamic_key = uc($ref->{type}) . "_ENTRIES";
+          
+          # Initializing array if it has not been created yet
+          if (!exists($data->{$dynamic_key})) {
+            $data->{$dynamic_key} =[];
+          }
+          
+          push(@{$data->{$dynamic_key}}, $dynamic_ref);
+        } else {
+          # If an objects does not have associated INFODATA
+          printf(STDERR "\t [LML_DBupdate_file] WARNING: scan keys, unknown type %s with no data\n", $ref->{type});
+        }
       }
     }
   } # foreach $fh

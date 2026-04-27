@@ -381,7 +381,7 @@ sub add_to_table {
       }
       $rc=$dbobj->insert_sequence($seq,$data);
       $cnt++;
-      $numerrors++ if($rc != 1); # inserted on row
+      $numerrors++ if(($rc // 0) != 1); # inserted on row
       # print "insert(",join(",",@{$data}),")\n";
     }
   }
