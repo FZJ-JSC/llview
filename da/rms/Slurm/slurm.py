@@ -753,7 +753,7 @@ class SlurmInfo:
             # If the value exist, join with new one separated by comma
             # Unless the value is the current_unit, since that does not need accumulation
             # (Only add if values are different)
-            if (key in self._raw[current_unit]) and (value != current_unit) and (value not in self._raw[current_unit][key].split(',')): 
+            if (key in self._raw[current_unit]) and (self._raw[current_unit][key] is not None) and (value != current_unit) and (value not in self._raw[current_unit][key].split(',')):
               value_to_add = f"{self._raw[current_unit][key]},{value}"
             else:
               value_to_add = value
@@ -774,10 +774,28 @@ class SlurmInfo:
     """
     Parse each of the blocks returned by Slurm into the internal dictionary self._raw
     """
-    # self.log.debug(f"Unit: \n{unit}\n")
-    lines = unit.split("\n")
+    # Start by merging multi-line values (Reason, JobName, Comment)
+    # Slurm property lines start with optional spaces, a letter, alphanumeric chars/colons/underscores, and an '='
+    # Example: "NodeName=", "   State=", "   Reason="
+    line_start_pattern = re.compile(r'^\s*[A-Za-z][A-Za-z0-9_:/]*=')
+    
+    lines = []
+    for raw_line in unit.split("\n"):
+      if not raw_line.strip():
+        continue # Skip empty lines
+        
+      # If it looks like a new Slurm key, or it's the very first line of the block
+      if line_start_pattern.match(raw_line) or not lines:
+        lines.append(raw_line.strip())
+      else:
+        # It doesn't match a Slurm key, so it MUST be a continuation of the previous line
+        lines[-1] += "\n" + raw_line.strip()
+
+    if not lines:
+      return
+
     # Split the first line into individual key=value pairs
-    parts = lines[0].strip().split(' ')
+    parts = lines[0].split(' ')
     current_unit = None
 
     # Handle the first element separately to define the 'current_unit'
@@ -798,16 +816,20 @@ class SlurmInfo:
       self.log.error(f"Could not match unit in line: {parts[0]}. Skipping...\n")
       return
 
-    # Process the rest of the pairs (skipping the first one)
+    # Process the rest of the pairs on the first line
     for pair in parts[1:]:
+      # Protect against multi-line string chunks that don't have '='
+      if '=' not in pair:
+        continue
+        
       key, value = pair.split('=', 1)
       
-      # JobName requires special handling as it may contain '=' and ' '
+      # JobName requires special handling as it may contain '=' and ' ' and '\n'
       if key == "JobName":
-        # Search for 'JobName' in the full first line string
-        name_match = re.search(".*JobName=(.*)$", lines[0].strip())
+        # Must use re.DOTALL so the '.*' captures the '\n' merged into lines[0]
+        name_match = re.search(r"JobName=(.*)$", lines[0], re.DOTALL)
         if not name_match:
-          self.log.error(f"Could not match JobName in line: {lines[0].strip()}. Skipping...\n")
+          self.log.error(f"Could not match JobName in line: {lines[0]}. Skipping...\n")
           continue
         
         value = name_match.group(1)
@@ -818,23 +840,28 @@ class SlurmInfo:
       # Handle standard key=value pairs
       self.add_value(key, value, self._raw[current_unit])
 
-    # Other lines must be checked if there are more than one item per line
-    # When one item per line, it must be considered that it may include '=' in 'value'
-    for line in [_.strip() for _ in lines[1:]]:
-      # Skip empty lines
-      if not line: continue
+    # Parse the remaining logical lines
+    for line in lines[1:]:
       self.log.debug(f"Parsing line: {line}\n")
-      # It is necessary to handle lines that can contain '=' and ' ' in 'value' first
-      if len(splitted := line.split('=',1)) == 2: # Checking if line is splittable on "=" sign
+      
+      # Check if line is splittable on "=" sign first
+      if len(splitted := line.split('=',1)) == 2: 
         key,value = splitted
       else:  # If not, split on ":"
-        key,value = line.split(":",1)
-      # Here must be all fields that can contain '=' and ' ', otherwise it may break the workflow below 
+        if len(split_pair := line.split(":",1)) == 2:
+          key,value = split_pair
+        else:
+          self.log.error(f"Could not parse line: '{line}'. Skipping...\n")
+          continue
+      # These fields absorb the rest of the line (including any '\n' merged into it)
+      # Here must be all fields that can contain '=' and ' ', otherwise it may break the workflow below
       if key in ['Comment','Extra','Reason','Command','WorkDir','StdErr','StdIn','StdOut','TRES','OS']: 
         self.add_value(key,value,self._raw[current_unit])
         continue
-      # Now the pairs are separated by space
+      # For remaining standard lines, split by space
       for pair in line.split(' '):
+        if not pair.strip():
+          continue   
         if len(splitted := pair.split('=',1)) == 2: # Checking if line is splittable on "=" sign
           key,value = splitted
         else:  # If not, split on ":"
