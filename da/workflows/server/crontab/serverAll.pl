@@ -50,15 +50,17 @@ my $startMonitor = "cd $logs; $searchCmdMonitor 1>> $logfile 2>> $errfile &";
 # Checking if llview monitor is running
 restartProg($searchCmdMonitor, $startMonitor);
 
-if(0) {
-    for my $cnt ("00") {
-       my $startmmpmon = "cd $LLVIEW_DATA/$LLVIEW_SYSTEMNAME/mmpmon; $LLVIEW_CONF/server/workflows/start_select_jedi_mmpmon${cnt}.sh";
-       my $searchCmdmmpmon = "/usr/bin/perl -w /home/llstat/llview/da/rms/GPFS/select_mmpmon_tail.pl -name jedi${cnt} ";
-       restartProg($searchCmdmmpmon, $startmmpmon);
-    }
+# start mmpmon daemon
+if(exists($ENV{LLVIEW_MMPMON_MAX_DAEMON_NR})) {
+  for(my $c=0;$c<=$ENV{LLVIEW_MMPMON_MAX_DAEMON_NR};$c++) {
+    my $cnt=sprintf("%02d",$c);
+    my $startmmpmon = "cd $LLVIEW_DATA/$LLVIEW_SYSTEMNAME/mmpmon; $LLVIEW_CONF/server/workflows/start_select_${LLVIEW_SYSTEMNAME}_mmpmon${cnt}.sh";
+    my $searchCmdmmpmon = "/usr/bin/perl -w /home/llstat/llview/da/rms/GPFS/select_mmpmon_tail.pl -name ${LLVIEW_SYSTEMNAME}${cnt} ";
+    restartProg($searchCmdmmpmon, $startmmpmon);
+  }
 }
 
-# (JuRepTool was moved to an action in actions.inp, but this part 
+# (JuRepTool was moved to an action in actions.inp, but this part
 # was kept here commented out in case it is preferred to be used)
 # Checking if JuReptool is running
 # my $jureptool = "$LLVIEW_HOME/jureptool";
