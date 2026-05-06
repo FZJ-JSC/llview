@@ -72,7 +72,7 @@ if((!defined $opt_config)||(! -f $opt_config)) {
   exit;
 }
 
-if ( ($opt_demo==1)||exists($ENV{"LML_DBUPDATE_DEMO"})||exists($ENV{"LLVIEW_DEMO_MODE"}) ) {
+if ( ($opt_demo==1) || $ENV{"LML_DBUPDATE_DEMO"} || $ENV{"LLVIEW_DEMO_MODE"} ) {
   $opt_demo=1;
   $msg=sprintf("$instname DEMO MODE trigger found --> switching to DEMO mode...\n"); logmsg($msg);
 }

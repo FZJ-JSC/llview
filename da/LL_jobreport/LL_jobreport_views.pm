@@ -66,7 +66,7 @@ sub process_view {
   }
   
   # Adding demo key to the view information when LML_DBUPDATE_DEMO is defined
-  if (exists($ENV{LML_DBUPDATE_DEMO})) {
+  if ( $ENV{"LML_DBUPDATE_DEMO"} || $ENV{"LLVIEW_DEMO_MODE"} ) {
     $dsref->{'demo'}=$self->apply_varset(1,$varsetref)
   }
 
