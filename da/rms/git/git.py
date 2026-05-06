@@ -1988,7 +1988,6 @@ class BenchRepo:
         'stat_database': 'jobreport_json_stat',
         'stat_table': 'datasetstat_templates',
         'format': 'datatable',
-        'ag-grid-theme': 'balham',
         'columns': columns
       }}
 

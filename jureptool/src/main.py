@@ -71,10 +71,11 @@ def error_handler(e):
   Error callback to catch any raised exception raised by some
   of the child processes, and send email
   """
-  if email: msg.send_email(semail,remail,f"Error in PDF-Job report:\n {' '.join(traceback.format_exception(type(e), e, e.__traceback__))}")
-  log.error(f"Error:\n {' '.join(traceback.format_exception(type(e), e, e.__traceback__))}")
   global nerrors
   nerrors += 1
+  if email: 
+    msg.send_email(semail,remail,f"Error in PDF-Job report:\n {' '.join(traceback.format_exception(type(e), e, e.__traceback__))}")
+  # log.error(f"Error:\n {' '.join(traceback.format_exception(type(e), e, e.__traceback__))}")
   return
 
 def add_color(x):
@@ -168,11 +169,10 @@ def ProcessReport(njob,total_jobs,job,config):
   """
   Wrapper to catch eventual errors in _ProcessReport
   """
-  log = logging.getLogger('logger')
-
   try:
     _ProcessReport(njob,total_jobs,job,config)
   except Exception as e:
+    log = logging.getLogger('logger')
     log.error(f"Error in job {job}:\n {' '.join(traceback.format_exception(type(e), e, e.__traceback__))}")
     raise
 

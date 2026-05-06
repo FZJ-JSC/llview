@@ -42,8 +42,9 @@ sub process_dataset_datatable {
   my $columns = $dataset->{columns};
   my ( $data, $data_thead, $data_tfilter ) = ( "", "", "" );
 
-  my $theme = exists($dataset->{'ag-grid-theme'}) ? "ag-theme-".$dataset->{'ag-grid-theme'} : "ag-theme-balham";
-  my $grid .= "<div id=\"myGrid\" style=\"height: 100%;\" class=\"$theme\"></div>\n";
+  # my $theme = exists($dataset->{'ag-grid-theme'}) ? "ag-theme-".$dataset->{'ag-grid-theme'} : "ag-theme-balham";
+  # my $grid .= "<div id=\"myGrid\" style=\"height: 100%;\" class=\"$theme\"></div>\n";
+  my $grid .= "<div id=\"myGrid\" style=\"height: 100%;\"></div>\n";
   
   # my (%groups);
   my $coldefs .= "<script>\n";

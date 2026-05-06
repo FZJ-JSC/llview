@@ -28,7 +28,7 @@
     stat_database: jobreport_json_stat
     stat_table:    datasetstat_templates
     format:        'datatable'
-    ag-grid-theme: 'balham' #quartz, balham, material, alpine (with -dark or -auto-dark suffix too)
+    # ag-grid-theme: 'balham' #quartz, balham, material, alpine (with -dark or -auto-dark suffix too)
     columns:
       %include "./jobreport_datafiles_datatable_templates_joblist_columns.yaml"
 
@@ -538,7 +538,7 @@
     stat_database: jobreport_json_stat
     stat_table:    datasetstat_templates
     format:        'datatable'
-    ag-grid-theme: 'balham' #quartz, balham, material, alpine (with -dark or -auto-dark suffix too)
+    # ag-grid-theme: 'balham' #quartz, balham, material, alpine (with -dark or -auto-dark suffix too)
     columns:
         - { 
             field: "application", 
@@ -618,7 +618,7 @@
     stat_database: jobreport_json_stat
     stat_table:    datasetstat_templates
     format:        'datatable'
-    ag-grid-theme: 'balham' #quartz, balham, material, alpine (with -dark or -auto-dark suffix too)
+    # ag-grid-theme: 'balham' #quartz, balham, material, alpine (with -dark or -auto-dark suffix too)
     columns:
       - {
           field: "name",
