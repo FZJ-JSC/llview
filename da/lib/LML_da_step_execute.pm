@@ -80,7 +80,7 @@ sub execute_delay_output {
   my $step=$self->{STEPDEF}->{id};
   my $stepref=$self->{STEPDEF};
   my $steplogdir=sprintf("%s/steps/",$self->{LOGDIR});
-  &check_folder($steplogdir.'/');
+  &check_folder($steplogdir);
 
   my $fn_log_out=sprintf("%s/%s.log",$steplogdir,$step);
   my $fn_log_out_last=sprintf("%s/%s_last.log",$steplogdir,$step);
@@ -108,12 +108,11 @@ sub execute_delay_output {
   $self->cat_to_stderrout($fn_log_out,$step,1);
   # save last full step log
   if ($lines) {
-    $cmd="mv $fn_log_out $fn_log_out_last; mv $fn_log_err $fn_log_err_last;";
-    system($cmd);
+    rename($fn_log_out, $fn_log_out_last) if (-f $fn_log_out);
+    rename($fn_log_err, $fn_log_err_last) if (-f $fn_log_err);
   } else {
-    $cmd="mv $fn_log_out $fn_log_out_last;";
-    system($cmd);
-    unlink($fn_log_err);
+    rename($fn_log_out, $fn_log_out_last) if (-f $fn_log_out);
+    unlink($fn_log_err) if (-f $fn_log_err);
   }
 
   return($rc);

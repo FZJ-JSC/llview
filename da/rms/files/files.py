@@ -635,7 +635,7 @@ class OutputAggregator:
     self.log.info(f"Preparing LML data for {final_output_path}...")
     lml_dict: Dict[str, Dict[str, Any]] = {}
     output_config_prefix = spec.get('prefix', 'i') 
-    output_config_type = spec.get('type', 'item')     
+    output_config_type = spec.get('type', 'item')
     
     index_key_for_name_attribute = spec.get('index') # Key in data_rows for LML object name attribute
     name_counts = defaultdict(int)
@@ -690,7 +690,7 @@ class OutputAggregator:
 
     num_data_elements = len(data_rows) # Count based on input rows, pstat is extra
     timing_obj_name = f"get{self.group_name}"
-    timing_data_key = f"pstat_{timing_obj_name}"
+    timing_data_key = f"pstat_{timing_obj_name}_{spec.get('type', 'item')}"
     timing_values: Dict[str, Any] = {
       'startts': group_start_time, 'datats': group_start_time,
       'endts': group_end_time, 'duration': round(group_end_time - group_start_time, 3),
