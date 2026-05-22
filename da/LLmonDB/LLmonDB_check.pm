@@ -65,7 +65,7 @@ sub checkDB {
     my %tables_in_db_lc; 
 
     if($tables_in_DB_ref) {
-      # Build standard map (including the safe quoting fix we discussed)
+      # Build standard map
       %tables_in_db = map { 
         my $t = $_; $t =~ s/^"|"$//g; 
         $t => 1 

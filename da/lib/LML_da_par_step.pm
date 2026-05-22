@@ -54,6 +54,10 @@ sub parprocess {
   # print "steprefs=",Dumper($steprefs);
   # print "dep_graph=",Dumper($dep_graph);
 
+  # Output buffering is disabled to ensure atomic log writes, preventing 
+  # interleaved outputs during parallel fork operations.
+  local $| = 1;
+
   # parallel processing
   my $pm = Parallel::ForkManager->new($MAX_PROCESSES);
 
@@ -293,22 +297,23 @@ sub write_steptimings_lml {
   printf(OUT "	version=\"0.7\"\>\n");
   printf(OUT "<objects>\n");
   $count=0;
+  # Object identifiers are formulated to guarantee global uniqueness across parallel executions.
   foreach $step (sort {$steprefs->{$a}->{start} <=> $steprefs->{$b}->{start}} (keys(%{$steprefs}))) {
-    $count++;$stepnr{$step}=$count;
-    printf(OUT "<object id=\"fb%06d\" name=\"%s\" type=\"steptime\"/>\n",$count,$step);
+    $count++; $stepnr{$step} = $count;
+    printf(OUT "<object id=\"st_%s_%d_%04d\" name=\"%s\" type=\"steptime\"/>\n", $wf_name, $starttime, $count, $step);
   }
 
   {
-    $step="ALL";
-    $count++;$stepnr{$step}=$count;
-    printf(OUT "<object id=\"fb%06d\" name=\"%s\" type=\"steptime\"/>\n",$count,$step);
+    $step = "ALL";
+    $count++; $stepnr{$step} = $count;
+    printf(OUT "<object id=\"st_%s_%d_%04d\" name=\"%s\" type=\"steptime\"/>\n", $wf_name, $starttime, $count, $step);
   }
   
   printf(OUT "</objects>\n");
   printf(OUT "<information>\n");
 
   foreach $step (sort {$steprefs->{$a}->{start} <=> $steprefs->{$b}->{start}} (keys(%{$steprefs}))) {
-    printf(OUT "<info oid=\"fb%06d\" type=\"short\">\n",$stepnr{$step});
+    printf(OUT "<info oid=\"st_%s_%d_%04d\" type=\"short\">\n", $wf_name, $starttime, $stepnr{$step});
     printf(OUT " <data %-20s value=\"%s\"/>\n","key=\"wf_name\"", $wf_name);
     printf(OUT " <data %-20s value=\"%s\"/>\n","key=\"name\"", $step);
     printf(OUT " <data %-20s value=\"%s\"/>\n","key=\"wf_startts\"", $starttime);
@@ -322,8 +327,8 @@ sub write_steptimings_lml {
   }
 
   {
-    $step="ALL";
-    printf(OUT "<info oid=\"fb%06d\" type=\"short\">\n",$stepnr{$step});
+    $step = "ALL";
+    printf(OUT "<info oid=\"st_%s_%d_%04d\" type=\"short\">\n", $wf_name, $starttime, $stepnr{$step});
     printf(OUT " <data %-20s value=\"%s\"/>\n","key=\"name\"", $step);
     printf(OUT " <data %-20s value=\"%s\"/>\n","key=\"wf_name\"", $wf_name);
     printf(OUT " <data %-20s value=\"%s\"/>\n","key=\"wf_startts\"", $starttime);

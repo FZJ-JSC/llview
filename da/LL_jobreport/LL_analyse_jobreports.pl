@@ -84,8 +84,8 @@ while(my $line=<IN>) {
   }
   if($line=~/\[LL_create_jobreports.pl\]\[PRIMARY\s*\]\s+$patwrd\s+in\s+$patfp[s] \(ts=$patfp,$patfp,l=$patint,nr=$patint\)/) {
     my($a,$b,$c,$d,$e,$f)=($1,$2,$3,$4,$5,$6);
-#    print "TMPDEB1: $line";
-#    print "         (a=$a,b=$b,c=$c,d=$d,e=$e,f=$f)\n";
+    # print "TMPDEB1: $line";
+    # print "         (a=$a,b=$b,c=$c,d=$d,e=$e,f=$f)\n";
     my $name=sprintf("%s",$a);
     $stat->{$name}->{start}=$c;
     $stat->{$name}->{end}=$d;
@@ -98,17 +98,16 @@ while(my $line=<IN>) {
     $stat->{$name}->{cmplx}=$collected_cmplx_per_level->[$level];
     $collected_cmplx_per_level->[$level]=0;
     while (my $subname = shift @{$collecteditems_per_level->[$level]}) {
-	$stat->{$subname}->{topname}=$name;
-	push(@{$stat->{$name}->{subelems}},$subname);
-	
+      $stat->{$subname}->{topname}=$name;
+      push(@{$stat->{$name}->{subelems}},$subname);
     }
     push(@{$collecteditems_per_level->[$level-1]},$name) if($level>1);
     next;
   }
   if($line=~/\[LL_create_jobreports.pl\]\[$patwrd\s*\]\s+LLmonDB: table \s*$patwrd\s* ready \(\s*$patint entries\)\s+in\s+$patfp[s] \(ts=$patfp,$patfp,l=$patint,nr=$patint\)/) {
     my($a,$b,$c,$d,$e,$f,$g,$h)=($1,$2,$3,$4,$5,$6,$7,$8);
-#    print "TMPDEB2: $line";
-#    print "         (a=$a,b=$b,c=$c,d=$d,e=$e,f=$f,g=$g)\n";
+    # print "TMPDEB2: $line";
+    # print "         (a=$a,b=$b,c=$c,d=$d,e=$e,f=$f,g=$g)\n";
     my $name=sprintf("%s",lc($b));
     $stat->{$name}->{start}=$e;
     $stat->{$name}->{end}=$f;
@@ -132,14 +131,14 @@ while(my $line=<IN>) {
     $stat->{$name}->{topname}=lc($a);
 
     push(@{$collecteditems_per_level->[1]},$name);
-#    print "TMPDEB3: $line";
-#    print "         (a=$a,b=$b,c=$c,d=$d,e=$e,f=$f,g=$g) -> $stat->{$name}->{start}, $stat->{$name}->{end} $stat->{$name}->{startgroupnum} $stat->{$name}->{nr}\n";
+    # print "TMPDEB3: $line";
+    # print "         (a=$a,b=$b,c=$c,d=$d,e=$e,f=$f,g=$g) -> $stat->{$name}->{start}, $stat->{$name}->{end} $stat->{$name}->{startgroupnum} $stat->{$name}->{nr}\n";
     next;
   }
   if($line=~/\[LL_create_jobreports.pl\]\[$patwrd\s*\] (S\d\d\d) .* FINISHED process_dataset: $patwrd\s+in\s+$patfp[s] \(ts=$patfp,$patfp,l=$patint,nr=$patint\)/) {
     my($a,$b,$c,$d,$e,$f,$g,$h)=($1,$2,$3,$4,$5,$6,$7,$8);
-#    print "TMPDEB4: $line";
-#    print "         (a=$a,b=$b,c=$c,d=$d,e=$e,f=$f,g=$g,h=$h)\n";
+    # print "TMPDEB4: $line";
+    # print "         (a=$a,b=$b,c=$c,d=$d,e=$e,f=$f,g=$g,h=$h)\n";
     my $name=sprintf("%s",lc($a));
     $stat->{$name}->{start}=$e;
     $stat->{$name}->{end}=$f;
@@ -147,26 +146,32 @@ while(my $line=<IN>) {
     $stat->{$name}->{nr}=$h;
     $stat->{$name}->{level}=3;
     while (my $subname = shift @{$collecteditems_per_par->{$a}}) {
-	$stat->{$subname}->{topname}=$name;
-	push(@{$stat->{$name}->{subelems}},$subname);
-	
+      $stat->{$subname}->{topname}=$name;
+      push(@{$stat->{$name}->{subelems}},$subname);
     }
     push(@{$collecteditems_per_level->[2]},$name);
     next;
   }
 
-  if($line=~/\[LL_create_jobreports.pl\]\[$patwrd\s*\] process_dataset_.*:\s*end work \(\#files created:\s*$patint, \#files appended:\s*$patint: #lines=\s*$patint\)\s+in\s+$patfp[s] \(ts=$patfp,$patfp,l=$patint,nr=$patint\) on $patwrd/) {
+  if($line=~/\[LL_create_jobreports.pl\]\[$patwrd\s*\] process_dataset_[a-zA-Z0-9_]+\s*:\s+end work \(\#files created:\s*$patint, \#files appended:\s*$patint: #lines=\s*$patint\)\s+in\s+$patfp[s] \(ts=$patfp,$patfp,l=$patint,nr=$patint\) on $patwrd/) {
     my($a,$b,$c,$d,$e,$f,$g,$h,$i,$j)=($1,$2,$3,$4,$5,$6,$7,$8,$9,$10);
-    print "TMPDEB5: $line";
-    print "         (a=$a,b=$b,c=$c,d=$d,e=$e,f=$f,g=$g,h=$h,j=$j)\n";
+    # print "TMPDEB5: $line";
+    # print "         (a=$a,b=$b,c=$c,d=$d,e=$e,f=$f,g=$g,h=$h,j=$j)\n";
     my $name=sprintf("%s_%s",lc($a),lc($j));
     $stat->{$name}->{start}=$f;
     $stat->{$name}->{end}=$g;
     $stat->{$name}->{nr}=$i;
-    $stat->{$name}->{level}=4;
     $stat->{$name}->{startgroupnum}=4; # not used anymore
     $stat->{$name}->{cmplx}+=$b+$c+$d;
-    push(@{$collecteditems_per_par->{$a}},$name);
+    # Route cached tasks (PRIMARY process) to the main tree instead of parallel workers
+    if (lc($a) =~ /primary/) {
+      $stat->{$name}->{level}=2;
+      push(@{$collecteditems_per_level->[2]}, $name);
+    } else {
+      $stat->{$name}->{level}=4;
+      push(@{$collecteditems_per_par->{$a}},$name);
+    }
+    
     $collected_cmplx+=$b+$c+$d;
   }
 
@@ -211,8 +216,29 @@ sub enum_order {
 }
 
 
-&write_steptimings_lml($opt_outfile,$opt_name,$starttime,$endtime,$stat);
+# A fallback mechanism ensures a valid workflow start time is established 
+# even if the initial log line was corrupted or omitted by concurrent processes.
+if ($starttime == -1) { # If the workflow start time is missing...
+  
+  # We temporarily use 'time()' (now) simply as an extremely high starting value 
+  # to compare against. (Any historical timestamp will mathematically be less than 'now').
+  my $min_start = time(); 
+  
+  # Loop through every single recorded step in the log file
+  foreach my $s (values %{$stat}) {
+    # If the step has a valid timestamp, and it is older (smaller) than our current minimum...
+    if (defined($s->{start}) && $s->{start} > 0 && $s->{start} < $min_start) {
+      # ...we update the minimum to this step's timestamp.
+      $min_start = $s->{start}; 
+    }
+  }
+  
+  # Once the loop finishes, $min_start holds the timestamp of the very first action 
+  # that occurred in the past. We assign this to the workflow's start time!
+  $starttime = $min_start; 
+}
 
+&write_steptimings_lml($opt_outfile,$opt_name,$starttime,$endtime,$stat);
 &write_steptimings_ascii($opt_outfile_ascii,$opt_name,$starttime,$endtime,$stat);
 
 # handle also stdout/stderr 
@@ -236,16 +262,17 @@ sub write_steptimings_lml {
     }
   }
 
+  # Object identifiers are prefixed to prevent primary key collisions in the database.
   foreach $step (sort {$steprefs->{$a}->{order} <=> $steprefs->{$b}->{order}} (keys(%{$steprefs}))) {
-    $count++;$stepnr{$step}=$count;
-    printf(OUT "<object id=\"fb%06d\" name=\"%s\" type=\"steptime\"/>\n",$count,$step);
+    $count++; $stepnr{$step} = $count;
+    printf(OUT "<object id=\"st_%s_%d_%04d\" name=\"%s\" type=\"steptime\"/>\n", $wf_name, $starttime, $count, $step);
   }
 
   printf(OUT "</objects>\n");
   printf(OUT "<information>\n");
 
   foreach $step (sort {$steprefs->{$a}->{order} <=> $steprefs->{$b}->{order}} (keys(%{$steprefs}))) {
-    printf(OUT "<info oid=\"fb%06d\" type=\"short\">\n",$stepnr{$step});
+    printf(OUT "<info oid=\"st_%s_%d_%04d\" type=\"short\">\n", $wf_name, $starttime, $stepnr{$step});
     printf(OUT " <data %-20s value=\"%s\"/>\n","key=\"wf_name\"", $wf_name);
     printf(OUT " <data %-20s value=\"%s\"/>\n","key=\"name\"", $step);
     printf(OUT " <data %-20s value=\"%s\"/>\n","key=\"wf_startts\"", $starttime);

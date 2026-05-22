@@ -81,7 +81,7 @@ while(my $line=<IN>) {
   }
   if($line=~/\[LML_DBupdate.pl\]\[PRIMARY\s*\]\s+$patwrd\s+in \s*$patfp[s] \(ts=$patfp,$patfp,l=$patint,nr=$patint\)/) {
     my($a,$b,$c,$d,$e,$f)=($1,$2,$3,$4,$5,$6);
-#    print "TMPDEB1: ($a,$b,$c,$d,$e,$f)\n";
+    # print "TMPDEB1: ($a,$b,$c,$d,$e,$f)\n";
     my $name=sprintf("%s",$a);
     $stat->{$name}->{start}=$c;
     $stat->{$name}->{end}=$d;
@@ -97,7 +97,7 @@ while(my $line=<IN>) {
     $stat->{$name}->{startgroupnum}=$f;
     $stat->{$name}->{nr}=$g;
     $stat->{$name}->{level}=0;
-#    print "TMPDEB2: ($a,$b,$c,$d,$e,$f,$g)\n";
+    # print "TMPDEB2: ($a,$b,$c,$d,$e,$f,$g)\n";
     foreach my $k (keys(%{$dblist->{$a}})) {
       $dblist->{$a}->{$k}->{topstart}=$d;
       $dblist->{$a}->{$k}->{topend}=$e;
@@ -123,7 +123,7 @@ while(my $line=<IN>) {
     $stat->{$name}->{topname}=lc($a);
 
     $dblist->{$a}->{$name}=$stat->{$name};
-#    print "TMPDEB3: ($a,$b,$c,$d,$e,$f,$g) -> $stat->{$name}->{start}, $stat->{$name}->{end} $stat->{$name}->{startgroupnum} $stat->{$name}->{nr}\n";
+    # print "TMPDEB3: ($a,$b,$c,$d,$e,$f,$g) -> $stat->{$name}->{start}, $stat->{$name}->{end} $stat->{$name}->{startgroupnum} $stat->{$name}->{nr}\n";
   }
   if($line=~/\[LML_DBupdate.pl\]\[$patwrd\s*\]\s+LLmonDB:\s+$patwrd\.\s*$patint entries.*in\s+$patfp[s]/) {
     my($a,$b,$c,$d)=($1,$2,$3,$4);
@@ -152,9 +152,29 @@ foreach my $step ( sort {&my_sort($a,$b)} (keys(%{$stat}))) {
     }
 }
 
-		
-&write_steptimings_lml($opt_outfile,$opt_name,$starttime,$endtime,$stat);
+# A fallback mechanism ensures a valid workflow start time is established 
+# even if the initial log line was corrupted or omitted by concurrent processes.
+if ($starttime == -1) { # If the workflow start time is missing...
+  
+  # We temporarily use 'time()' (now) simply as an extremely high starting value 
+  # to compare against. (Any historical timestamp will mathematically be less than 'now').
+  my $min_start = time(); 
+  
+  # Loop through every single recorded step in the log file
+  foreach my $s (values %{$stat}) {
+    # If the step has a valid timestamp, and it is older (smaller) than our current minimum...
+    if (defined($s->{start}) && $s->{start} > 0 && $s->{start} < $min_start) {
+      # ...we update the minimum to this step's timestamp.
+      $min_start = $s->{start}; 
+    }
+  }
+  
+  # Once the loop finishes, $min_start holds the timestamp of the very first action 
+  # that occurred in the past. We assign this to the workflow's start time!
+  $starttime = $min_start; 
+}
 
+&write_steptimings_lml($opt_outfile,$opt_name,$starttime,$endtime,$stat);
 &write_steptimings_ascii($opt_outfile_ascii,$opt_name,$starttime,$endtime,$stat);
 
 # handle also stdout/stderr 
@@ -171,16 +191,20 @@ sub write_steptimings_lml {
   printf(OUT "	version=\"0.7\"\>\n");
   printf(OUT "<objects>\n");
   $count=0;
+
+  # Object identifiers are prefixed with the workflow name and timestamp to guarantee 
+  # global uniqueness, preventing primary key collisions in the database.
   foreach $step (sort {$steprefs->{$a}->{order} <=> $steprefs->{$b}->{order}} (keys(%{$steprefs}))) {
-    $count++;$stepnr{$step}=$count;
-    printf(OUT "<object id=\"fb%06d\" name=\"%s\" type=\"steptime\"/>\n",$count,$step);
+    $count++; $stepnr{$step} = $count;
+    printf(OUT "<object id=\"st_%s_%d_%04d\" name=\"%s\" type=\"steptime\"/>\n", $wf_name, $starttime, $count, $step);
   }
 
   printf(OUT "</objects>\n");
   printf(OUT "<information>\n");
 
+  # Information nodes are linked using the corresponding unique identifiers.
   foreach $step (sort {$steprefs->{$a}->{order} <=> $steprefs->{$b}->{order}} (keys(%{$steprefs}))) {
-    printf(OUT "<info oid=\"fb%06d\" type=\"short\">\n",$stepnr{$step});
+    printf(OUT "<info oid=\"st_%s_%d_%04d\" type=\"short\">\n", $wf_name, $starttime, $stepnr{$step});
     printf(OUT " <data %-20s value=\"%s\"/>\n","key=\"wf_name\"", $wf_name);
     printf(OUT " <data %-20s value=\"%s\"/>\n","key=\"name\"", $step);
     printf(OUT " <data %-20s value=\"%s\"/>\n","key=\"wf_startts\"", $starttime);
