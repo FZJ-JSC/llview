@@ -83,12 +83,12 @@ sub create_datasets {
   }
   $step_endtime=time();
   printf("%s datasets_1_sort                                 in %7.4fs (ts=%.5f,%.5f,l=2,nr=1)\n",$self->{INSTNAME},$step_endtime-$step_starttime,$step_starttime,$step_endtime); 
-  
+
   # 2: create order of parallel execution
   #######################################
   $step_starttime=time();
   my $actions; 
-  
+
   #  1st schedule all datasets of sets without a table_cache
   foreach my $set (keys(%{$sets->{"-none-"}})) {
     my $action;
@@ -166,6 +166,11 @@ sub create_datasets {
   # 3: start PARALLEL Processing
   ##############################
   $step_starttime=time();
+  
+  # Output buffering is disabled to ensure atomic writes to the log file.
+  # This prevents log tearing when multiple child processes print simultaneously.
+  local $| = 1; 
+
   my $pm = Parallel::ForkManager->new($MAX_PROCESSES);
 
   printf("%s create_datasets: start parallel execution MAX_PROCESSES=%d\n",$self->{INSTNAME},$MAX_PROCESSES);
@@ -187,46 +192,47 @@ sub create_datasets {
             exists($action->{part})?$action->{part}:"-",	
             exists($action->{parlevel})?$action->{parlevel}:"-");
     
-    if($action->{type} eq "cache_table") {
-      # cache tables in PRIMARY process
-      if($action->{format} eq "json") {
-        $self->process_data_query_cache_table_json( $action->{table_cache},
-                                                    $table_cache_first_set->{$action->{table_cache}}->{dataset},
-                                                    $varsetref);
-      }
-      if($action->{format} eq "access") {
-        $self->process_data_query_cache_table_access( $action->{table_cache},
+    if ($action->{type} eq "cache_table") {
+      # Cache tables in PRIMARY process
+      if ($action->{format} eq "json") {
+        $self->process_data_query_cache_table_json($action->{table_cache},
+                                                   $table_cache_first_set->{$action->{table_cache}}->{dataset},
+                                                   $varsetref);
+      } elsif ($action->{format} eq "csv") {
+        $self->process_data_query_cache_table_csv_dat($action->{table_cache},
                                                       $table_cache_first_set->{$action->{table_cache}}->{dataset},
                                                       $varsetref);
+      } elsif ($action->{format} eq "access") {
+        $self->process_data_query_cache_table_access($action->{table_cache},
+                                                     $table_cache_first_set->{$action->{table_cache}}->{dataset},
+                                                     $varsetref);
       }
       next DATA_LOOP;
-    } 
-    if($action->{type} eq "scan_table") {
-      # scan tables in PRIMARY process
+    } elsif ($action->{type} eq "scan_table") {
+      # Scan tables in PRIMARY process
       foreach my $dataset (@{$sets->{$action->{table_cache}}->{$action->{set}}}) {
-        if($dataset->{format}=~/^(json)$/) {
-          $self->process_dataset_json($DB,$dataset,$varsetref);
-        }
-        if($dataset->{format}=~/^(access)$/) {
-          $self->process_dataset_access($DB,$dataset,$varsetref);
+        if ($dataset->{format} =~ /^(json)$/) {
+          $self->process_dataset_json($DB, $dataset, $varsetref);
+        } elsif ($dataset->{format} =~ /^(csv)$/) {
+          $self->process_dataset_csv_dat($DB, $dataset, $varsetref);
+        } elsif ($dataset->{format} =~ /^(access)$/) {
+          $self->process_dataset_access($DB, $dataset, $varsetref);
         }
       }
       next DATA_LOOP;
-    }
-    if($action->{type} eq "drop_table") {
-      # cache tables in PRIMARY process
-      if($action->{format} eq "json") {
+    } elsif ($action->{type} eq "drop_table") {
+      # Drop cached tables in PRIMARY process
+      if ($action->{format} eq "json" || $action->{format} eq "csv") {
         $self->process_data_query_drop_table_json($action->{table_cache},
                                                   $table_cache_first_set->{$action->{table_cache}}->{dataset},
                                                   $varsetref);
-      }
-      if($action->{format} eq "access") {
+      } elsif ($action->{format} eq "access") {
         $self->process_data_query_drop_table_access($action->{table_cache},
                                                     $table_cache_first_set->{$action->{table_cache}}->{dataset},
                                                     $varsetref);
       }
       next DATA_LOOP;
-    } 
+    }
     
     my $set=$action->{set};
 
@@ -236,21 +242,23 @@ sub create_datasets {
 
     my $startsetts=time();
 
-    if($action->{type} eq "fileio") {
-      my $caller=$0; $caller=~s/^.*\/([^\/]+)$/$1/gs; # set INSTNAME for messages
-      $self->{INSTNAME}=sprintf("[%s][FILEIO%02d_%s]",$caller,$action->{part},substr($action->{table_cache},0,7));
+    if ($action->{type} eq "fileio") {
+      my $caller = $0; $caller =~ s/^.*\/([^\/]+)$/$1/gs; 
+      $self->{INSTNAME} = sprintf("[%s][FILEIO%02d_%s]", $caller, $action->{part}, substr($action->{table_cache},0,7));
       
       # Parallel FILEIO operation for datasets using tablecache
-      if($action->{format} eq "json") {
-        $self->write_data_to_file_json_cache($action->{table_cache},$action->{part},$action->{parlevel});
-      } 
-      if($action->{format} eq "access") {
-        $self->write_data_to_file_access_cache($action->{table_cache},$action->{part},$action->{parlevel});
+      if ($action->{format} eq "json") {
+        $self->write_data_to_file_json_cache($action->{table_cache}, $action->{part}, $action->{parlevel});
+      } elsif ($action->{format} eq "csv") {
+        $self->write_data_to_file_csv_dat_cache($action->{table_cache}, $action->{part}, $action->{parlevel});
+      } elsif ($action->{format} eq "access") {
+        $self->write_data_to_file_access_cache($action->{table_cache}, $action->{part}, $action->{parlevel});
       }
-      my $endtime=time();
+      
+      my $endtime = time();
       printf("%s S%03d [at %7.4fs] FINISHED process_dataset: %-20s in %7.4fs (ts=%.5f,%.5f,l=%d,nr=%d)\n",
-              $self->{INSTNAME},$action_count,$endtime-$parstarttime,
-              $action->{table_cache}, $endtime-$startsetts,$startsetts,$endtime,2,$action_count);
+              $self->{INSTNAME}, $action_count, $endtime-$parstarttime,
+              $action->{table_cache}, $endtime-$startsetts, $startsetts, $endtime, 2, $action_count);
     } else {
       my $caller=$0;$caller=~s/^.*\/([^\/]+)$/$1/gs; # set INSTNAME for messages
       $self->{INSTNAME}=sprintf("[%s][%s]",$caller,substr(uc($set),0,16));
@@ -259,7 +267,7 @@ sub create_datasets {
       foreach my $dataset (@{$sets->{$action->{table_cache}}->{$action->{set}}}) {
         printf("%s create_datasets: start work on %s\n",$self->{INSTNAME},$dataset->{name});
         if($dataset->{format}=~/^(dat|csv)$/) {
-          $self->process_dataset_cvs_dat($DB,$dataset,$varsetref);
+          $self->process_dataset_csv_dat($DB,$dataset,$varsetref);
         } elsif($dataset->{format} eq "json") {
           $self->process_dataset_json($DB,$dataset,$varsetref);
         } elsif($dataset->{format} eq "registerfile") {
@@ -345,11 +353,13 @@ sub process_dataset_json {
   # save status of datasets in DB 
   $self->save_datasetstat_in_DB($dataset->{stat_database},$dataset->{stat_table});
 
-  printf("%s process_dataset_json:     end work (#files created: %4d, #files appended: %4d: #lines=%6d) in %7.4fs on %-25s\n",$self->{INSTNAME},
+  my $endtime = time();
+  printf("%s process_dataset_json:     end work (#files created: %4d, #files appended: %4d: #lines=%6d) in %7.4fs (ts=%.5f,%.5f,l=3,nr=0) on %-25s\n",$self->{INSTNAME},
           $self->{COUNT_OP_NEW_FILE},
           $self->{COUNT_OP_EXISTING_FILE},
           $self->{COUNT_OP_WRITE_LINE},
-          time()-$starttime,$dataset->{name});
+          $endtime-$starttime, $starttime, $endtime,
+          $dataset->{name});
 }
 
 sub process_dataset_access {
@@ -409,18 +419,21 @@ sub process_dataset_access {
   # save status of datasets in DB 
   $self->save_datasetstat_in_DB($dataset->{stat_database},$dataset->{stat_table});
 
-  printf("%s process_dataset_access:     end work (#files created: %4d, #files appended: %4d: #lines=%6d) in %7.4fs on %-25s\n",$self->{INSTNAME},
+  my $endtime = time();
+  printf("%s process_dataset_access:     end work (#files created: %4d, #files appended: %4d: #lines=%6d) in %7.4fs (ts=%.5f,%.5f,l=3,nr=0) on %-25s\n",$self->{INSTNAME},
           $self->{COUNT_OP_NEW_FILE},
           $self->{COUNT_OP_EXISTING_FILE},
           $self->{COUNT_OP_WRITE_LINE},
-          time()-$starttime,$dataset->{name}) if($debug);
+          $endtime-$starttime, $starttime, $endtime,
+          $dataset->{name}) if($debug);
 }
 
-sub process_dataset_cvs_dat {
+# Processes the dataset for CSV files and updates the database status.
+sub process_dataset_csv_dat {
   my $self = shift;
   my ($DB,$dataset,$varsetref)=@_;
   my $starttime=time();
-  my $filepath_parsed=undef; 	# required for signle output file without colmap
+  my $filepath_parsed=undef;
   
   printf("%s process_dataset:    start work on %s\n",$self->{INSTNAME},$dataset->{name});
 
@@ -428,48 +441,58 @@ sub process_dataset_cvs_dat {
   $self->parse_filemap($dataset);
   printf("%s process_dataset:    first run (parse ) after %7.4fs on %s\n",$self->{INSTNAME},time()-$starttime1,$dataset->{name});
 
-  # get status of datasets from DB
   $starttime1=time();
-  my $where="dataset not like '%unknown%'"; # get rid of old entries with unknown info (datasets)
+  my $where="dataset not like '%unknown%'"; 
   $self->get_datasetstat_from_DB($dataset->{stat_database},$dataset->{stat_table},$where);
   printf("%s process_dataset:    first run (get_ds ) after %7.4fs on %s\n",$self->{INSTNAME},time()-$starttime1,$dataset->{name});
-
-  # 1st RUN: update state in DB for each new file
-  ###############################################
-  $starttime1=time();
-  if(exists($dataset->{FORALL})) {
-    $self->process_FORALL($DB,$dataset,$varsetref,\&check_filepath,$dataset);
-  } else {
-    $filepath_parsed=$self->check_filepath($dataset,$varsetref);
-  }
-  printf("%s process_dataset:    first run (checkfp) after %7.4fs on %s\n",$self->{INSTNAME},time()-$starttime1,$dataset->{name});
-  # save status of datasets in DB (required by following query)
-  $starttime1=time();
-  $self->save_datasetstat_in_DB($dataset->{stat_database},$dataset->{stat_table},$where);
-  printf("%s process_dataset:    first run (save_ds) after %7.4fs on %s (%s,%s)\n",$self->{INSTNAME},time()-$starttime1,$dataset->{name},$dataset->{stat_database},$dataset->{stat_table});
-  printf("%s process_dataset:    finished first  run after %7.4fs on %s\n",$self->{INSTNAME},time()-$starttime,$dataset->{name});
-
-  # 2nd RUN: query for new data and store in file
-  ###############################################
-  my $starttime2=time();
-  $self->{DB}->close_db($dataset->{stat_database});
 
   $self->{COUNT_OP_NEW_FILE}=0;
   $self->{COUNT_OP_EXISTING_FILE}=0;
   $self->{COUNT_OP_WRITE_LINE}=0;
 
-  $self->process_data_query_and_save_csv_dat($dataset,$filepath_parsed);
-  printf("%s process_dataset:    finished second run after %7.4fs on %s\n",$self->{INSTNAME},time()-$starttime2,$dataset->{name});
+  if(!exists($dataset->{table_cache})) {
+    $starttime1=time();
+    if(exists($dataset->{FORALL})) {
+      $self->process_FORALL($DB,$dataset,$varsetref,\&check_filepath,$dataset);
+    } else {
+      $filepath_parsed=$self->check_filepath($dataset,$varsetref);
+    }
+    printf("%s process_dataset:    first run (checkfp) after %7.4fs on %s\n",$self->{INSTNAME},time()-$starttime1,$dataset->{name});
+    
+    $starttime1=time();
+    $self->save_datasetstat_in_DB($dataset->{stat_database},$dataset->{stat_table},$where);
+    printf("%s process_dataset:    first run (save_ds) after %7.4fs on %s (%s,%s)\n",$self->{INSTNAME},time()-$starttime1,$dataset->{name},$dataset->{stat_database},$dataset->{stat_table});
+    printf("%s process_dataset:    finished first  run after %7.4fs on %s\n",$self->{INSTNAME},time()-$starttime,$dataset->{name});
 
-  # save status of datasets in DB again (ts updated)
+    my $starttime2=time();
+    $self->{DB}->close_db($dataset->{stat_database});
+
+    $self->process_data_query_and_save_csv_dat($dataset,$filepath_parsed);
+    printf("%s process_dataset:    finished second run after %7.4fs on %s\n",$self->{INSTNAME},time()-$starttime2,$dataset->{name});
+  } else {
+    if(exists($dataset->{FORALL})) {
+      if(exists($dataset->{column_filemap})) {
+        $self->process_FORALL($DB,$dataset,$varsetref,\&check_filemapping,$dataset);
+        $self->process_data_query_and_save_csv_dat_cache($dataset,$varsetref);
+      } else {
+        $self->process_FORALL($DB,$dataset,$varsetref,\&check_filemapping,$dataset);
+        $self->process_FORALL($DB,$dataset,$varsetref,\&process_data_query_and_save_csv_dat_cache,$dataset);
+      }
+    } else {
+      $self->check_filemapping($dataset,$varsetref);
+      $self->process_data_query_and_save_csv_dat_cache($dataset,$varsetref);
+    }
+  }
+
   $self->save_datasetstat_in_DB($dataset->{stat_database},$dataset->{stat_table},$where);
   my $endtime=time();
-  printf("%s process_dataset_cvs_dat:  end work (#files created: %4d, #files appended: %4d: #lines=%6d) in %7.4fs (ts=%.5f,%.5f,l=3,nr=0) on %-25s\n",$self->{INSTNAME},
-	 $self->{COUNT_OP_NEW_FILE},
-	 $self->{COUNT_OP_EXISTING_FILE},
-	 $self->{COUNT_OP_WRITE_LINE},
-	 $endtime-$starttime,$starttime,$endtime,
-	 $dataset->{name});
+  
+  printf("%s process_dataset_csv_dat:  end work (#files created: %4d, #files appended: %4d: #lines=%6d) in %7.4fs (ts=%.5f,%.5f,l=3,nr=0) on %-25s\n",$self->{INSTNAME},
+        $self->{COUNT_OP_NEW_FILE},
+        $self->{COUNT_OP_EXISTING_FILE},
+        $self->{COUNT_OP_WRITE_LINE},
+        $endtime-$starttime,$starttime,$endtime,
+        $dataset->{name});
 }
 
 sub process_dataset_register {
@@ -503,11 +526,13 @@ sub process_dataset_register {
   # save status of datasets in DB 
   $self->save_datasetstat_in_DB($dataset->{stat_database},$dataset->{stat_table});
 
-  printf("%s process_dataset_register: end work (#files reg.:    %4d, #files updated:  %4d: #lines=%6d) in %7.4fs on %-25s\n",$self->{INSTNAME},
+  my $endtime = time();
+  printf("%s process_dataset_register: end work (#files reg.:    %4d, #files updated:  %4d: #lines=%6d) in %7.4fs (ts=%.5f,%.5f,l=3,nr=0) on %-25s\n",$self->{INSTNAME},
           $self->{COUNT_OP_NEW_FILE},
           $self->{COUNT_OP_EXISTING_FILE},
           $self->{COUNT_OP_WRITE_LINE},
-          time()-$starttime,$dataset->{name});
+          $endtime-$starttime, $starttime, $endtime,
+          $dataset->{name});
 }
 
 
@@ -538,165 +563,192 @@ sub parse_filemap {
   # print "parse_filemap: $dataset->{name}:", Dumper($self->{DATASETSTAT_MAP});
 }
 
+# Evaluates and registers a single target file into the database tracking structures
+#
+# Arguments:
+#   $self      - (Object) The LML_jobreport instance
+#   $dataset   - (HashRef) The configuration definitions for the dataset
+#   $varsetref - (HashRef) Variable substitutions available for the file path
+#
+# Returns:
+#   (String) The parsed short file name relative to the output directory
 sub check_filepath {
   my $self = shift;
-  my($dataset,$varsetref)=@_;
-  my $ds=$self->{DATASETSTAT}->{$dataset->{stat_database}}->{$dataset->{stat_table}};
+  my ($dataset, $varsetref) = @_;
+  my $ds = $self->{DATASETSTAT}->{$dataset->{stat_database}}->{$dataset->{stat_table}};
   
-  # printf("%s check_filepath:       start work on %s\n",$self->{INSTNAME},$dataset->{filepath});
-  my $file=$dataset->{filepath};
+  my $file = $dataset->{filepath};
   
-  #  replace vars
   while ( my ($key, $value) = each(%{$varsetref}) ) {
-    $file=~s/\$\{$key\}/$value/gs;
-    $file=~s/\$$key/$value/gs;
-    $value=~s/\//:/gs;  # replace '/' in vars which build a file path
-    $file=~s/\$\{\{$key\}\}/$value/gs;
+    $file =~ s/\$\{$key\}/$value/gs;
+    $file =~ s/\$$key/$value/gs;
+    $value =~ s/\//:/gs; 
+    $file =~ s/\$\{\{$key\}\}/$value/gs;
   }
-  my $shortfile=$file;$shortfile=~s/$self->{OUTDIR}\///s;
+  
+  my $shortfile = $file;
+  $shortfile =~ s/$self->{OUTDIR}\///s;
 
-  # Check if a compressed version of this file already exists in the DB
   if (exists($ds->{"$shortfile.gz"})) {
     $shortfile = "$shortfile.gz";
   }
 
-  printf("%s check_filepath:         WARNING %s\n",$self->{INSTNAME},$shortfile) if($shortfile=~/unknown/);
+  printf("%s check_filepath:         WARNING %s\n", $self->{INSTNAME}, $shortfile) if ($shortfile =~ /unknown/);
 
-  my $init_file=0;
-  if(!exists($ds->{$shortfile})) {
-    $init_file=1;
-  } elsif(exists($dataset->{renew_daily})) {
-    if($dataset->{renew_daily}=~/^(1|yes)$/) {
-      my $window_start=1*3600+42*60;
-      my $window_end=$window_start-15*60;
-      my $ts_today=$self->{CURRENTTS}-$self->{CURRENTTS}%(24*3600)-$TZOFFSET; # start of day
-      my $now_ts_today=$self->{CURRENTTS}%(24*3600); # seconds today
-      my $lastsaved_ts_today=$ds->{$shortfile}->{lastts_saved}-$ts_today;
-      # printf("%s check_filepath: for renew file:check %s ts_today=%d now_ts_today=%d lastsaved_ts_today=%d window: %d..%d\n",$self->{INSTNAME},
-      #         $shortfile,$ts_today,$now_ts_today,$lastsaved_ts_today,$window_start,$window_end );
-      if(($now_ts_today>=$window_start) && ($now_ts_today<=$window_end)) {
-        if($lastsaved_ts_today<$window_start) {
-          $init_file=1;
-          printf("%s check_filepath: renew file, DO    %s ts_today=%d now_ts_today=%d lastsaved_ts_today=%d\n",$self->{INSTNAME},
-                  $shortfile,$ts_today,$now_ts_today,$lastsaved_ts_today );
+  my $is_existing = exists($ds->{$shortfile});
+  my $init_file = 0;
+
+  if (!$is_existing) {
+    $init_file = 1;
+  } elsif (exists($dataset->{renew_daily})) {
+    if ($dataset->{renew_daily} =~ /^(1|yes)$/) {
+      my $window_start = 1*3600 + 42*60;
+      my $window_end = $window_start - 15*60;
+      my $ts_today = $self->{CURRENTTS} - $self->{CURRENTTS} % (24*3600) - $TZOFFSET; 
+      my $now_ts_today = $self->{CURRENTTS} % (24*3600); 
+      my $lastsaved_ts_today = $ds->{$shortfile}->{lastts_saved} - $ts_today;
+      
+      if (($now_ts_today >= $window_start) && ($now_ts_today <= $window_end)) {
+        if ($lastsaved_ts_today < $window_start) {
+          $init_file = 1;
+          printf("%s check_filepath: renew file, DO    %s ts_today=%d now_ts_today=%d lastsaved_ts_today=%d\n",
+                  $self->{INSTNAME}, $shortfile, $ts_today, $now_ts_today, $lastsaved_ts_today);
         }
       }
     }
-  } elsif(exists($dataset->{renew})) {
-    if($dataset->{renew}=~/daily/) {
-      my $window_start=15*3600+42*60;
-      if($dataset->{renew}=~/daily\((\d\d)\:(\d\d)\)/) {
-        $window_start=$1*3600+$2*60;
-        # printf("%s check_filepath: found renew_daily %s,%s -> %d (%s) tzoffet=%d\n",$self->{INSTNAME},$1,$2,$window_start,$shortfile,$TZOFFSET);
+  } elsif (exists($dataset->{renew})) {
+    if ($dataset->{renew} =~ /daily/) {
+      my $window_start = 15*3600 + 42*60;
+      if ($dataset->{renew} =~ /daily\((\d\d)\:(\d\d)\)/) {
+        $window_start = $1*3600 + $2*60;
       }
-      my $window_end=$window_start+15*60;
-      my $ts_today=$self->{CURRENTTS}-$self->{CURRENTTS}%(24*3600)-$TZOFFSET; # start of day
-      my $now_ts_today=$self->{CURRENTTS}%(24*3600)+$TZOFFSET; # seconds today
-      my $lastsaved_ts_today=$ds->{$shortfile}->{lastts_saved}-$ts_today;
+      my $window_end = $window_start + 15*60;
+      my $ts_today = $self->{CURRENTTS} - $self->{CURRENTTS} % (24*3600) - $TZOFFSET; 
+      my $now_ts_today = $self->{CURRENTTS} % (24*3600) + $TZOFFSET; 
+      my $lastsaved_ts_today = $ds->{$shortfile}->{lastts_saved} - $ts_today;
       
-      # printf("%s check_filepath: for renew file:check %s ts_today=%d now_ts_today=%d lastsaved_ts_today=%d window: %d..%d\n",$self->{INSTNAME},
-      #         $shortfile,$ts_today,$now_ts_today,$lastsaved_ts_today,$window_start,$window_end );
-      if(($now_ts_today>=$window_start) && ($now_ts_today<=$window_end)) {
-        if($lastsaved_ts_today<$window_start) {
-          $init_file=1;
-          printf("%s check_filepath: renew file, DO    %s ts_today=%d now_ts_today=%d lastsaved_ts_today=%d\n",$self->{INSTNAME},
-                  $shortfile,$ts_today,$now_ts_today,$lastsaved_ts_today );
+      if (($now_ts_today >= $window_start) && ($now_ts_today <= $window_end)) {
+        if ($lastsaved_ts_today < $window_start) {
+          $init_file = 1;
+          printf("%s check_filepath: renew file, DO    %s ts_today=%d now_ts_today=%d lastsaved_ts_today=%d\n",
+                  $self->{INSTNAME}, $shortfile, $ts_today, $now_ts_today, $lastsaved_ts_today);
         }
       }
     } 
-    if($dataset->{renew}=~/always/) {
-      $init_file=1;
-      # printf("%s check_filepath: renew file, ALWAYS  %s \n",$self->{INSTNAME}, $shortfile );
+    if ($dataset->{renew} =~ /always/) {
+      $init_file = 1;
     }
-    if($dataset->{renew}=~/delta/) {
-      $ds->{$shortfile}->{status}=FSTATUS_NOT_EXISTS;
-      printf("%s: check_filepath: renew file, DELTA  %s \n",$self->{INSTNAME}, $shortfile );
+    if ($dataset->{renew} =~ /delta/) {
+      $ds->{$shortfile}->{status} = FSTATUS_NOT_EXISTS;
+      printf("%s: check_filepath: renew file, DELTA  %s \n", $self->{INSTNAME}, $shortfile);
     }
   }
   
-  # check if new file
-  if($init_file) {
-    $ds->{$shortfile}->{dataset}=$shortfile;
-    $ds->{$shortfile}->{name}=$dataset->{name};
+  if ($init_file) {
+    $ds->{$shortfile}->{dataset} = $shortfile;
+    $ds->{$shortfile}->{name} = $dataset->{name};
     
-    if(exists($ds->{$shortfile}->{lastts_saved})) {
-      $ds->{$shortfile}->{lastts_saved}=1; # its a file to be renewed
-      $ds->{$shortfile}->{mts}=$self->{CURRENTTS}; # last change ts
+    if (exists($ds->{$shortfile}->{lastts_saved})) {
+      $ds->{$shortfile}->{lastts_saved} = 1; 
+      $ds->{$shortfile}->{mts} = $self->{CURRENTTS}; 
     } else {
-      # its a new new file which may be not written (if there is no data)
-      $ds->{$shortfile}->{lastts_saved}=int($self->{CURRENTTS}-365*24*3600); # mark time when this entry was created minus delay
-      $ds->{$shortfile}->{mts}=$self->{CURRENTTS}; # last change ts
+      $ds->{$shortfile}->{lastts_saved} = int($self->{CURRENTTS} - 365*24*3600); 
+      $ds->{$shortfile}->{mts} = $self->{CURRENTTS}; 
     }
-    $ds->{$shortfile}->{checksum}=0;
-    # internal mapping
-    if(exists($self->{DATASETSTAT_MAP}->{$dataset->{name}})) {
-      my $v=$self->{DATASETSTAT_MAP}->{$dataset->{name}}->{filemap_v};
-      if(defined($v)) {
-        $ds->{$shortfile}->{ukey}=$varsetref->{$v};
-      } else {
-        $ds->{$shortfile}->{ukey}=-1;
-      }
+    $ds->{$shortfile}->{checksum} = 0;
+    
+    if (exists($self->{DATASETSTAT_MAP}->{$dataset->{name}})) {
+      my $v = $self->{DATASETSTAT_MAP}->{$dataset->{name}}->{filemap_v};
+      $ds->{$shortfile}->{ukey} = defined($v) ? $varsetref->{$v} : -1;
     } else {
-      $ds->{$shortfile}->{ukey}=-1;
+      $ds->{$shortfile}->{ukey} = -1;
     }
-    $ds->{$shortfile}->{status}=FSTATUS_NOT_EXISTS;
-    printf("%s check_filepath:         init ds for %s\n",$self->{INSTNAME},$file) if($file=~/fabric/); # if($debug);
+
+    # Evaluate explicit renewals
+    my $force_overwrite = 0;
+    $force_overwrite = 1 if (exists($dataset->{renew}) && $dataset->{renew} =~ /(always|daily)/);
+    $force_overwrite = 1 if (exists($dataset->{renew_daily}) && $dataset->{renew_daily} =~ /^(1|yes)$/);
+
+    # Safely assign status: Initialize new files, but never overwrite FSTATUS_COMPRESSED unless explicitly renewing
+    if (!exists($ds->{$shortfile}->{status}) || $ds->{$shortfile}->{status} != FSTATUS_COMPRESSED || $force_overwrite) {
+      $ds->{$shortfile}->{status} = FSTATUS_NOT_EXISTS;
+    }
+
+    printf("%s check_filepath:         init ds for %s\n", $self->{INSTNAME}, $file) if ($file =~ /fabric/); 
   }
-  # printf("%s check_filepath:       end   work on %s\n",$self->{INSTNAME},$dataset->{filepath});
-  return($shortfile);
+  
+  return ($shortfile);
 }
 
+# Multiple target files mapped by dynamic variables are evaluated and registered into the tracking structures.
+#
+# Arguments:
+#   $self      - (Object) The LML_jobreport instance
+#   $dataset   - (HashRef) The configuration definitions for the dataset
+#   $varsetref - (HashRef) Variable substitutions available for the file path
+#
+# Returns:
+#   (Void)
 sub check_filemapping {
   my $self = shift;
-  my ($dataset,$varsetref)=@_;
-  my $ds=$self->{DATASETSTAT}->{$dataset->{stat_database}}->{$dataset->{stat_table}};
-  my $file=$dataset->{filepath};
+  my ($dataset, $varsetref) = @_;
+  my $ds = $self->{DATASETSTAT}->{$dataset->{stat_database}}->{$dataset->{stat_table}};
+  my $file = $dataset->{filepath};
 
-  #  replace vars in filepath
   while ( my ($key, $value) = each(%{$varsetref}) ) {
-    $file=~s/\$\{$key\}/$value/gs;
-    $file=~s/\$$key/$value/gs;
-    $value=~s/\//:/gs;  # replace '/' in vars which build a file path
-    $file=~s/\$\{\{$key\}\}/$value/gs;
+    $file =~ s/\$\{$key\}/$value/gs;
+    $file =~ s/\$$key/$value/gs;
+    $value =~ s/\//:/gs; 
+    $file =~ s/\$\{\{$key\}\}/$value/gs;
   }
 
-  my $shortfile=$file;$shortfile=~s/$self->{OUTDIR}\///s;
+  my $shortfile = $file;
+  $shortfile =~ s/$self->{OUTDIR}\///s;
   
-  # Check if a compressed version of this file already exists in the DB
   if (exists($ds->{"$shortfile.gz"})) {
     $shortfile = "$shortfile.gz";
   }
   
-  if(!exists($ds->{$shortfile})) {
-    $ds->{$shortfile}->{dataset}=$shortfile;
-    $ds->{$shortfile}->{name}=$dataset->{name};
-    $ds->{$shortfile}->{lastts_saved}=int($self->{CURRENTTS}); # mark time when this entry was created	
-    $ds->{$shortfile}->{mts}=$self->{CURRENTTS}; # last change ts
-    $ds->{$shortfile}->{checksum}=0;
-    # internal mapping
-    if(exists($self->{DATASETSTAT_MAP}->{$dataset->{name}})) {
-      my $v=$self->{DATASETSTAT_MAP}->{$dataset->{name}}->{filemap_v};
-      if(defined($v)) {
-        $ds->{$shortfile}->{ukey}=$varsetref->{$v};
-      } else {
-        $ds->{$shortfile}->{ukey}=-1;
-      }
-    } else {
-      $ds->{$shortfile}->{ukey}=-1;
-    }
-    $ds->{$shortfile}->{status}=FSTATUS_NOT_EXISTS;
-    #	printf("%s check_filepath:         init ds for %s\n",$self->{INSTNAME},$file) if($debug);
+  my $is_existing = exists($ds->{$shortfile});
+  my $init_file = 0;
+
+  if (!$is_existing) {
+    $init_file = 1;
+  } elsif (exists($dataset->{renew}) && $dataset->{renew} =~ /always/) {
+    $init_file = 1;
   }
 
-  # build search key
+  if ($init_file) {
+    $ds->{$shortfile}->{dataset} = $shortfile;
+    $ds->{$shortfile}->{name} = $dataset->{name};
+    
+    $ds->{$shortfile}->{lastts_saved} = int($self->{CURRENTTS}); 
+    $ds->{$shortfile}->{mts} = $self->{CURRENTTS}; 
+    $ds->{$shortfile}->{checksum} = 0;
+    
+    if (exists($self->{DATASETSTAT_MAP}->{$dataset->{name}})) {
+      my $v = $self->{DATASETSTAT_MAP}->{$dataset->{name}}->{filemap_v};
+      $ds->{$shortfile}->{ukey} = defined($v) ? $varsetref->{$v} : -1;
+    } else {
+      $ds->{$shortfile}->{ukey} = -1;
+    }
+    
+    # Explicit renewals are evaluated.
+    my $force_overwrite = 0;
+    $force_overwrite = 1 if (exists($dataset->{renew}) && $dataset->{renew} =~ /(always|daily)/);
+
+    # Status is safely assigned. New files are initialized, but FSTATUS_COMPRESSED is never overwritten unless explicitly renewed.
+    if (!exists($ds->{$shortfile}->{status}) || $ds->{$shortfile}->{status} != FSTATUS_COMPRESSED || $force_overwrite) {
+      $ds->{$shortfile}->{status} = FSTATUS_NOT_EXISTS;
+    }
+  }
+
   my @skeys;
   foreach my $v (@{$self->{DATASETSTAT_MAP}->{$dataset->{name}}->{v_list}}) {
-    push(@skeys,$varsetref->{$v});
+    push(@skeys, $varsetref->{$v});
   }
-  my $skey=join(":",@skeys);
-  $self->{DATASETSTAT_MAP}->{$dataset->{name}}->{skey_to_filename}->{$skey}=$shortfile;
-  
-  # printf("%s check_filepath:       skey=%-25s file=%s\n",$self->{INSTNAME},$skey,$file);
+  my $skey = join(":", @skeys);
+  $self->{DATASETSTAT_MAP}->{$dataset->{name}}->{skey_to_filename}->{$skey} = $shortfile;
 }
 
 sub check_fileregister {

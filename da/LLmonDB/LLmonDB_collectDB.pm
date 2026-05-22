@@ -233,6 +233,14 @@ sub process_collectDB_update_from_other_DB {
     $DBqueries->{$dbspec}->{data}=$qdata;
     $DBqueries->{$dbspec}->{colmap}->{$ukey}=$ukey;
 
+    # If a ghost job is present in the query results, log a warning message to help identify the source of the ghost data. 
+    # This can assist in debugging and tracing the origin of the ghost job data in the database.
+    # A specific job ID is monitored, and any external tables providing new timestamps for it are logged to STDERR.
+    # my $ghost_job = "10868782"; # Example job ID to monitor for ghost data
+    # if (exists($qdata->{$ghost_job})) {
+    #   printf(STDERR "[DEBUG] GHOST JOB ORIGIN: Job %s received new data from %s/%s\n", $ghost_job, $qdb, $qtab);
+    # }
+
     foreach my $key (keys(%{$qdata})) {
       $newkeys->{$key}=1;
       if(exists($status_hash->{$dbspec})) {

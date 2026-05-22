@@ -136,7 +136,7 @@ def is_file_being_written(filepath):
       continue
   return False
 
-def wait_for_file(filepath, log, max_attempts=3, wait=1):
+def wait_for_file(filepath, log, max_attempts=5, wait=2):
   """
   Wait until a file is no longer being written to by any process.
 

@@ -64,7 +64,7 @@ sub read_CSV {
     $firstline=<CSV>; # COUNT:
     $firstline=<CSV>; # COLUMNS:
     if($firstline!~/^\#COLUMNS:/) {
-      printf(STDERR "[LL_file_csv] ERROR no COLUMNS entry found in archDB CVS file $filename, leaving ...\n\n");
+      printf(STDERR "[LL_file_csv] ERROR no COLUMNS entry found in archDB CSV file $filename, leaving ...\n\n");
       return();
     }
     $firstline=~s/^\s*\#COLUMNS\: //s;$firstline=~s/\n//gs;

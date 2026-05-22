@@ -71,71 +71,120 @@ sub execute {
 }
 
 
+# Sequential commands are executed with their output delayed and captured into temporary log files.
+# To prevent disk space exhaustion from detached background processes holding zombie file descriptors,
+# target files are explicitly truncated and closed prior to deletion.
+#
+# Arguments:
+#   $self    - (Object) The LML_da_step_execute instance
+#   $file    - (String) Unused legacy parameter
+#   $newfile - (String) Unused legacy parameter
+#
+# Returns:
+#   (Integer) The exit code of the executed commands (0 for success)
 sub execute_delay_output {
-  my($self) = shift;
-  my($file,$newfile)=@_;
-  my($cmd,$cmdref);
-  my($tstart,$tdiff);
-  my $rc=0;
-  my $step=$self->{STEPDEF}->{id};
-  my $stepref=$self->{STEPDEF};
-  my $steplogdir=sprintf("%s/steps/",$self->{LOGDIR});
+  my ($self, $file, $newfile) = @_;
+  my ($cmd, $cmdref);
+  my ($tstart, $tdiff);
+  my $rc = 0;
+  my $step = $self->{STEPDEF}->{id};
+  my $stepref = $self->{STEPDEF};
+  my $steplogdir = sprintf("%s/steps/", $self->{LOGDIR});
   &check_folder($steplogdir);
 
-  my $fn_log_out=sprintf("%s/%s.log",$steplogdir,$step);
-  my $fn_log_out_last=sprintf("%s/%s_last.log",$steplogdir,$step);
-  unlink($fn_log_out) if(-f $fn_log_out);
-  my $fn_log_err=sprintf("%s/%s.errlog",$steplogdir,$step);
-  my $fn_log_err_last=sprintf("%s/%s_last.errlog",$steplogdir,$step);
-  unlink($fn_log_err) if(-f $fn_log_err);
+  my $fn_log_out = sprintf("%s/%s.log", $steplogdir, $step);
+  my $fn_log_out_last = sprintf("%s/%s_last.log", $steplogdir, $step);
+  # Existing output logs are explicitly truncated and closed before deletion.
+  # This forces the operating system to release disk blocks even if a detached process is holding the file handle.
+  if (-f $fn_log_out) {
+    open(my $clear_fh, '>', $fn_log_out);
+    close($clear_fh);
+    unlink($fn_log_out);
+  }
+  
+  my $fn_log_err = sprintf("%s/%s.errlog", $steplogdir, $step);
+  my $fn_log_err_last = sprintf("%s/%s_last.errlog", $steplogdir, $step);
+  # Existing error logs are explicitly truncated and closed before deletion.
+  if (-f $fn_log_err) {
+    open(my $clear_fh, '>', $fn_log_err);
+    close($clear_fh);
+    unlink($fn_log_err);
+  }
   
   foreach $cmdref (@{$self->{STEPDEF}->{cmd}}) {
-    $cmd=$cmdref->{exec};
-    # some substitutes
-    $cmd=~s/\&gt;/>/gs;
-    $msg=$self->{VERBOSE} ? sprintf("$PRIMARKER Step '%s', executing %s\n",$step,$cmd) : ""; logmsg($msg);
-    $tstart=time;
-    system("($cmd) >> $fn_log_out 2>> $fn_log_err "); $rc=$? >> 8?$? >> 8:0;
-    $tdiff=time-$tstart;
-    $msg=$self->{VERBOSE} ? sprintf("$PRIMARKER %30s -> Step '%s' ready, time used %10.4ss\n","",$step,$tdiff) : ""; logmsg($msg);
-    if($rc) {
-      $msg=sprintf("$PRIMARKER Step '%s' rc=%d: Failed executing command: %s \n",$step,$rc,$cmd); logmsg($msg,\*STDERR);
+    $cmd = $cmdref->{exec};
+    $cmd =~ s/\&gt;/>/gs;
+    $msg = $self->{VERBOSE} ? sprintf("$PRIMARKER Step '%s', executing %s\n", $step, $cmd) : ""; 
+    logmsg($msg);
+    
+    $tstart = time;
+    system("($cmd) >> $fn_log_out 2>> $fn_log_err "); 
+    $rc = $? >> 8 ? $? >> 8 : 0;
+    $tdiff = time - $tstart;
+    
+    $msg = $self->{VERBOSE} ? sprintf("$PRIMARKER %30s -> Step '%s' ready, time used %10.4ss\n", "", $step, $tdiff) : ""; 
+    logmsg($msg);
+    
+    if ($rc) {
+      $msg = sprintf("$PRIMARKER Step '%s' rc=%d: Failed executing command: %s \n", $step, $rc, $cmd); 
+      logmsg($msg, \*STDERR);
       last;
     }
   }
 
-  my $lines = $self->cat_to_stderrout($fn_log_err,$step,0);
-  $self->cat_to_stderrout($fn_log_out,$step,1);
-  # save last full step log
+  my $lines = $self->cat_to_stderrout($fn_log_err, $step, 0);
+  $self->cat_to_stderrout($fn_log_out, $step, 1);
+  
   if ($lines) {
     rename($fn_log_out, $fn_log_out_last) if (-f $fn_log_out);
     rename($fn_log_err, $fn_log_err_last) if (-f $fn_log_err);
   } else {
     rename($fn_log_out, $fn_log_out_last) if (-f $fn_log_out);
-    unlink($fn_log_err) if (-f $fn_log_err);
-  }
-
-  return($rc);
-}
-
-sub cat_to_stderrout {
-  my($self) = shift;
-  my($fn,$tag,$type) = @_;
-
-  return if(! -f $fn);
-  my $count = 0;
-  open(IN,$fn);
-  while(my $line=<IN>) {
-    $count++;
-    if($type==0) {
-      print STDERR "$line";
-      # $msg=sprintf("$PRIMARKER [$tag/ERR] $line"); logmsg($msg,\*STDERR);
-    } else {
-      print "$line";
-      # $msg=sprintf("$PRIMARKER [$tag/OUT] $line"); logmsg($msg);
+    if (-f $fn_log_err) {
+      # The error log is safely truncated and closed before unlinking to reclaim disk space instantly.
+      open(my $clear_fh, '>', $fn_log_err);
+      close($clear_fh);
+      unlink($fn_log_err);
     }
   }
-  close(IN);
+
+  return $rc;
+}
+
+
+# The contents of a specified file are read and forwarded to either standard output or standard error.
+#
+# Arguments:
+#   $self - (Object) The LML_da_step_execute instance
+#   $fn   - (String) The file path to be read
+#   $tag  - (String) An identifier tag for logging purposes
+#   $type - (Integer) Determines output destination (0 for STDERR, 1 for STDOUT)
+#
+# Returns:
+#   (Integer) The number of lines read and printed
+sub cat_to_stderrout {
+  my ($self, $fn, $tag, $type) = @_;
+
+  return 0 if (! -f $fn);
+  my $count = 0;
+  
+  # A lexical filehandle is utilized to prevent global namespace collisions during concurrent operations.
+  # The file opening is explicitly verified to prevent readline errors on locked or inaccessible files.
+  my $fh;
+  if (open($fh, '<', $fn)) {
+    while (my $line = <$fh>) {
+      $count++;
+      if ($type == 0) {
+        print STDERR "$line";
+      } else {
+        print "$line";
+      }
+    }
+    close($fh);
+  } else {
+    printf(STDERR "%s WARNING: Cannot open file %s for reading.\n", $PRIMARKER, $fn);
+  }
+  
   return $count;
 }
 

@@ -584,7 +584,12 @@ jobreport:
                            (numnodes*ld_ndps)+(gpu_numgpus*gpu_ndps),
                            "projects/"||account||"/"||owner||"/jobreport_"||account||"_"||owner||"_"||jobid||".json"
                     FROM joblist
-                    WHERE jobid IN (SELECT jobid FROM updatedjobs) AND (ts>0) AND (owner!="unknown") AND (owner!='root') AND (owner!='deepest-admin')
+                    WHERE jobid IN (SELECT jobid FROM updatedjobs) 
+                      AND (ts>0) 
+                      AND (owner!="unknown") 
+                      AND (owner!='root') 
+                      AND (owner!='deepest-admin')
+                      AND (ts > TS_NOW - 15*60)
       columns: 
           - { name: ts,             type: ts_t }
           - { name: jobid,          type: jobid_t }

@@ -131,11 +131,11 @@ $endtime=time();
 $msg=sprintf("%s getdata                                         in %7.4fs (ts=%.5f,%.5f,l=0,nr=2)\n",$instname,$endtime-$starttime,$starttime,$endtime); logmsg($msg);
 
 if($opt_dump) {
-    $starttime=time();
-    &check_folder("./dump/");
-    $fileobj->dump_entries_by_cap("./dump/");
-    $endtime=time();
-    $msg=sprintf("%s dumpdata                                        in %7.4fs (ts=%.5f,%.5f,l=0,nr=2)\n",$instname,$endtime-$starttime,$starttime,$endtime); logmsg($msg);
+  $starttime=time();
+  &check_folder("./dump/");
+  $fileobj->dump_entries_by_cap("./dump/");
+  $endtime=time();
+  $msg=sprintf("%s dumpdata                                        in %7.4fs (ts=%.5f,%.5f,l=0,nr=2)\n",$instname,$endtime-$starttime,$starttime,$endtime); logmsg($msg);
 }
 
 $starttime=time();

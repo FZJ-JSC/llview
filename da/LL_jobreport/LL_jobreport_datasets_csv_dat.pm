@@ -529,4 +529,506 @@ sub process_data_query_time_aggr_get_where {
   return($where);
 }
 
+# Pre-fetches database rows into memory to avoid redundant SQL queries
+sub process_data_query_cache_table_csv_dat {
+  my $self = shift;
+  my ($table_cache, $dataset, $varsetref) = @_;
+
+  my $where = "";
+  if (exists($dataset->{sql_where})) {
+    $where = $self->{DB}->replace_tsvars($dataset->{sql_where}, $self->{CURRENTTS});
+    while ( my ($key, $value) = each(%{$varsetref}) ) {
+      $where =~ s/\$\{$key\}/$value/gs;
+      $where =~ s/\$$key/$value/gs;
+    }
+  }
+
+  my $from;
+  my $joincol     = "";
+  my $joincol_sql = "";
+  my @datatables  = split(/\s*,\s*/, $dataset->{data_table});
+
+  if ($#datatables > 0) {
+    my @fromlist;
+    my $c = 0;
+    if (!exists($dataset->{data_table_join_col})) {
+      print STDERR "LLmonDB:    ERROR, attribute data_table_join_col missing for dataset $dataset->{name}\n";
+      return();
+    } else {
+      $joincol     = $dataset->{data_table_join_col};
+      $joincol_sql = $joincol;
+      $joincol_sql =~ s/^"|"$//g;
+      $joincol_sql = qq("$joincol_sql");
+    }
+    foreach my $d (@datatables) {
+      $c++;
+      my $d_sql = $d;
+      $d_sql =~ s/^"|"$//g;
+      $d_sql = qq("$d_sql");
+      push(@fromlist, sprintf("%s D%d", $d_sql, $c));
+      if ($c > 1) {
+        $where .= " AND " if ($where);
+        $where .= sprintf("D1.%s=D%d.%s", $joincol_sql, $c, $joincol_sql);
+      }
+    }
+    $from = join(",", @fromlist);
+  } else {
+    my $d_sql = $dataset->{data_table};
+    $d_sql =~ s/^"|"$//g;
+    $d_sql = qq("$d_sql");
+    $from = sprintf("%s D%d", $d_sql, 1);
+  }
+
+  my @cols;
+  foreach my $col (split(/\s*,\s*/, $dataset->{columns})) {
+    my ($c, $as);
+    if ($col =~ /^(.*)->(.*)$/) {
+      $c  = $1;
+      $as = $2;
+      $as =~ s/^"|"$//g;
+      $as = qq( AS "$as");
+    } else {
+      $c  = $col;
+      $as = "";
+    }
+    my $c_sql = $c;
+    $c_sql =~ s/^"|"$//g;
+    $c_sql = qq("$c_sql");
+    push(@cols, ($c eq $joincol) ? "D1.$c_sql$as" : "$c_sql$as");
+  }
+
+  my @order_cols;
+  if (exists($dataset->{column_filemap})) {
+    foreach my $c (@{$self->{DATASETSTAT_MAP}->{$dataset->{name}}->{col_list}}) {
+      push(@order_cols, ($c eq $joincol) ? "D1.$c" : "$c");
+    }
+  }
+
+  if (exists($dataset->{order})) {
+    foreach my $c (split(/\s*,\s*/, $dataset->{order})) {
+      $c =~ s/^\s+|\s+$//g;
+      my ($orderby, $ordertype) = split(' ', $c);
+      $ordertype = $ordertype ? $ordertype : "";
+
+      $orderby =~ s/^"|"$//g;
+      $orderby = qq("$orderby");
+
+      push(@order_cols, ($orderby eq $joincol_sql) ? "D1.$orderby $ordertype" : "$orderby $ordertype");
+    }
+  }
+
+  my $order = "";
+  if (@order_cols) {
+    $order = sprintf("ORDER BY %s", join(",", @order_cols));
+  }
+
+  my $sql = sprintf("SELECT %s FROM %s %s %s;",
+                    join(",", @cols),
+                    $from,
+                    ($where) ? "WHERE $where" : "",
+                    $order
+                  );
+
+  if (exists($self->{TABLECACHE}->{$table_cache}->{sql_signature})) {
+    if ($self->{TABLECACHE}->{$table_cache}->{sql_signature} ne $sql) {
+      printf(STDERR "LLmonDB ERROR: Cache Collision Detected! Dataset '%s' is attempting to use table_cache '%s', but its underlying SQL differs from the dataset that originally built the cache. Please assign a unique table_cache name to this dataset.\n",
+              $dataset->{name}, $table_cache);
+      printf(STDERR "  Original SQL: %s\n  New SQL:      %s\n",
+              $self->{TABLECACHE}->{$table_cache}->{sql_signature}, $sql);
+    }
+    return;
+  }
+
+  $self->{TABLECACHE}->{$table_cache}->{sql_signature} = $sql;
+  $self->{TABLECACHE}->{$table_cache}->{dataset}       = $dataset;
+
+  my $tc        = $self->{TABLECACHE}->{$table_cache};
+  my $starttime = time();
+
+  $tc->{dataset} = $self->{DB}->query($dataset->{data_database}, $dataset->{data_table},
+                                      {
+                                        type => "get_arrayref_of_hashref",
+                                        sql  => $sql
+                                      });
+
+  printf("%s process_data_query_cache_table_csv_dat: pre-cache table in %7.4fs (%d entries)\n",
+          $self->{INSTNAME}, time()-$starttime, scalar @{$tc->{dataset}}
+        );
+}
+
+# Cached memory rows are distributed into specific file structures based on configurations.
+# Both multi-file datasets and single-file datasets are fully supported, alongside dynamic time-range filtering.
+#
+# Arguments:
+#   $self      - (Object) The LML_jobreport instance
+#   $dataset   - (HashRef) The configuration definitions for the dataset
+#   $varsetref - (HashRef) Variable substitutions available
+#
+# Returns:
+#   (Void)
+sub process_data_query_and_save_csv_dat_cache {
+  my $self = shift;
+  my ($dataset, $varsetref) = @_;
+
+  my $table_cache = $dataset->{table_cache};
+  if (!defined($table_cache)) {
+    print STDERR "LLmonDB:    ERROR, table_cache not specified\n";
+    return();
+  }
+
+  if (!exists($self->{TABLECACHE}->{$table_cache})) {
+    $self->process_data_query_cache_table_csv_dat($table_cache, $dataset, $varsetref);
+  }
+
+  my $col_convert_by_col = {};
+  if (exists($dataset->{column_convert})) {
+    $col_convert_by_col = $self->{LL_CONVERT}->init_column_convert_mapping($dataset->{column_convert});
+  }
+
+  my $delimiter = $dataset->{format} eq "csv" ? ',' : '';
+  $delimiter = $dataset->{csv_delimiter} if (exists($dataset->{csv_delimiter}));
+  my $max_entries = exists($dataset->{max_entries}) ? $dataset->{max_entries} : 500000;
+
+  my $checksumvar = exists($dataset->{checksumvar}) ? $dataset->{checksumvar} : undef;
+
+  # Expressions for time range filtering are evaluated dynamically to match JSON behavior.
+  my $file = $dataset->{filepath};
+  my $selecttimevar = exists($dataset->{selecttimevar}) ? $dataset->{selecttimevar} : undef;
+  my $selecttimerange = "";
+  if (exists($dataset->{selecttimerange})) {
+    $selecttimerange = $self->{DB}->replace_tsvars($dataset->{selecttimerange}, $self->{CURRENTTS});
+  }
+
+  while ( my ($key, $value) = each(%{$varsetref}) ) {
+    $file =~ s/\$\{$key\}/$value/gs;
+    $file =~ s/\$$key/$value/gs;
+    $value =~ s/^0+//gs; 
+    $selecttimerange =~ s/\$\{$key\}/$value/gs;
+    $selecttimerange =~ s/\$$key/$value/gs;
+  }
+
+  my($selecttimerange_begin, $selecttimerange_end) = (undef, undef);
+  if ($selecttimerange) {
+    ($selecttimerange_begin, $selecttimerange_end) = split(/\s*,\s*/, $selecttimerange);
+    $selecttimerange_begin = eval($selecttimerange_begin);
+    $selecttimerange_end = eval($selecttimerange_end);
+  }
+
+  my @cols_fmt;
+  my $tscol = -1;
+  my $cnt = 0;
+  my $col_convert_by_colnum;
+  my @raw_cols;
+
+  foreach my $col (split(/\s*,\s*/, $dataset->{columns})) {
+    my $c = ($col =~ /^(.*)->(.*)$/) ? $2 : $col;
+    push(@raw_cols, $c);
+    $tscol = $cnt if (exists($dataset->{column_ts}) && $c eq $dataset->{column_ts});
+    $col_convert_by_colnum->{$cnt} = $col_convert_by_col->{$c} if (exists($col_convert_by_col->{$c}));
+    push(@cols_fmt, "%s");
+    $cnt++;
+  }
+
+  my $format = exists($dataset->{format_str}) ? $dataset->{format_str} : join($delimiter, @cols_fmt);
+  my $header = exists($dataset->{header}) ? $dataset->{header} : sprintf($format, split(/\s*,\s*/, $dataset->{columns}));
+  $format .= "\n"; 
+  $header .= "\n";
+
+  my $ds = $self->{DATASETSTAT}->{$dataset->{stat_database}}->{$dataset->{stat_table}};
+
+  # Multi-file processing is executed when a file mapping is defined.
+  if (exists($dataset->{column_filemap})) {
+    my $skeylistref = $self->{DATASETSTAT_MAP}->{$dataset->{name}}->{col_list};
+    my $skey_to_filenameref = $self->{DATASETSTAT_MAP}->{$dataset->{name}}->{skey_to_filename};
+    my $dataref;
+    my $checksumref;
+
+    if (exists($dataset->{create_empty_files}) && ($dataset->{create_empty_files} eq "yes")) {
+      foreach my $k (keys(%{$skey_to_filenameref})) {
+        my $f = $skey_to_filenameref->{$k};
+        $dataref->{$f} = [];
+        $checksumref->{$f} = 0;
+      }
+    }
+
+    foreach my $ref (@{$self->{TABLECACHE}->{$table_cache}->{dataset}}) {
+      if (defined($selecttimevar)) {
+        next if($ref->{$selecttimevar} < $selecttimerange_begin);
+        next if($ref->{$selecttimevar} >= $selecttimerange_end);
+      }
+
+      my @skeys;
+      foreach my $v (@{$skeylistref}) {
+        push(@skeys, $ref->{$v});
+      }
+      my $skey = join(":", @skeys);
+      
+      if (exists($skey_to_filenameref->{$skey})) {
+        my $f = $skey_to_filenameref->{$skey};
+        push(@{$dataref->{$f}}, $ref);
+        
+        $checksumref->{$f} = 0 if (!exists($checksumref->{$f}));
+        $checksumref->{$f} += $ref->{$checksumvar} if (defined($checksumvar));
+        $self->{COUNT_OP_WRITE_LINE}++;
+      }
+    }
+
+    while ( my ($f, $dataref_per_file) = each(%{$dataref}) ) {
+      $self->register_data_for_file_csv_dat_cache($table_cache, "$self->{OUTDIR}/$f", $ds, $dataref_per_file, $format, $header, $tscol, $col_convert_by_colnum, $delimiter, $max_entries, $dataset, \@raw_cols, $checksumvar, $checksumref->{$f});
+    }
+    
+  # Single-file processing is executed when no dynamic mapping is required.
+  } else {
+    my $dataref;
+    my $checksum = 0;
+
+    foreach my $ref (@{$self->{TABLECACHE}->{$table_cache}->{dataset}}) {
+      if (defined($selecttimevar)) {
+        next if($ref->{$selecttimevar} < $selecttimerange_begin);
+        next if($ref->{$selecttimevar} >= $selecttimerange_end);
+      }
+      
+      push(@{$dataref}, $ref);
+      $checksum += $ref->{$checksumvar} if (defined($checksumvar));
+      $self->{COUNT_OP_WRITE_LINE}++;
+    }
+
+    my $shortfile = $file;
+    $shortfile =~ s/$self->{OUTDIR}\///s;
+
+    $self->register_data_for_file_csv_dat_cache($table_cache, "$self->{OUTDIR}/$shortfile", $ds, $dataref, $format, $header, $tscol, $col_convert_by_colnum, $delimiter, $max_entries, $dataset, \@raw_cols, $checksumvar, $checksum);
+  }
+}
+
+# Queues the file operation into the caching engine for parallel execution
+#
+# Arguments:
+#   $self         - (Object) The LML_jobreport instance
+#   $table_cache  - (String) Name of the memory cache pool
+#   $file         - (String) Target output file path
+#   $ds           - (HashRef) Database status reference
+#   $dataref      - (ArrayRef) Rows assigned to this file
+#   $format       - (String) Explicit formatting string (if provided)
+#   $header       - (String) Header line
+#   $tscol        - (Integer) Index of the timestamp column
+#   $col_convert  - (HashRef) Conversion functions to apply to columns
+#   $delimiter    - (String) Character used to delimit values
+#   $max_entries  - (Integer) Maximum number of rows allowed per file
+#   $dataset      - (HashRef) Original dataset configuration definitions
+#   $raw_cols     - (ArrayRef) The mapped column structure to extract
+#
+# Returns:
+#   (Void)
+sub register_data_for_file_csv_dat_cache {
+  my $self = shift;
+  my ($table_cache, $file, $ds, $dataref, $format, $header, $tscol, $col_convert, $delimiter, $max_entries, $dataset, $raw_cols, $checksumvar, $checksum) = @_;
+
+  my $shortfile = $file;
+  $shortfile =~ s/$self->{OUTDIR}\///s;
+
+  # Checksum bypass logic. Skips writing entirely if data is unchanged
+  my $process_file = 1;
+  if (defined($checksumvar)) {
+    $ds->{$shortfile}->{checksum} = 0 if (!exists($ds->{$shortfile}->{checksum}));
+    if ($checksum != $ds->{$shortfile}->{checksum}) {
+      $ds->{$shortfile}->{checksum} = $checksum;
+    } else {
+      $process_file = 0;	    
+    }
+  } else {
+    $ds->{$shortfile}->{checksum} = 0;
+  }
+
+  if ($process_file) {
+    # Cached complete datasets must always overwrite the old file, breaking the infinite append loop
+    $self->{TABLECACHE}->{$table_cache}->{csv_openop}->{$file} = ">";
+    $self->{TABLECACHE}->{$table_cache}->{csv_use_printf}->{$file} = exists($dataset->{format_str}) ? 1 : 0;
+
+    if ($shortfile =~ /\.(gz|xz)$/) {
+      $ds->{$shortfile}->{status} = FSTATUS_COMPRESSED;
+    } else {
+      $ds->{$shortfile}->{status} = FSTATUS_EXISTS;
+    }
+
+    $ds->{$shortfile}->{dataset} = $shortfile;
+    $ds->{$shortfile}->{name} = $dataset->{name} if (!exists($ds->{$shortfile}->{name}));
+    $ds->{$shortfile}->{lastts_saved} = $self->{CURRENTTS}; 
+    $ds->{$shortfile}->{mts} = $self->{CURRENTTS}; 
+    $self->{COUNT_OP_NEW_FILE}++;
+
+    $self->{TABLECACHE}->{$table_cache}->{csv_format}->{$file} = $format;
+    $self->{TABLECACHE}->{$table_cache}->{csv_header}->{$file} = $header;
+    $self->{TABLECACHE}->{$table_cache}->{csv_tscol}->{$file} = $tscol;
+    $self->{TABLECACHE}->{$table_cache}->{csv_delimiter}->{$file} = $delimiter;
+    $self->{TABLECACHE}->{$table_cache}->{csv_max_entries}->{$file} = $max_entries;
+    $self->{TABLECACHE}->{$table_cache}->{csv_con_convert}->{$file} = $col_convert;
+    $self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$file} = $dataref;
+    $self->{TABLECACHE}->{$table_cache}->{csv_raw_cols}->{$file} = $raw_cols;
+  }
+}
+
+
+# The queued data chunks are processed in parallel and written to disk.
+# A compiled C library (Text::CSV_XS) is dynamically utilized for maximum performance if available.
+# A micro-profiling mechanism is embedded to measure the exact CPU time consumed by data extraction, 
+# conversion, formatting, and disk I/O.
+#
+# Arguments:
+#   $self        - (Object) The LML_jobreport instance
+#   $table_cache - (String) Name of the memory cache pool
+#   $part        - (Integer) The worker ID for this parallel chunk
+#   $parlevel    - (Integer) Total number of parallel workers
+#
+# Returns:
+#   (Void)
+sub write_data_to_file_csv_dat_cache {
+  my $self = shift;
+  my ($table_cache, $part, $parlevel) = @_;
+
+  return if !exists($self->{TABLECACHE}->{$table_cache}->{csv_fileop});
+
+  my $starttime = time();
+  
+  # Files are sorted by the number of rows they contain (descending) to implement 
+  # Longest Processing Time (LPT) scheduling.
+  my @filelist = sort { 
+    scalar(@{$self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$b}}) 
+    <=> 
+    scalar(@{$self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$a}}) 
+  } keys(%{$self->{TABLECACHE}->{$table_cache}->{csv_fileop}});
+  
+  my $numfiles  = scalar @filelist;
+  my $fcount    = 0;
+  my $lcount    = 0;
+
+  # The availability of the compiled C library is verified.
+  my $has_csv_xs = 0;
+  eval {
+    require Text::CSV_XS;
+    $has_csv_xs = 1;
+  };
+  
+  if (!$has_csv_xs && $part == 0) {
+    printf(STDERR "%s WARNING: Text::CSV_XS module is missing. CSV generation is falling back to native Perl.\n", $self->{INSTNAME});
+  }
+
+  for (my $fnum = 0; $fnum < $numfiles; $fnum++) {
+    next if (($fnum % $parlevel) != $part);
+    $fcount++;
+
+    my $file         = $filelist[$fnum];
+    my $dataset_rows = $self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$file};
+    my $raw_cols     = $self->{TABLECACHE}->{$table_cache}->{csv_raw_cols}->{$file};
+    my $format       = $self->{TABLECACHE}->{$table_cache}->{csv_format}->{$file};
+    my $header       = $self->{TABLECACHE}->{$table_cache}->{csv_header}->{$file};
+    my $delimiter    = $self->{TABLECACHE}->{$table_cache}->{csv_delimiter}->{$file};
+    my $col_convert  = $self->{TABLECACHE}->{$table_cache}->{csv_con_convert}->{$file};
+    my $use_printf   = $self->{TABLECACHE}->{$table_cache}->{csv_use_printf}->{$file}  || 0;
+    my $max_entries  = $self->{TABLECACHE}->{$table_cache}->{csv_max_entries}->{$file} || 500000;
+    my $openop       = $self->{TABLECACHE}->{$table_cache}->{csv_openop}->{$file}      || ">";
+
+    my @conversions;
+    if (defined($col_convert)) {
+      while (my ($colnum, $func) = each(%{$col_convert})) {
+        push(@conversions, [$colnum, $func]);
+      }
+    }
+
+    my $csv_engine;
+    if ($has_csv_xs && !$use_printf && $delimiter) {
+      $csv_engine = Text::CSV_XS->new({
+        sep_char    => $delimiter,
+        quote_char  => undef,
+        escape_char => "\\",
+        binary      => 1
+      });
+    }
+
+    my @file_lines;
+    my $numentries = 0;
+    
+    # Execution timers are initialized for profiling analysis.
+    my $t_extract = 0.0;
+    my $t_convert = 0.0;
+    my $t_format  = 0.0;
+    my $t_io      = 0.0;
+
+    foreach my $row_ref (@{$dataset_rows}) {
+      last if ($numentries >= $max_entries);
+      $numentries++;
+
+      # Extraction phase is timed.
+      my $t0 = time();
+      my @row = map { defined($_) ? $_ : "" } @{$row_ref}{@{$raw_cols}};
+      my $t1 = time();
+      $t_extract += ($t1 - $t0);
+
+      # Conversion phase is timed.
+      foreach my $conv (@conversions) {
+        $row[$conv->[0]] = &{$conv->[1]}($row[$conv->[0]], $self);
+      }
+      my $t2 = time();
+      $t_convert += ($t2 - $t1);
+
+      # Formatting phase is timed.
+      if ($use_printf) {
+        my $line = sprintf($format, @row);
+        chomp($line);
+        push(@file_lines, $line);
+      } elsif ($csv_engine) {
+        $csv_engine->combine(@row);
+        push(@file_lines, $csv_engine->string());
+      } else {
+        if ($delimiter) {
+          for my $i (0 .. $#row) {
+            if (defined($row[$i]) && index($row[$i], $delimiter) != -1) {
+              $row[$i] =~ s/\Q$delimiter\E/\\$delimiter/g;
+            }
+          }
+        }
+        push(@file_lines, join($delimiter, @row));
+      }
+      my $t3 = time();
+      $t_format += ($t3 - $t2);
+    }
+    
+    $lcount += $numentries;
+
+    my $csv_data = ($openop eq ">") ? $header : "";
+    $csv_data .= join("\n", @file_lines) . "\n" if (@file_lines);
+
+    my $fh = IO::File->new();
+    my $openparm;
+
+    if ($file =~ /\.gz$/) {
+      $openparm = "| gzip -c > $file";
+    } else {
+      $openparm = "$openop $file";
+    }
+
+    &check_folder($file);
+    if (!($fh->open($openparm))) {
+      printf(STDERR "%s write_data_to_file_csv_dat_cache: WARNING: cannot open %s, skipping...\n",
+              $self->{INSTNAME}, $file);
+      next;
+    }
+
+    # I/O phase is timed.
+    my $t_io_start = time();
+    $fh->print($csv_data);
+    $fh->close();
+    $t_io = time() - $t_io_start;
+    
+    # A diagnostic profile is printed for files requiring significant processing time.
+    # if ($numentries > 5000) {
+    #   printf(STDERR "%s [DEBUG] %s (%d rows) -> Extract: %.3fs, Convert: %.3fs, Format: %.3fs, I/O: %.3fs\n",
+    #          $self->{INSTNAME}, $file, $numentries, $t_extract, $t_convert, $t_format, $t_io);
+    # }
+  }
+
+  printf("%s write_data_to_file_csv_dat_cache: %10s  write files %3d of %4d in %7.4fs (%5d lines)\n",
+          $self->{INSTNAME}, $table_cache, $fcount, $numfiles, time()-$starttime, $lcount
+        );
+}
+
 1;

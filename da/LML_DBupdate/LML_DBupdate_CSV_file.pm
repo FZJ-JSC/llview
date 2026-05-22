@@ -29,7 +29,7 @@ sub read_CSV {
   my($filename)=@_;
   
   if(! -f $filename) {
-    printf(STDERR "\n[LML_DBupdate_CVS_file] ERROR: file $filename not found, leaving...\n\n");
+    printf(STDERR "\n[LML_DBupdate_CSV_file] ERROR: file $filename not found, leaving...\n\n");
     return();
   }
   my $tag;
