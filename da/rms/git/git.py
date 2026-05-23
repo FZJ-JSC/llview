@@ -2104,7 +2104,7 @@ class BenchRepo:
       columns_str = [f'"{key.replace(" ","_")}"' for key in columns]
       dataset = {'dataset': {
         'name':           f'cb_{combined_name}_csv',
-        'set':            f'cb_{combined_name}',
+        'set':            f'cb_csv',
         'FORALL':         f"A:VAR_cb_{combined_name}",
         'filepath':       f"$outputdir/cb/cb_{combined_name}_${{A}}.csv" ,
         'columns':        ','.join(columns_str),
