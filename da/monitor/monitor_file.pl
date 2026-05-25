@@ -412,20 +412,24 @@ sub shutdown_server {
 
 }
 
+# Active actions are evaluated by querying the operating system.
+# Signal 0 is utilized to verify process existence safely without interfering with 
+# the SIGCHLD reaping mechanism.
 sub running_actions {
   my @running_actions;
   my @running_pids;
   foreach $action (keys(%{$actions})) {
     if($actions->{$action}->{lastpid}>0) {
       # Confirming that PID exists to wait for it
-      if (waitpid($actions->{$action}->{lastpid}, WNOHANG) > 0) {
+      # The OS is queried to confirm the PID is still actively running.
+      if (kill(0, $actions->{$action}->{lastpid})) {
         # PID exists, add to list
         push(@running_actions, "$action [PID:$actions->{$action}->{lastpid}]") ;
         push(@running_pids, $actions->{$action}->{lastpid}) ;
       } else {
-        # If it does not exist, doesn't count it and set lastpid to -1
+        # If it does not exist, don't count it and reset tracker (set lastpid to -1)
         $msg=sprintf("Action $action process [PID:$actions->{$action}->{lastpid}] does not exist! (missed SIGCHLD?) Removing...\n"); &logmsg($msg,\*STDERR);
-        $actions->{$action}->{lastpid} = -1;        
+        $actions->{$action}->{lastpid} = -1;
       }
     }
   }
