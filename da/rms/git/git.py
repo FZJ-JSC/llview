@@ -26,6 +26,8 @@ from urllib.parse import quote, urlparse
 import yaml
 import json
 import ast
+import numpy as np
+import datetime
 from matplotlib import colormaps # type: ignore  # To loop over colors in footers
 from matplotlib.colors import to_hex # Convert RGB to HEX
 from itertools import count,cycle,product
@@ -39,13 +41,14 @@ try:
 except ImportError:
   keyring = None  # Set to None if not available
 
-def range_validator(values: List[Union[float, int, None]], params: Dict[str, Any]) -> Tuple[List[bool], Dict[str, Any]]:
+def range_validator(values: List[Union[float, int, None]], params: Dict[str, Any], x_values: List[Any] = None) -> Tuple[List[bool], Dict[str, Any]]:
   """
   Checks if values are within [min, max].
   
   Args:
     values: List of numeric values (or None) to check.
     params: Dictionary containing 'min' and/or 'max' thresholds.
+    x_values: Optional list of x-axis values (not utilized in this specific validator, but required by API).
     
   Returns:
     Tuple containing:
@@ -141,6 +144,289 @@ def range_validator(values: List[Union[float, int, None]], params: Dict[str, Any
       })
       layout_additions['annotations'].append(ann_min)
 
+  return results, layout_additions
+
+def outlier_detector(values: List[Union[float, int, None]], params: Dict[str, Any], x_values: List[Any] = None) -> Tuple[List[bool], Dict[str, Any]]:
+  """
+  Transient spikes are detected using Median Absolute Deviation (MAD) over a rolling window.
+  A minimum variance floor is enforced to prevent over-sensitivity in highly stable data.
+  Visuals are represented by a red circle around the data point without an arrow.
+  
+  Args:
+    values: List of numeric values to check.
+    params: Dictionary containing 'window', 'threshold', 'noise_floor_pct', and 'is_ts' configurations.
+    x_values: Optional list of x-axis values used to place visual annotations.
+    
+  Returns:
+    Tuple containing:
+    - List[bool]: True if normal, False if an outlier is detected.
+    - Dict: Plotly layout additions (annotations highlighting the outlier).
+  """
+  results = []
+  layout_additions = {'shapes': [], 'annotations': []}
+  
+  window = params.get('window', 10)
+  threshold = params.get('threshold', 5.0)
+  noise_floor_pct = params.get('noise_floor_pct', 1.0) / 100.0
+  is_ts = params.get('is_ts', False)
+
+  # A local helper is defined to format floats into ISO dates for Plotly annotations if the axis represents time
+  def format_x(x: Any) -> Any:
+    if is_ts and isinstance(x, (float, int)):
+      return datetime.datetime.fromtimestamp(x).strftime('%Y-%m-%d %H:%M:%S')
+    return x
+
+  for i, val in enumerate(values):
+    # Missing data is treated as valid to avoid breaking the sequence
+    if val is None:
+      results.append(True)
+      continue
+      
+    # A local rolling window is extracted for the current point
+    start_idx = max(0, i - window)
+    window_vals = [v for v in values[start_idx:i] if v is not None]
+    
+    # Minimum points are required to establish a valid median
+    if len(window_vals) < 3:
+      results.append(True)
+      continue
+      
+    # Robust statistics (Median and MAD) are calculated to prevent previous outliers from skewing the threshold
+    med = float(np.median(window_vals))
+    raw_mad = float(np.median(np.abs(np.array(window_vals) - med)))
+    
+    # A variance floor is utilized to prevent infinite effect sizes on near-constant data sequences
+    effective_mad = max(raw_mad, float(np.std(window_vals)), noise_floor_pct * abs(med), 1e-6)
+        
+    z_score = abs(val - med) / effective_mad
+    
+    # Outliers are flagged if the deviation exceeds the strict Z-score threshold
+    if z_score > threshold:
+      results.append(False)
+      
+      # Visual elements are appended to circle the outlier and label it
+      if x_values and x_values[i] is not None:
+         x_formatted = format_x(x_values[i])
+         
+         # An unfilled circle is placed directly over the data point.
+         # An HTML entity is utilized instead of a raw Unicode character to prevent 
+         # 'Wide character in print' errors in downstream Perl processors.
+         layout_additions['annotations'].append({
+           'x': x_formatted,
+           'y': val,
+           'text': '&#9711;',
+           'showarrow': False,
+           'font': {'color': 'rgba(255, 0, 0, 0.7)', 'size': 20},
+           'xanchor': 'center',
+           'yanchor': 'middle'
+         })
+         
+         # The 'Outlier' text is floated above the circle using a y-shift
+         layout_additions['annotations'].append({
+           'x': x_formatted,
+           'y': val,
+           'text': 'Outlier',
+           'showarrow': False,
+           'yshift': 15,
+           'font': {'color': 'rgba(255, 0, 0, 0.9)', 'size': 15},
+           'xanchor': 'center',
+           'yanchor': 'bottom'
+         })
+    else:
+      results.append(True)
+      
+  return results, layout_additions
+
+
+def regression_detector(values: List[Union[float, int, None]], params: Dict[str, Any], x_values: List[Any] = None) -> Tuple[List[bool], Dict[str, Any]]:
+  """
+  Sustained shifts in performance are detected using a dual-baseline architecture:
+  - A 'Local' baseline resets on every confirmed shift to annotate step-downs and step-ups accurately.
+  - A 'Global' baseline locks the original healthy state during a regression, ensuring the Warning 
+    status persists until full recovery is achieved.
+  
+  Args:
+    values: List of numeric values to check.
+    params: Dictionary containing 'direction', 'min_change_pct', 'start_x', and 'is_ts'.
+    x_values: Optional list of x-axis values used to place visual annotations.
+  """
+  results = [True] * len(values)
+  layout_additions = {'shapes': [], 'annotations': []}
+  
+  if not x_values:
+    return results, layout_additions
+    
+  direction = params.get('direction', 'lower_is_better')
+  min_change_pct = params.get('min_change_pct', 5.0)
+  effect_size_threshold = params.get('effect_size_threshold', 1.5)
+  noise_floor_pct = params.get('noise_floor_pct', 1.0) / 100.0
+  eval_window = params.get('eval_window', 3)
+  start_x = params.get('start_x', params.get('start_ts'))
+  is_ts = params.get('is_ts', False)
+  
+  def format_x(x: Any) -> Any:
+    if is_ts and isinstance(x, (float, int)):
+      return datetime.datetime.fromtimestamp(x).strftime('%Y-%m-%d %H:%M:%S')
+    return x
+  
+  start_idx = 0
+  if start_x is not None:
+    for i, x in enumerate(x_values):
+      if x is not None and x >= start_x:
+        start_idx = i
+        break
+        
+  # Global baselines strictly track the 'W' status
+  global_base_med = None
+  global_base_mad = None
+  
+  for i in range(start_idx + eval_window, len(values)):
+    if values[i] is None:
+      # If we are globally degraded, missing points inherit the Warning status
+      if global_base_med is not None:
+         results[i] = False
+      continue
+      
+    current_valid_indices = [idx for idx in range(0, i + 1) if values[idx] is not None]
+    
+    # The local timeline is extracted based on the last regime reset (start_idx)
+    local_valid_indices = [idx for idx in current_valid_indices if idx >= start_idx]
+    
+    if len(local_valid_indices) < 3 + eval_window:
+      # While the local buffer fills after a shift, the global Warning status is maintained
+      if global_base_med is not None:
+         results[i] = False
+      continue
+      
+    # The Local baseline and evaluation window are partitioned
+    eval_indices = local_valid_indices[-eval_window:]
+    base_indices = local_valid_indices[:-eval_window]
+    
+    base_vals = [values[idx] for idx in base_indices]
+    base_med = float(np.median(base_vals))
+    raw_mad = float(np.median(np.abs(np.array(base_vals) - base_med)))
+    base_mad = max(raw_mad, float(np.std(base_vals)), noise_floor_pct * abs(base_med), 1e-6)
+      
+    eval_vals = [values[idx] for idx in eval_indices]
+    eval_med = float(np.median(eval_vals))
+    
+    pct_change = ((eval_med - base_med) / base_med) * 100
+    effect_size = (eval_med - base_med) / base_mad
+    
+    is_local_regression = False
+    is_local_improvement = False
+    
+    # Shifts are classified against the LOCAL baseline to draw annotations
+    if direction == 'lower_is_better':
+      if pct_change > min_change_pct and effect_size > effect_size_threshold:
+        is_local_regression = True
+      elif pct_change < -min_change_pct and effect_size < -effect_size_threshold:
+        is_local_improvement = True
+    else:
+      if pct_change < -min_change_pct and effect_size < -effect_size_threshold:
+        is_local_regression = True
+      elif pct_change > min_change_pct and effect_size > effect_size_threshold:
+        is_local_improvement = True
+        
+    if is_local_regression or is_local_improvement:
+      # If this is the FIRST regression, the healthy baseline is locked globally to track the Warning status
+      if is_local_regression and global_base_med is None:
+        global_base_med = base_med
+        global_base_mad = base_mad
+        
+      # The exact point of the shift is isolated for visual rendering
+      drop_start_idx = eval_indices[0]
+      tail_idx = base_indices[-1]
+      base_start_idx = base_indices[max(0, len(base_indices) - 5)]
+      eval_end_idx = eval_indices[-1]
+      
+      x_tail = format_x(x_values[tail_idx])
+      x_head = format_x(x_values[drop_start_idx])
+      x_base_start = format_x(x_values[base_start_idx])
+      x_eval_end = format_x(x_values[eval_end_idx])
+      
+      raw_x_head = x_values[drop_start_idx]
+      raw_x_tail = x_values[tail_idx]
+      
+      # The midpoint is calculated securely for standalone text positioning
+      if isinstance(raw_x_head, (int, float)) and isinstance(raw_x_tail, (int, float)):
+        x_mid = format_x(raw_x_tail + (raw_x_head - raw_x_tail) / 2.0)
+      else:
+        x_mid = x_tail
+        
+      y_mid = base_med + (eval_med - base_med) / 2.0
+      
+      color = 'rgba(255, 0, 0, 0.7)' if is_local_regression else 'rgba(0, 200, 0, 0.7)'
+      sign = "+" if pct_change > 0 else ""
+      text = f"{sign}{pct_change:.1f}%"
+      
+      # An oblique arrow connecting the old state to the new state is drawn
+      layout_additions['annotations'].append({
+        'x': x_head, 'y': eval_med,
+        'ax': x_tail, 'ay': base_med,
+        'xref': 'x', 'yref': 'y',
+        'axref': 'x', 'ayref': 'y',
+        'text': '',
+        'showarrow': True, 'arrowhead': 3, 'arrowsize': 1.5,
+        'arrowwidth': 2, 'arrowcolor': color
+      })
+      
+      # The percentage text is anchored to the right of the arrow midpoint
+      layout_additions['annotations'].append({
+        'x': x_mid, 'y': y_mid,
+        'xref': 'x', 'yref': 'y',
+        'text': text,
+        'showarrow': False,
+        'xanchor': 'left',
+        'yanchor': 'bottom',
+        'xshift': 8,
+        'font': {'color': color, 'size': 15}
+      })
+      
+      # Horizontal markers define the boundary of the regime change
+      layout_additions['shapes'].append({
+        'type': 'line',
+        'x0': x_base_start, 'x1': x_tail,
+        'y0': base_med, 'y1': base_med,
+        'xref': 'x', 'yref': 'y',
+        'line': {'color': color, 'width': 2, 'dash': 'dot'}
+      })
+      layout_additions['shapes'].append({
+        'type': 'line',
+        'x0': x_head, 'x1': x_eval_end,
+        'y0': eval_med, 'y1': eval_med,
+        'xref': 'x', 'yref': 'y',
+        'line': {'color': color, 'width': 2, 'dash': 'solid'}
+      })
+      
+      # The local regime is formally reset to track future shifts from this new baseline
+      start_idx = drop_start_idx
+      
+    # -----------------------------------------------------------------
+    # GLOBAL STATUS CHECK (Determines the Table 'W' Warning)
+    # -----------------------------------------------------------------
+    if global_base_med is not None:
+      global_pct_change = ((eval_med - global_base_med) / global_base_med) * 100
+      global_effect_size = (eval_med - global_base_med) / global_base_mad
+      
+      is_globally_degraded = False
+      if direction == 'lower_is_better':
+        if global_pct_change > min_change_pct and global_effect_size > effect_size_threshold:
+          is_globally_degraded = True
+      else:
+        if global_pct_change < -min_change_pct and global_effect_size < -effect_size_threshold:
+          is_globally_degraded = True
+          
+      if is_globally_degraded:
+        results[i] = False
+      else:
+        # Full recovery to the original baseline has been achieved
+        results[i] = True
+        global_base_med = None
+        global_base_mad = None
+    else:
+      results[i] = True
+      
   return results, layout_additions
 
 
@@ -1363,8 +1649,12 @@ class BenchRepo:
 
   def validate_metrics(self) -> bool:
     """
-    Runs configured validation logic on the collected raw data.
-    Returns: True if all validations ran (or were skipped safely), False on critical error.
+    Configured validation logic is executed on the collected raw data.
+    Validation is performed per-curve for each plot by partitioning data based on 
+    the table parameters and the specific plot's 'group_by' configuration.
+    
+    Returns: 
+      True if all validations ran (or were skipped safely), False on critical error.
     """
     benchmark_data = self._get_benchmark_data(self._name, self._tab)
     raw_data = benchmark_data['raw']
@@ -1374,15 +1664,28 @@ class BenchRepo:
     benchmark_data.setdefault('validation_layouts', {})
 
     if not raw_data:
-      return True # No data to validate is technically a success
+      return True
 
-    for metric_name, spec in metrics_section.items():
+    table_params = list(benchmark_data['parameters'].keys())
+
+    # We iterate over the plots, rather than just the metrics, so validation perfectly mirrors the curves drawn.
+    for tab_name, plot_config in self._iter_plots(benchmark_data['config']):
+      metric_name = plot_config.get('y')
+      if not metric_name or metric_name not in metrics_section:
+        continue
+        
+      spec = metrics_section[metric_name]
       if 'validate' not in spec:
         continue
-      
+        
+      plot_id = plot_config.get('_plot_id')
       validators = spec['validate']
       if not isinstance(validators, list):
         validators = [validators]
+
+      # Partition keys define the pure time-series curve for THIS specific plot
+      plot_group_by = plot_config.get('group_by', [])
+      partition_keys = table_params + plot_group_by
 
       for v_spec in validators:
         func_name = v_spec.get('name')
@@ -1397,60 +1700,72 @@ class BenchRepo:
             validator_func = getattr(mod, func_name)
           except (ImportError, AttributeError) as e:
             self.log.error(f"Validator '{func_name}' in module '{module_name}' could not be loaded: {e}\n")
-            return False # Critical config error
+            return False
         else:
           # Look in global scope (globals()) for the function
           if func_name in globals():
             validator_func = globals()[func_name]
           else:
             self.log.error(f"Validator function '{func_name}' not found.\n")
-            return False # Critical config error
+            return False
 
-        # Preparing data for validation (Extract only the values for this metric)
-        # We pass a copy of values to be safe.
-        # We also need to map the results back to the rows, so order matters.
-        values_to_check = [row.get(metric_name) for row in raw_data]
+        x_col = v_spec.get('x_col', 'ts')
+        v_spec['is_ts'] = (x_col == 'ts' or x_col == 'date')
 
-        # Calling validator function
-        try:
-          # API: func(values_list, params_dict) -> list of booleans
-          validation_results, layout_additions = validator_func(values_to_check, v_spec)
-        except Exception as e:
-          # Catch errors raised by the validator (like the TypeError/ValueError we added)
-          self.log.error(f"Validation failed for metric '{metric_name}' using '{func_name}': {e}\n")
-          return False # Stop processing if validation crashes
-
-        # Processing results
-        if len(validation_results) != len(raw_data):
-          self.log.error(f"Validator '{func_name}' returned {len(validation_results)} results, expected {len(raw_data)}.\n")
-          return False
-
-        # Store the layout additions for this metric
-        if layout_additions:
-          # Using setdefault and list extensions in case multiple validators 
-          # (e.g. range AND outlier) add shapes to the same metric.
-          metric_layouts = benchmark_data['validation_layouts'].setdefault(metric_name, {})
+        # Data is partitioned into isolated curves matching the plot's traces
+        grouped_data = {}
+        for row in raw_data:
+          key_tuple = tuple(row.get(k, '') for k in partition_keys)
+          grouped_data.setdefault(key_tuple, []).append(row)
           
-          if 'shapes' in layout_additions:
-            metric_layouts.setdefault('shapes', []).extend(layout_additions['shapes'])
-          if 'annotations' in layout_additions:
-            metric_layouts.setdefault('annotations', []).extend(layout_additions['annotations'])
+        for key_tuple, group_rows in grouped_data.items():
+          # The curve is sorted chronologically
+          group_rows.sort(key=lambda r: r.get(x_col) if r.get(x_col) is not None else r.get('ts', 0))
+          
+          values_to_check = [r.get(metric_name) for r in group_rows]
+          x_values = [r.get(x_col) for r in group_rows]
 
-        for i, is_valid in enumerate(validation_results):
-          if not is_valid:
-            row = raw_data[i]
+          try:
+            validation_results, layout_additions = validator_func(values_to_check, v_spec, x_values=x_values)
+          except Exception as e:
+            self.log.error(f"Validation failed for metric '{metric_name}' using '{func_name}': {e}\n")
+            return False
 
-            # Check if row is already Failed (F)
-            # Update status in the raw data (Internal State)
-            row['_status'] = 'W'
+          if len(validation_results) != len(group_rows):
+            self.log.error(f"Validator '{func_name}' returned {len(validation_results)} results, expected {len(group_rows)}.\n")
+            return False
 
-            # Update status to Warning
-            raw_data[i]['_status'] = 'W'
-            # and the output dictionary (fot the LML output)
-            output_key = row.get('__output_key')
-            if output_key and output_key in self._dict:
-              self._dict[output_key]['_status'] = 'W'
-            # self.log.debug(f"Row {i} marked Warning by validator '{func_name}' on '{metric_name}'\n")
+          if layout_additions:
+            # Layouts are saved specifically under this plot's ID, avoiding overlap with other plots
+            plot_layouts = benchmark_data['validation_layouts'].setdefault(plot_id, {})
+            
+            # The 'show_pattern' dictionary is built containing strictly the table combinations.
+            # Values are wrapped in regex start/end anchors (^...$) to prevent partial matches 
+            # in the frontend (e.g., preventing Node=1 from matching Node=10).
+            pattern_dict = {
+              k: f"^{key_tuple[i]}$" 
+              for i, k in enumerate(partition_keys) if k in table_params
+            }
+                
+            if 'shapes' in layout_additions:
+              for shape in layout_additions['shapes']:
+                shape['show_pattern'] = pattern_dict
+              plot_layouts.setdefault('shapes', []).extend(layout_additions['shapes'])
+              
+            if 'annotations' in layout_additions:
+              for ann in layout_additions['annotations']:
+                ann['show_pattern'] = pattern_dict
+              plot_layouts.setdefault('annotations', []).extend(layout_additions['annotations'])
+
+          # Any regression detected on any plot marks the underlying CSV row as a Warning
+          for i, is_valid in enumerate(validation_results):
+            if not is_valid:
+              row = group_rows[i]
+              row['_status'] = 'W'
+              output_key = row.get('__output_key')
+              if output_key and output_key in self._dict:
+                self._dict[output_key]['_status'] = 'W'
+
     return True
 
   def safe_yaml_write(self, data_list, filename):
@@ -2329,9 +2644,9 @@ class BenchRepo:
           }
           self.deep_update(layout, current_trace_layout)
 
-          # Retrieve validation layout additions for this specific metric
-          # Inject visual elements generated by validators like threshold lines
-          validation_layouts = benchmark_data.get('validation_layouts', {}).get(graphelem, {})
+          # Validation layout additions specific to this plot's configuration are retrieved
+          plot_id = plot_config.get('_plot_id')
+          validation_layouts = benchmark_data.get('validation_layouts', {}).get(plot_id, {})
           
           # Extend the layout with custom shapes if any were generated
           if validation_layouts.get('shapes'):
@@ -3159,6 +3474,9 @@ def main():
             # We start with globals (deepcopy to avoid nested ref issues), then overwrite with specifics.
             merged_plot = deepcopy(global_settings)
             merged_plot.update(plot)
+            
+            # Inject a unique ID so the validator can map visuals back to this exact plot
+            merged_plot['_plot_id'] = f"plot_{id(merged_plot)}_{i}"
             
             # Update the list in-place so downstream code sees the full config
             plot_list[i] = merged_plot

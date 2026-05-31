@@ -93,7 +93,7 @@ The `metrics` section defines every data point you want to track. A metric can b
 | `unit` | (Optional) String to display in graph axis labels (e.g., 'ns/d', 'GB/s'). |
 | `description` | (Recommended) Brief text describing the metric. Used as a tooltip in the table. |
 |  <span style="white-space:nowrap">`include`/`exclude`</span> | (Optional) List of values or Regex patterns to filter specific data rows based on this metric. |
-| `validate` | (Optional) A list of validation rules (e.g., min/max ranges) to flag outliers. See **[Data Validation](#6-data-validation)**. |
+| `validate` | (Optional) A list of validation rules (e.g., regressions, outliers, min/max ranges) to automatically flag anomalies. See **[Data Validation](#6-data-validation)**. |
 
 
 ## 3. Dashboard Structure & Status
@@ -104,9 +104,10 @@ LLview generates a hierarchy of views for your benchmarks:
 2.  **Benchmark Detail Page:** Shows the summary table and graphs for a specific benchmark.
 
 ### Understanding Status & Failures
-LLview automatically calculates a `_status` for every data point and uses this to generate the **Status History** sparkline (`...-S-S-F-S-S`) and count valid runs.
+LLview automatically calculates a `_status` for every data point and uses this to generate the **Status History** sparkline (`...-S-S-F-S-W`) and count valid runs.
 
-*   **S (Successful):** All critical metrics were found.
+*   **S (Successful):** All critical metrics were found, and all validation checks passed.
+*   **W (Warning):** All data was found, but a defined metric validation failed (e.g., a performance regression or outlier was detected).
 *   **F (Failed):** A metric required for plotting or a non-string parameter was found to be missing, `NaN`, `None`, or empty.
 
 **How to report failures correctly:**
@@ -117,8 +118,8 @@ To ensure failures are tracked in the timeline, your benchmark workflow should g
 
 **Status in the Dashboard:**
 
-*   **Total Runs:** Counts all ingestions (Success + Failed).
-*   **Valid Runs:** Counts only `S` runs.
+*   **Total Runs:** Counts all ingestions (Success + Warning + Failed).
+*   **Valid Runs:** Counts `S` and `W` runs.
 *   **Status History:** Shows the last 5 runs (Oldest $\to$ Newest). A leading dash `-` indicates more history exists.
 
 ## 4. Aggregation & Visualization
@@ -215,71 +216,138 @@ Splits the graphs area into visual tabs. This is useful for organizing many plot
 
 ## 6. Data Validation
 
-LLview also supports an extensible validation framework to automatically flag anomalous data points.
+LLview supports an extensible validation framework to automatically flag anomalous data points, such as performance regressions or transient system spikes. Validation is performed mathematically on a per-curve basis, ensuring that distinct traces (e.g., 2 Nodes vs. 4 Nodes) are evaluated independently against their own baselines.
 
-### Configuration
-To enable validation, add a `validate` list to any metric definition. Each item in the list defines a validation step.
+If a validator flags a data point as an anomaly, the underlying run's status is automatically marked as **'W' (Warning)**. Runs that are already marked as **'F' (Failed)** due to missing data are ignored by the validation logic.
+
+To enable validation, a `validate` list is added to any metric definition. Multiple validators can be stacked.
+
+### A. Detecting Regressions (`regression_detector`)
+A highly robust, nonparametric method is utilized to detect permanent, sustained shifts in performance (regimes). Rather than using static thresholds, a dual-baseline approach inspired by modern CI/CD benchmarking platforms like [Apache Otava](https://otava.apache.org/docs/math) (formerly known as DataStax Hunter) is implemented.
+
+The methodology isolates true performance changes from inherent system noise by calculating effect sizes via the Median Absolute Deviation (MAD)[^1]. This eliminates the need to assume normal distributions and prevents singular outliers from shifting the baseline.
+
+When a regression is confirmed, visual markers are automatically appended to the graph, including dashed lines tracking the previous baseline, solid lines representing the degraded baseline, and an arrow indicating the percentage drop.
+
+<figure markdown>
+  ![Regression Detection Example](../images/validation_regression.png){ width="800" }
+  <figcaption>Example of a detected regression, highlighting the old and new baselines along with the percentage shift.</figcaption>
+</figure>
+
+```yaml
+metrics:
+  GF Total:
+    type: float
+    header: 'GF_Total'
+    validate:
+      - name: regression_detector
+        direction: higher_is_better # Required. Options: lower_is_better, higher_is_better
+        min_change_pct: 5.0         # (Optional) Ignores mathematical shifts smaller than this percentage. Default: 5.0
+        effect_size_threshold: 1.5  # (Optional) Statistical strictness against natural noise variance. Default: 1.5
+        eval_window: 3              # (Optional) Consecutive runs required to confirm a permanent shift. Default: 3
+        start_ts: 1717200000        # (Optional) Forces the baseline calculation to begin from this timestamp (useful after intentional performance improvements)
+```
+
+### B. Detecting Outliers (`outlier_detector`)
+A rolling-window detector is provided to flag transient, singular spikes often caused by noisy network states or localized node failures. 
+
+Similarly to the regression detector, the Median Absolute Deviation (MAD) is utilized to calculate modified Z-scores (often referred to as robust Z-scores)[^2]. This prevents sequential outliers from blinding the detector, which is a common failure of traditional mean and standard-deviation approaches. Flagged points are visually circled in red with an 'Outlier' label.
+
+<figure markdown>
+  ![Outlier Detection Example](../images/verification_outlier.png){ width="800" }
+  <figcaption>Example of a detected outlier, visually circled on the graph.</figcaption>
+</figure>
+
+```yaml
+metrics:
+  GF Total:
+    type: float
+    validate:
+      - name: outlier_detector
+        window: 10              # (Optional) Size of the rolling window used to establish the local norm. Default: 10
+        threshold: 5.0          # (Optional) Deviation multiplier (Z-score) required to flag the point. Default: 5.0
+        noise_floor_pct: 1.0    # (Optional) Minimum percentage variance enforced to prevent false positives in overly stable datasets. Default: 1.0
+```
+
+### C. Static Thresholds (`range_validator`)
+Values falling outside explicitly defined boundaries are flagged. Visual threshold lines representing the `min` and `max` configurations are drawn across the plot.
+
+<div style="display: flex; gap: 20px; flex-wrap: wrap;">
+  <figure markdown style="flex: 1; min-width: 300px;">
+    ![Minimum Threshold Example](../images/min_threshold.png)
+    <figcaption>Example of a minimum threshold, represented by a dashed red line.</figcaption>
+  </figure>
+
+  <figure markdown style="flex: 1; min-width: 300px;">
+    ![Maximum Threshold Example](../images/max_threshold.png)
+    <figcaption>Example of a maximum threshold, represented by a solid red line.</figcaption>
+  </figure>
+</div>
 
 ```yaml
 metrics:
   Frequency:
     type: float
-    header: frequency
-    # Validation List
     validate:
-      # Use the built-in range validator
       - name: range_validator
-        min: 30
-        max: 980
-      
-      # Use a custom external validator
-      - name: my_outlier_detector
+        min: 30                 # (Optional) Values below this threshold trigger a Warning
+        max: 980                # (Optional) Values above this threshold trigger a Warning
+```
+
+### D. Developer API: Creating Custom Validators
+Custom validation logic can be authored in Python and integrated directly into the LLview pipeline. The function signature must adhere to the following contract:
+
+```yaml
+    validate:
+      - name: my_custom_validator
         module: my_analysis_package.stats
         method: z_score
-        threshold: 3
 ```
 
 *   **`name`**: The name of the Python function to call.
 *   **`module`**: (Optional) The Python module where the function is defined.
     *   If omitted, LLview looks for a built-in function (e.g., `range_validator`).
-    *   If provided, the module must be importable (i.e., in your `$PYTHONPATH`).
-*   **Parameters**: Any other keys provided (e.g., `min`, `max`, `threshold`) are passed directly to the validator function.
-
-### How it Works
-1.  **Collection:** LLview collects all data points for the benchmark.
-2.  **Batch Processing:** The full list of values for the metric is passed to the validator function. This allows for statistical analysis (e.g., calculating mean/std dev) across the entire dataset.
-3.  **Status Update:** If the validator returns `False` for a specific data point, its status is updated to **'W' (Warning)**.
-    *   *Note:* Runs that are already marked as **'F' (Failed)** due to missing data are skipped by the validator logic.
-
-### Developer API: Creating Custom Validators
-You can write your own validation logic in Python. The function signature must match the following:
+    *   If provided, the module must be importable (i.e., inside your `$PYTHONPATH`).
+*   **Parameters**: Any additional keys provided under the validator name are passed to the function via the `params` dictionary.
 
 ```python
-from typing import List, Dict, Any, Union
+from typing import Tuple, List, Dict, Any, Union
 
-def my_custom_validator(values: List[Union[float, int, str, None]], params: Dict[str, Any]) -> List[bool]:
+def my_custom_validator(values: List[Union[float, int, None]], params: Dict[str, Any], x_values: List[Any] = None) -> Tuple[List[bool], Dict[str, Any]]:
     """
     Args:
-        values: A list containing the value of the metric for every run in the dataset.
-                Order matches the internal data rows. Values may be None.
+        values: A list containing the metric value for a specific plotting curve.
+                Values may be None. The list is guaranteed to be chronologically sorted.
         params: The dictionary of configuration parameters from the YAML 'validate' entry.
+        x_values: An optional list containing the x-axis coordinates for each value,
+                  used for aligning visual annotations on the plot.
 
     Returns:
-        A list of booleans with the same length as 'values'.
-        - True: The value is valid.
-        - False: The value is anomalous (Triggers 'Warning' status).
+        A tuple containing:
+        - List[bool]: True if the value is normal/valid. False if anomalous (Triggers 'W' status).
+        - Dict[str, Any]: A Plotly layout additions dictionary containing 'shapes' and 'annotations' arrays.
 
     Raises:
         ValueError/TypeError: If configuration parameters are invalid. 
-                              This will halt the benchmark processing and log an error.
+                              This halts benchmark processing and logs the error.
     """
     # Example Logic
     threshold = params.get('threshold', 10)
     results = []
+    
     for v in values:
         if v is None: 
-            results.append(True) # Ignore missing data
+            results.append(True) # Missing data is ignored securely
         else:
             results.append(v < threshold)
-    return results
+            
+    # Optional layout additions (Annotations/Shapes) can be returned to highlight points on the graph
+    layout_additions = {'shapes': [], 'annotations': []}
+    
+    return results, layout_additions
 ```
+
+***
+
+[^1]: C. Leys, C. Ley, O. Klein, P. Bernard, and L. Licata, *Detecting outliers: Do not use standard deviation around the mean, use absolute deviation around the median.* Journal of Experimental Social Psychology 49, 764-766 (2013).
+[^2]: B. Iglewicz, and D. C. Hoaglin, *How to detect and handle outliers.*, ASQC Basic References in Quality Control 16 (1993).
