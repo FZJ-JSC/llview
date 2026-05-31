@@ -128,7 +128,7 @@ Configuration and processing errors encountered during data collection (e.g., un
 Instead of failing silently, a stub page or tab is generated, and the collected error messages are prominently displayed within an error console on the benchmark dashboard. This ensures rapid identification and resolution of pipeline issues without needing to inspect backend server logs.
 
 <figure markdown>
-  ![Error Console Example](../images/console_errors.png){ width="800" }
+  ![Error Console Example](../images/console_errors.png){ width="370" }
   <figcaption>Example of configuration and pipeline errors forwarded directly to the benchmark dashboard to be shown on the console.</figcaption>
 </figure>
 
