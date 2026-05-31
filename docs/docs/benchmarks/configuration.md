@@ -122,6 +122,16 @@ To ensure failures are tracked in the timeline, your benchmark workflow should g
 *   **Valid Runs:** Counts `S` and `W` runs.
 *   **Status History:** Shows the last 5 runs (Oldest $\to$ Newest). A leading dash `-` indicates more history exists.
 
+### Error Reporting & Console
+Configuration and processing errors encountered during data collection (e.g., unreachable repositories, missing metric sources, or invalid validation configurations) are automatically captured and forwarded to the frontend. 
+
+Instead of failing silently, a stub page or tab is generated, and the collected error messages are prominently displayed within an error console on the benchmark dashboard. This ensures rapid identification and resolution of pipeline issues without needing to inspect backend server logs.
+
+<figure markdown>
+  ![Error Console Example](../images/console_errors.png){ width="800" }
+  <figcaption>Example of configuration and pipeline errors forwarded directly to the benchmark dashboard to be shown on the console.</figcaption>
+</figure>
+
 ## 4. Aggregation & Visualization
 
 This section controls how the raw data defined in `metrics` is grouped, aggregated, and displayed on the dashboard.
@@ -254,7 +264,7 @@ A rolling-window detector is provided to flag transient, singular spikes often c
 Similarly to the regression detector, the Median Absolute Deviation (MAD) is utilized to calculate modified Z-scores (often referred to as robust Z-scores)[^2]. This prevents sequential outliers from blinding the detector, which is a common failure of traditional mean and standard-deviation approaches. Flagged points are visually circled in red with an 'Outlier' label.
 
 <figure markdown>
-  ![Outlier Detection Example](../images/verification_outlier.png){ width="800" }
+  ![Outlier Detection Example](../images/validation_outlier.png){ width="800" }
   <figcaption>Example of a detected outlier, visually circled on the graph.</figcaption>
 </figure>
 
