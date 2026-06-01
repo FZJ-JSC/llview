@@ -237,7 +237,7 @@ A highly robust, nonparametric method is utilized to detect permanent, sustained
 
 The methodology isolates true performance changes from inherent system noise by calculating effect sizes via the Median Absolute Deviation (MAD)[^1]. This eliminates the need to assume normal distributions and prevents singular outliers from shifting the baseline.
 
-When a regression is confirmed, visual markers are automatically appended to the graph, including dashed lines tracking the previous baseline, solid lines representing the degraded baseline, and an arrow indicating the percentage drop.
+When a regression is confirmed, visual markers are automatically appended to the graph, including a box making the region, dashed lines tracking the previous baseline, solid lines representing the degraded baseline, and an arrow indicating the percentage drop.
 
 <figure markdown>
   ![Regression Detection Example](../images/validation_regression.png){ width="800" }

@@ -284,7 +284,7 @@ def regression_detector(values: List[Union[float, int, None]], params: Dict[str,
     if values[i] is None:
       # If we are globally degraded, missing points inherit the Warning status
       if global_base_med is not None:
-         results[i] = False
+        results[i] = False
       continue
       
     current_valid_indices = [idx for idx in range(0, i + 1) if values[idx] is not None]
@@ -295,7 +295,7 @@ def regression_detector(values: List[Union[float, int, None]], params: Dict[str,
     if len(local_valid_indices) < 3 + eval_window:
       # While the local buffer fills after a shift, the global Warning status is maintained
       if global_base_med is not None:
-         results[i] = False
+        results[i] = False
       continue
       
     # The Local baseline and evaluation window are partitioned
@@ -334,11 +334,23 @@ def regression_detector(values: List[Union[float, int, None]], params: Dict[str,
         global_base_med = base_med
         global_base_mad = base_mad
         
-      # The exact point of the shift is isolated for visual rendering
+      # Precise coordinates are extracted to accurately draw the step-down/step-up visuals
       drop_start_idx = eval_indices[0]
       tail_idx = base_indices[-1]
+      
+      # The visual baseline is capped at the last 5 points to keep the graph clean
       base_start_idx = base_indices[max(0, len(base_indices) - 5)]
       eval_end_idx = eval_indices[-1]
+      
+      # The number of points before and after the shift to highlight with the yellow background can be adjusted here
+      highlight_pad_before = 1
+      highlight_pad_after = 1
+      
+      rect_start_idx = max(0, tail_idx - highlight_pad_before)
+      rect_end_idx = min(len(x_values) - 1, drop_start_idx + highlight_pad_after)
+      
+      x_rect_start = format_x(x_values[rect_start_idx])
+      x_rect_end = format_x(x_values[rect_end_idx])
       
       x_tail = format_x(x_values[tail_idx])
       x_head = format_x(x_values[drop_start_idx])
@@ -360,6 +372,17 @@ def regression_detector(values: List[Union[float, int, None]], params: Dict[str,
       sign = "+" if pct_change > 0 else ""
       text = f"{sign}{pct_change:.1f}%"
       
+      # A transparent yellow background rectangle is added to prominently highlight the shift region
+      layout_additions['shapes'].append({
+        'type': 'rect',
+        'x0': x_rect_start, 'x1': x_rect_end,
+        'y0': 0, 'y1': 1,
+        'xref': 'x', 'yref': 'paper',
+        'fillcolor': 'rgba(255, 0, 0, 0.2)' if is_local_regression else 'rgba(0, 200, 0, 0.2)',
+        'line': {'width': 0},
+        'layer': 'below'
+      })
+
       # An oblique arrow connecting the old state to the new state is drawn
       layout_additions['annotations'].append({
         'x': x_head, 'y': eval_med,
