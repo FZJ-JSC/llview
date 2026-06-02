@@ -940,16 +940,14 @@ class BenchRepo:
     branch = config.get('branch')
     if branch:
       if not re.match(r'^[\w\-\/\.]+$', branch):
-        self.log.error(f"Invalid characters in branch name: '{branch}'. Aborting.\n")
-        return False
+        raise ValueError(f"Invalid characters in branch name: '{branch}'. Aborting.\n")
 
     # If folder does not exist, git clone the repo
     # otherwise try to git pull in the folder
     if not os.path.isdir(folder):
       # Folder does not exist and 'host' is not given, can't do anything
       if 'host' not in config:
-        self.log.error(f"Repo does not exist in folder {folder} and 'host' not given! Skipping...\n")
-        return False
+        raise ValueError(f"Repo does not exist in folder {folder} and 'host' not given! Skipping...\n")
 
       # Cloning repo
       self.log.info(f"Folder {folder} does not exist. Cloning...\n")
@@ -959,8 +957,7 @@ class BenchRepo:
       self.log.debug("Cloning repo with command: {}\n".format(' '.join(cmd).replace(f":{config['password']}@",":***@")))
       p = run(cmd, stdout=PIPE)
       if p.returncode:
-        self.log.error("Error {} running command: {}\n".format(p.returncode,' '.join(cmd).replace(f":{config['password']}@",":***@")))
-        return False
+        raise ValueError(f"Error {p.returncode} running command: {' '.join(cmd).replace(f':{config["password"]}@', ':***@')}")
       
       # Branch is switched immediately after cloning if specified
       if branch:
@@ -968,8 +965,7 @@ class BenchRepo:
         self.log.debug("Changing branch with command: {}\n".format(' '.join(cmd)))
         p = run(cmd, stdout=PIPE)
         if p.returncode:
-          self.log.error("Error {} running command: {}\n".format(p.returncode,' '.join(cmd)))
-          return False
+          raise ValueError(f"Error {p.returncode} running command: {' '.join(cmd)}")
     else:
       if ('update' in config) and (not config['update']):
         self.log.info(f"Folder {folder} already exists, but update is skipped...\n")
@@ -983,8 +979,7 @@ class BenchRepo:
           self.log.debug("Changing branch with command: {}\n".format(' '.join(cmd)))
           p = run(cmd, stdout=PIPE)
           if p.returncode:
-            self.log.error("Error {} running command: {}\n".format(p.returncode,' '.join(cmd)))
-            return False
+            raise ValueError(f"Error {p.returncode} running command: {' '.join(cmd)}")
 
         # cmd = ['git', '-C', folder, 'pull', config['host']]
         cmd = ['git', '-C', folder, 'pull', '-q']
@@ -993,8 +988,7 @@ class BenchRepo:
         p = run(cmd, stdout=PIPE)
         if p.returncode:
           # self.log.error("Error {} running command: {}\n".format(p.returncode,' '.join(cmd).replace(f":{config['password']}@",":***@")))
-          self.log.error("Error {} running command: {}\n".format(p.returncode,' '.join(cmd)))
-          return False
+          raise ValueError(f"Error {p.returncode} running command: {' '.join(cmd)}")
     return True
 
   def get_sources(self):
@@ -1055,8 +1049,7 @@ class BenchRepo:
     raw_data = benchmark_data['raw']
 
     if len(sources) == 0:
-      self.log.error(f"No sources to obtain metrics! Skipping...\n")
-      return False
+      raise ValueError(f"No sources to obtain metrics! Skipping...\n")
     
     #========================================================================================
     # Getting headers and information about parameters/metrics to be obtained
@@ -1110,17 +1103,44 @@ class BenchRepo:
       for key in plot_config.get('annotations', []):
         annotations.add(key)
 
+    # Hidden dependencies (like intermediate aggregations or formula variables) are automatically resolved
+    # using a queue to ensure dependency chains of any length are fully mapped without infinite loops.
+    metrics_to_check = list(used_metrics)
+    
+    while metrics_to_check:
+      current_metric = metrics_to_check.pop(0)
+      spec = metrics_section.get(current_metric)
+      
+      if isinstance(spec, dict) and 'from' in spec:
+        from_val = spec['from']
+        extracted_deps = []
+        
+        # Dependencies are extracted based on whether it is an aggregation or a math formula
+        if 'aggregation' in spec:
+          extracted_deps.append(from_val)
+        elif re.search(r'[+\-*/]', from_val):
+          for head in re.split(r"[\+\-\*\/() ]+", from_val):
+            if head:
+              clean_head = re.sub("^'|'$|^\"|\"$", '', head)
+              extracted_deps.append(clean_head)
+              
+        # Newly discovered dependencies are registered and queued for their own dependency checks
+        for dep in extracted_deps:
+          if dep in metrics_section and dep not in used_metrics:
+            used_metrics.add(dep)
+            metrics_to_check.append(dep)
+
     # Check for any used metrics that were not defined
     undefined_metrics = used_metrics - defined_metrics
 
     if undefined_metrics:
-      for metric_name in sorted(list(undefined_metrics)): # Sort for consistent error messages
-        self.log.error(f"Configuration Error: Metric '{metric_name}' is used in 'table' or 'plots' but is not defined in the 'metrics' section.\n")
-      return False # Abort processing
+      missing_list = ", ".join(sorted(list(undefined_metrics)))
+      raise ValueError(f"Metric(s) [{missing_list}] used in 'table' or 'plots' but not defined in 'metrics' section.")
 
     # These will store the final, aggregated results
     headers = {}
     calc_headers = {}
+    agg_metrics = {}
     metrics_types = {}
 
     # Loop over the used metrics
@@ -1143,11 +1163,12 @@ class BenchRepo:
         # Map the CSV header_name to the internal metric_name
         headers[header_name] = metric_name
 
-      # Getting metrics that are calculated from others using a formula
-      # This looks for a 'from' expression that contains an arithmetic operator (+, -, *, /)
+      # Derived metrics (aggregations and horizontal formulas) are identified and categorized
       if isinstance(spec, dict) and 'from' in spec:
         from_val = spec['from']
-        if re.search(r'[+\-*/]', from_val):
+        if 'aggregation' in spec:
+          agg_metrics[metric_name] = spec
+        elif re.search(r'[+\-*/]', from_val):
           calc_headers[metric_name] = from_val
 
       # Getting the {name: type} mapping for every metric defined in the configuration
@@ -1275,18 +1296,6 @@ class BenchRepo:
           # Use .get(key_old, '') to safely handle missing keys or empty values without skipping
           current_line = {key_new: line.get(key_old, '') for key_old, key_new in headers.items()}
 
-          for key in calc_headers:
-            calc = calc_headers[key]
-            # Creating expression to be calculated with the values of the columns (selected by the headers) on the current line
-            for head in re.split(r"[\+\-\*\/]+", calc_headers[key]):
-              calc = calc.replace(head,line[re.sub("^'|'$|^\"|\"$", '', head)])
-            try:
-              current_line[key] = self.safe_math_eval(calc)
-            except SyntaxError as e:
-              self.log.debug(f"Cannot obtain value of '{key}'={calc_headers[key]} from line: {line}.\n Using default value: {self.default[metrics_section[key]['type']]}\n")
-              current_line[key] = self.default[metrics_section[key]['type']]
-              self.log.debug(f"ERROR: {' '.join(traceback.format_exception(type(e), e, e.__traceback__))}\n")
-
           current_data.append(current_line)
 
       # Getting common data and metrics that are obtained from filename or from metadata
@@ -1366,11 +1375,79 @@ class BenchRepo:
       # Adding 'common_data' to all entries of 'current_data'
       current_data[:] = [(data|common_data) for data in current_data]
 
+      # Executed exactly once to compute all intermediate metrics before validation occurs
+      if agg_metrics or calc_headers:
+        # Vertical aggregations are executed prior to horizontal formulas
+        if agg_metrics:
+          # Data is grouped by table parameters + timestamp to isolate unique benchmark runs
+          group_keys = list(parameters.keys()) + ['ts']
+          grouped = {}
+          for data in current_data:
+            k = tuple(data.get(gk) for gk in group_keys)
+            grouped.setdefault(k, []).append(data)
+            
+          for k, rows in grouped.items():
+            for agg_metric, spec in agg_metrics.items():
+              target = spec.get('from')
+              method = spec.get('aggregation')
+              
+              # Values are safely extracted and cast to float.
+              # Row-level filters are pre-evaluated here. This ensures that data destined 
+              # for removal does not pollute the mathematical aggregation. Actual deletion 
+              # of the row is deferred until after validation to preserve the history of failed runs.
+              vals = []
+              for r in rows:
+                if isinstance(r, dict) and r.get('_status') != 'F':
+                  if to_exclude and self.check_unit(0, r, to_exclude, text="excluded from agg"):
+                    continue
+                  if to_include and not self.check_unit(0, r, to_include, text="included in agg"):
+                    continue
+                
+                val = r.get(target)
+                if val not in [None, '']:
+                  try:
+                    vals.append(float(val))
+                  except ValueError:
+                    pass
+              
+              # Aggregations are calculated using numpy for optimized array operations
+              if not vals:
+                agg_val = None
+              elif method == 'sum': 
+                agg_val = float(np.sum(vals))
+              elif method == 'min': 
+                agg_val = float(np.min(vals))
+              elif method == 'max': 
+                agg_val = float(np.max(vals))
+              elif method == 'avg': 
+                agg_val = float(np.mean(vals))
+              else:
+                raise ValueError(f"Unknown aggregation method '{method}' for metric '{agg_metric}'. Use 'sum', 'min', 'max', or 'avg'.")
+                
+              # The aggregated result is applied to all rows belonging to the same timestamp group
+              for r in rows:
+                r[agg_metric] = agg_val
+
+        # Horizontal math formulas are evaluated using both raw and newly aggregated data
+        if calc_headers:
+          for data in current_data:
+            for key, formula in calc_headers.items():
+              calc = formula
+              for head in re.split(r"[\+\-\*\/() ]+", formula):
+                if not head: continue
+                clean_head = re.sub("^'|'$|^\"|\"$", '', head)
+                if clean_head in data and data[clean_head] not in [None, '']:
+                  calc = calc.replace(head, str(data[clean_head]))
+              try:
+                data[key] = self.safe_math_eval(calc)
+              except Exception as e:
+                self.log.debug(f"Cannot obtain value of '{key}' from formula '{formula}'. Using default.\n")
+                data[key] = self.default.get(metrics_types.get(key, 'str'), '')
+
       # If current_data is not empty but no x_axis_metrics are given, we can't plot
       missing_x = [x for x in x_axis_metrics if x not in current_data[0]]
       if current_data and missing_x:
-        self.log.error(f"x-axis metric(s) {missing_x} could not be obtained for '{combined_name}'.\n")
-        return False # Abort processing
+        raise ValueError(f"x-axis metric(s) {missing_x} could not be obtained for '{combined_name}'.\n")
 
       # Perform validation (to set the _status) and default-setting on each line
       # This is done BEFORE conversion, so empty/failed values don't crash the converter
@@ -1470,7 +1547,7 @@ class BenchRepo:
 
       # Converting data obtained from file content and multiplying by factor, when present
       # (Here we skip failed lines, since they don't have valid values)
-      for key in list(headers.values())+list(calc_headers.keys()):
+      for key in list(headers.values()) + list(calc_headers.keys()) + list(agg_metrics.keys()):
         # Getting the type of the metric
         mtype = metrics_types[key]
         for data in current_data:
@@ -1722,15 +1799,13 @@ class BenchRepo:
             mod = __import__(module_name, fromlist=[func_name])
             validator_func = getattr(mod, func_name)
           except (ImportError, AttributeError) as e:
-            self.log.error(f"Validator '{func_name}' in module '{module_name}' could not be loaded: {e}\n")
-            return False
+            raise ValueError(f"Validator '{func_name}' in module '{module_name}' could not be loaded: {e}\n")
         else:
           # Look in global scope (globals()) for the function
           if func_name in globals():
             validator_func = globals()[func_name]
           else:
-            self.log.error(f"Validator function '{func_name}' not found.\n")
-            return False
+            raise ValueError(f"Validator function '{func_name}' not found.\n")
 
         x_col = v_spec.get('x_col', 'ts')
         v_spec['is_ts'] = (x_col == 'ts' or x_col == 'date')
@@ -1751,12 +1826,10 @@ class BenchRepo:
           try:
             validation_results, layout_additions = validator_func(values_to_check, v_spec, x_values=x_values)
           except Exception as e:
-            self.log.error(f"Validation failed for metric '{metric_name}' using '{func_name}': {e}\n")
-            return False
+            raise ValueError(f"Validation failed for metric '{metric_name}' using '{func_name}': {e}\n")
 
           if len(validation_results) != len(group_rows):
-            self.log.error(f"Validator '{func_name}' returned {len(validation_results)} results, expected {len(group_rows)}.\n")
-            return False
+            raise ValueError(f"Validator '{func_name}' returned {len(validation_results)} results, expected {len(group_rows)}.\n")
 
           if layout_additions:
             # Layouts are saved specifically under this plot's ID, avoiding overlap with other plots
@@ -3523,25 +3596,43 @@ def main():
           skipupdate=args.skipupdate,
         )
 
-        success = tab_bench.get_or_update_repo(folder=args.repofolder if args.repofolder else './')
-        if not success:
-          log.error(f"Error cloning or updating repository of '{combined_name}'. Skipping...\n")
-          error_msg = f"Git Error: Failed to clone or pull repository."
-          failed_repos[repo_name].setdefault(group_name if internal_tabs else None, []).append(error_msg)
+        try:
+          success = tab_bench.get_or_update_repo(folder=args.repofolder if args.repofolder else './')
+          if not success:
+            log.error(f"Error cloning or updating repository of '{combined_name}'. Skipping...\n")
+            error_msg = f"Git Error: Failed to clone or pull repository."
+            failed_repos[repo_name].setdefault(group_name if internal_tabs else None, []).append(error_msg)
+            continue
+        except ValueError as e:
+          # Catch specific git errors raised deep inside the functions and forward them directly to the frontend
+          log.error(f"Git Error in '{combined_name}': {e}\n")
+          failed_repos[repo_name].setdefault(group_name if internal_tabs else None, []).append(f"Git Error: {e}")
           continue
 
-        success = tab_bench.get_metrics()
-        if not success:
-          log.error(f"Error collecting metrics for '{combined_name}'. Skipping...\n")
-          error_msg = f"Data Processing Error: Failed to collect or parse metrics. Ask admin for details."
-          failed_repos[repo_name].setdefault(group_name if internal_tabs else None, []).append(error_msg)
+        try:
+          success = tab_bench.get_metrics()
+          if not success:
+            log.error(f"Error collecting metrics for '{combined_name}'. Skipping...\n")
+            error_msg = f"Data Processing Error: Failed to collect or parse metrics. Ask admin for details."
+            failed_repos[repo_name].setdefault(group_name if internal_tabs else None, []).append(error_msg)
+            continue
+        except ValueError as e:
+          # Catch specific configuration errors raised deep inside the functions and forward them directly to the frontend
+          log.error(f"Configuration Error in '{combined_name}': {e}\n")
+          failed_repos[repo_name].setdefault(group_name if internal_tabs else None, []).append(f"Configuration Error: {e}")
           continue
 
-        success = tab_bench.validate_metrics()
-        if not success:
-          log.error(f"Error validating metrics for '{combined_name}'. Skipping...\n")
-          error_msg = f"Validation Error: Critical failure during metric validation."
-          failed_repos[repo_name].setdefault(group_name if internal_tabs else None, []).append(error_msg)
+        try:
+          success = tab_bench.validate_metrics()
+          if not success:
+            log.error(f"Error validating metrics for '{combined_name}'. Skipping...\n")
+            error_msg = f"Validation Error: Critical failure during metric validation."
+            failed_repos[repo_name].setdefault(group_name if internal_tabs else None, []).append(error_msg)
+            continue
+        except ValueError as e:
+          # Catch specific validation errors raised deep inside the functions and forward them directly to the frontend
+          log.error(f"Validation Error in '{combined_name}': {e}\n")
+          failed_repos[repo_name].setdefault(group_name if internal_tabs else None, []).append(f"Validation Error: {e}")
           continue
 
         # Update lastts for this specific tab/combined_name

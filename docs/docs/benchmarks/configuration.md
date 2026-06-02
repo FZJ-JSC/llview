@@ -65,8 +65,8 @@ The `metrics` section defines every data point you want to track. A metric can b
       type: int
       description: 'Slurm Job ID'
 
-    # 4. Derived Metrics (Formulas)
-    # Calculates values based on other CSV headers.
+    # 4. Derived Metrics (Formulas & Aggregations)
+    # A. Horizontal Formulas: Calculate values based on **other metrics** in the same row.
     # Supported operators: +, -, *, /
     # Headers must be quoted if they contain spaces or special characters.
     Efficiency:
@@ -74,7 +74,23 @@ The `metrics` section defines every data point you want to track. A metric can b
       from: "'Performance' / 'Peak_Flops'"
       unit: '%'
       description: 'Calculated efficiency ratio'
+
+    # B. Vertical Aggregations: Aggregate values across multiple rows of the **same metric** that share 
+    # the same timestamp and table parameters. 
+    # Supported methods: sum, min, max, avg
+    sum_frequencies:
+      from: Frequency
+      aggregation: sum
+      type: float
+
+    # C. Formula Chaining: Aggregated metrics can be seamlessly used in downstream formulas.
+    one_minus:
+      from: "1 - 'sum_frequencies'"
+      type: float
 ```
+
+!!! Info "Aggregations and Filters"
+    If you apply `include` or `exclude` filters to a metric, the aggregation is evaluated securely. Rows that are destined to be filtered out are automatically excluded from the mathematical calculation, ensuring your sums and averages remain perfectly accurate.
 
 !!! Warning
     Due to internal manipulation of the tables and databases, the following keys are forbidden (case-insensitive):
@@ -85,7 +101,8 @@ The `metrics` section defines every data point you want to track. A metric can b
 | Option | Description |
 | :------ | :--- |
 | `type` | (Optional) Data type. Options: `str` (default), `int`, `float`, `ts` (timestamp), `date`. |
-| `from` | (Optional) Source of data. Options: `content` (default), `filename`, `metadata`, `static`. If containing math operators, it acts as a formula. |
+| `from` | (Optional) Source of data. Options: `content` (default), `filename`, `metadata`, `static`. If containing math operators, it acts as a formula. If used with `aggregation`, it specifies the target metric to aggregate. |
+| `aggregation` | (Optional) Method used to summarize values across multiple entries of the metric sharing the same timestamp. Options: `sum`, `min`, `max`, `avg`. |
 | `header` | (Optional) The column name in the CSV. Defaults to the metric key name if omitted. |
 | `key` | (Required for `from: metadata`) The key name in the JSON metadata. |
 | `regex` | (Required for `from: filename`) Regular expression to extract data from filenames. |
