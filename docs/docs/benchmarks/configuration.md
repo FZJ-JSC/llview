@@ -299,16 +299,15 @@ metrics:
 ### C. Static Thresholds (`range_validator`)
 Values falling outside explicitly defined boundaries are flagged. Visual threshold lines representing the `min` and `max` configurations are drawn across the plot.
 
-<div style="display: flex; gap: 20px; flex-wrap: wrap;">
-  <figure markdown style="flex: 1; min-width: 300px;">
-    ![Minimum Threshold Example](../images/validation_min.png)
-    <figcaption>Example of a minimum threshold, represented by a dashed red line.</figcaption>
-  </figure>
-
-  <figure markdown style="flex: 1; min-width: 300px;">
-    ![Maximum Threshold Example](../images/validation_max.png)
-    <figcaption>Example of a maximum threshold, represented by a solid red line.</figcaption>
-  </figure>
+<div class="grid">
+<figure>
+<img src="../../images/validation_min.png" alt="Minimum Threshold Example" width="300" />
+<figcaption>Example of a minimum threshold, represented by a dashed red line.</figcaption>
+</figure>
+<figure>
+<img src="../../images/validation_max.png" alt="Maximum Threshold Example" width="300" />
+<figcaption>Example of a maximum threshold, represented by a solid red line.</figcaption>
+</figure>
 </div>
 
 ```yaml
