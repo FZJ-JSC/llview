@@ -301,12 +301,12 @@ Values falling outside explicitly defined boundaries are flagged. Visual thresho
 
 <div style="display: flex; gap: 20px; flex-wrap: wrap;">
   <figure markdown style="flex: 1; min-width: 300px;">
-    ![Minimum Threshold Example](../images/min_threshold.png)
+    ![Minimum Threshold Example](../images/validation_min.png)
     <figcaption>Example of a minimum threshold, represented by a dashed red line.</figcaption>
   </figure>
 
   <figure markdown style="flex: 1; min-width: 300px;">
-    ![Maximum Threshold Example](../images/max_threshold.png)
+    ![Maximum Threshold Example](../images/validation_max.png)
     <figcaption>Example of a maximum threshold, represented by a solid red line.</figcaption>
   </figure>
 </div>
