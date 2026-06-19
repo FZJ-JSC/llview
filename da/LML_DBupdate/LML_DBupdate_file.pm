@@ -289,7 +289,7 @@ sub update_structure {
             $data->{JOBRC_BY_JOBSTEP}->{$jobstep}=$jref;
           } else {
             push(@{$data->{JOBS_ENTRIES}},$jref);
-            if($jref->{state} eq "Running") {
+            if($jref->{state} =~ /^run/i) {
               push(@{$data->{JOBS_RUNNING_ENTRIES}},$jref);
               $data->{JOBS_RUNNING_BY_JOBSTEP}->{$jobstep}=$jref;
             } else {
@@ -351,7 +351,7 @@ sub update_structure {
           my $jref    = $fh->{DATA}->{INFODATA}->{$key};
           push(@{$data->{PWRINFO_ENTRIES}},$jref);
         }
-      } elsif ($ref->{type} eq "supportmap") {
+      } elsif ($ref->{type} =~ /supportmap/ ) {
         if(exists($fh->{DATA}->{INFODATA}->{$key})) {
           my $jref    = $fh->{DATA}->{INFODATA}->{$key};
           push(@{$data->{SUPPORTMAP_ENTRIES}},$jref);
@@ -360,7 +360,7 @@ sub update_structure {
         my $type=$1;
         if(exists($fh->{DATA}->{INFODATA}->{$key})) {
           my $jref    = $fh->{DATA}->{INFODATA}->{$key};
-          foreach my $p (split(",",$jref->{"projects"})) {
+          foreach my $p (split(",", $jref->{"projects"} // "")) {
             my $ref;
             $ref->{ts}=$jref->{ts};
             $ref->{id}=$jref->{id};

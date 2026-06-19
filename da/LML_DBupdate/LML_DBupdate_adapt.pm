@@ -159,7 +159,10 @@ sub adapt_data {
       $ref->{feat}="IPU" if($ref->{features}=~/ipu/);
     }
     # check for core info
-    my $nodeid=$ref->{id};
+    my $nodeid=$ref->{id} // $ref->{nodeid};
+    if (!defined($nodeid)) {
+      printf(STDERR "[LML_DBupdate_adapt.pm] ERROR: id or nodeid is not defined: " . Dumper($ref) . "\n");
+    }
     if(exists($data->{CINODES_BY_NODEID}->{$nodeid})) {
       $ref->{usage}=$data->{CINODES_BY_NODEID}->{$nodeid}->{usage};
       $ref->{used_cores}=$data->{CINODES_BY_NODEID}->{$nodeid}->{physcoresused}+(defined($data->{CINODES_BY_NODEID}->{$nodeid}->{logiccoresused})? $data->{CINODES_BY_NODEID}->{$nodeid}->{logiccoresused}: 0);
@@ -232,12 +235,15 @@ sub adapt_data {
   # SCAN RUNNING JOBS
   # - update used_cores in node_entries
   #
+  my $nodelist_pattern = $self->{CONFIGDATA}->{options}->{nodelist_pattern} // '\(?([^,]+),(\d+)\)?';
+
   foreach $jobref (@{$data->{JOBS_RUNNING_ENTRIES}}) {
     my($jobnodes,$jobgpunodes);
     if(exists($jobref->{nodelist})) {
       if($jobref->{nodelist} ne "-") {
         foreach $spec (split(/\),?\(/,$jobref->{nodelist})) {
-          $spec=~/\(?([^,]+),(\d+)\)?/;$node=$1;$pos=$2;
+          $spec =~ /$nodelist_pattern/;  # Use configurable pattern
+          $node=$1;$pos=$2;
           $nodedata->{$node}->{requ_cores}++;
           $jobnodes->{$node}++;
         }
@@ -246,7 +252,8 @@ sub adapt_data {
     if(exists($jobref->{vnodelist})) {
       if($jobref->{vnodelist} ne "-") {
         foreach $spec (split(/\),?\(/,$jobref->{vnodelist})) {
-          $spec=~/\(?([^,]+),(\d+)\)?/;$node=$1;$num=$2;
+          $spec =~ /$nodelist_pattern/;  # Use configurable pattern
+          $node=$1;$num=$2;
           $nodedata->{$node}->{requ_cores}+=$num;
           $jobnodes->{$node}++;
         }
@@ -256,7 +263,8 @@ sub adapt_data {
     if(exists($jobref->{gpulist})) {
       if($jobref->{gpulist} ne "-") {
         foreach $spec (split(/\),?\(/,$jobref->{gpulist})) {
-          $spec=~/\(?([^,]+),(\d+)\)?/;$node=$1;$pos=$2;
+          $spec =~ /$nodelist_pattern/;  # Use configurable pattern
+          $node=$1;$pos=$2;
           $node=~s/-gpu//s;
           $node.=sprintf("_%02d",$pos);
           $gpudata->{$node}->{used}=1;
@@ -272,7 +280,10 @@ sub adapt_data {
   
   my $jstatref;
   foreach $jobref (@{$data->{JOBS_ENTRIES}}) {
-    my $jobid=$jobref->{step};
+    my $jobid=$jobref->{step} // $jobref->{jobid};
+    if (!defined($jobid)) {
+      printf(STDERR "[LML_DBupdate_adapt.pm] ERROR: step or jobid is not defined: " . Dumper($jobref) . "\n");
+    }
 
     #  TS
     if(!exists($jobref->{ts})) {
@@ -281,30 +292,38 @@ sub adapt_data {
     
     # JOB statistics
     $jstatref->{jobs}->{$jobid}->{ref}=$jobref;
-    if( ($jobref->{state} eq "Running")
-        || ($jobref->{state} eq "Completed")
-        || ($jobref->{state} eq "Failed") ) {
+    if ($jobref->{state} =~ /^(Run|Completed|Failed|Cancelled|Timeout)/i) {
       $jobref->{posinqueue}=-1;
     } else {
-      if (!defined($jobref->{userprio})) {
-        $jstatref->{prioqueue}->{$jobref->{queue}}->{-1}->{$jobid}=1;
-      } else {
-        $jstatref->{prioqueue}->{$jobref->{queue}}->{$jobref->{userprio}}->{$jobid}=1;
+      if (!defined($jobref->{queue})) {
+        printf(STDERR "[LML_DBupdate_adapt.pm] ERROR: job queue is not defined: " . Dumper($jobref) . "\n");
+      } elsif (!defined($jobref->{userprio})) {
+        $jstatref->{prioqueue}->{$jobref->{queue}}->{-1}->{$jobid} = 1;
+     } else {
+        $jstatref->{prioqueue}->{$jobref->{queue}}->{$jobref->{userprio}}->{$jobid} = 1;
       }
     }
-    $jobref->{waittime}=0.0;
-    if(exists($jobref->{queuedate})) {
-      my $endwaitts; 
-      if(($jobref->{state} ne "Pending") && exists($jobref->{starttime}) && ($jobref->{starttime}) && ($jobref->{starttime} ne "Unknown")) {
-        # If job has already started, and is not pending anymore (so, it has a start time)
-        $endwaitts=LML_da_util::date_to_secj($jobref->{starttime});
-      } else {
-        # If the job is still in the queue endwaitts is the current ts
-        $endwaitts=$currentts;
+    # Wait time is preserved if it is already provided by the external parser.
+    # Otherwise, it is mathematically derived using available submission and start timestamps.
+    if (!exists($jobref->{waittime}) || $jobref->{waittime} eq "") {
+      $jobref->{waittime} = 0.0;
+      
+      # The submission timestamp is extracted from either queuedate or submittime attributes.
+      my $sub_time = $jobref->{queuedate} // $jobref->{submittime};
+      
+      if (defined($sub_time) && $sub_time ne "") {
+        my $endwaitts; 
+        
+        # The job state is evaluated to determine if it is still waiting in the queue. 
+        # Both standard 'Pending' and Flux 'sched' states are treated as active queue states.
+        if (($jobref->{state} !~ /^(Pending|sched)$/i) && exists($jobref->{starttime}) && ($jobref->{starttime}) && ($jobref->{starttime} ne "Unknown")) {
+          $endwaitts = LML_da_util::date_to_secj($jobref->{starttime});
+        } else {
+          $endwaitts = $currentts;
+        }
+        
+        $jobref->{waittime} = ($endwaitts - LML_da_util::date_to_secj($sub_time));
       }
-      if($jobref->{queuedate}) {
-        $jobref->{waittime}=($endwaitts-LML_da_util::date_to_secj($jobref->{queuedate}));
-      } 
     }
     if(exists($jobref->{starttime})) {
       if($jobref->{starttime} && $jobref->{starttime} ne "Unknown") {
@@ -393,14 +412,9 @@ sub adapt_data {
   }
 
   foreach $jobref (@{$data->{JOBS_ENTRIES}}) {
-    my $reason=$jobref->{reason};
-    # print line
-    $jobref->{reason_nr}=13;
-    if (exists($reason_pattern_hash{$reason})) {
-      $jobref->{reason_nr}=$reason_pattern_hash{$reason};
-    } else {
-      $jobref->{reason_nr}=13;
-    }
+    next unless defined($jobref->{reason});
+    
+    $jobref->{reason_nr} = $reason_pattern_hash{$jobref->{reason}} // 13;
   }
   foreach my $resref (@{$data->{RESERVATION_ENTRIES}}) {
     if (exists($resref->{starttime})) {

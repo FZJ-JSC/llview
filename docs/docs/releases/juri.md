@@ -2,6 +2,46 @@
 
 Since the JURI (Jülich Reporting Interface) module is the same for the internal and the public versions, a single and separated page describe its changelog.
 
+### 2.4.5 (June 19, 2026)
+
+AI functionalities added! It's now possible to include a sidebar with a configurable AI chatbot that you can connect with your preferred service provider or your customised end points!
+Also: updated ag-grid from to 35.2.1, bug fixes, and much more!
+
+<h4> Added </h4>
+
+- Added custom `Date` and `TimeInterval` filters for ag-grid
+- Added functions for AI reports
+- Added separate area for options and info boxes (to fix layout when both are shown)
+- Added LLview-AI logic
+- Added flag to deactivate synchronization of graph zooms in graph pages
+- Added new possible math functions (that may be used on annotation)
+- Added 'What's new' message, that is displayed once per user (saves an entry on cache for that)
+- Documentation: LLview-AI configs added for JURI ([See here for more details](../install/juri_install.md#enabling-llview-ai-features))
+
+<h4> Changed </h4>
+
+- When a jobID does not exist when using login page shortcut, show 404 page but keep the link
+- Improved table download, separating collection of data from download
+- Updated ag-grid from 31.3.1 to 35.2.1 (many fixes and changes required)
+- Updated purity library
+- Cleaned up non-used bootstrap files
+- Filters improved, including how to clear filter (now with an `x` on input field)
+- Generalised `cell_color` for `run` state (Flux)
+
+<h4> Fixed </h4>
+
+- Fixed `id` in `filteroptions` to allow parenthesis
+- Fixed ticks on plotly when graphs are empty
+- Fixed plotly heatmaps 
+- Fixed navigation dropdown menus to be accessible also when page is loading
+- Fixed annotations, that are now per graph instead of per trace
+- Fixed a bug where the `F/R/C` buttons were not being reset on clearing filter
+- Fixed sync zoom of footer graphs after autorange
+- Fixed parsing of CSV to avoid converting too large numbers (e.g., Flux decimal jobIDs) into integers
+- Fixed job count during page refresh
+- Fixed many sources of possible memory leaks
+
+
 ### 2.4.4 (March 11, 2026)
 
 <h4> Added </h4>

@@ -13,9 +13,9 @@ site_description: Documentation of LLview monitoring tool
 nav:
   - About: 
     - Overview: index.md
-    - Internal Releases: releases/index.md
     - Public Releases: releases/public.md
     - JURI Releases: releases/juri.md
+    - Internal Releases: releases/index.md
   - Live: 
     - Live View: live/index.md
     - LLview Client: live/client.md

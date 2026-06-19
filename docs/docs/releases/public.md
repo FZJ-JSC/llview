@@ -1,5 +1,80 @@
 # LLview Public Releases
 
+
+### 2.4.5-base (June 19, 2026)
+
+New SeanerBus-subscriptions plugin (already mature and with many functionalities!), many generalisations and fixes!
+
+<h4> Added </h4>
+
+- Added ASCII output (for step timings)
+- Added check on race condition in generation of datasets
+- Added small utility script to handle lock files
+- Added check for empty table names in DB config files
+- Added more step timing information
+- Added handling of generic objects in LML (easier to collect generic metrics)
+- Added cache option for CSV and DAT files, to be used when multiple files use the same DB contents
+- Added SeanerBus plugin ([SEANERGYS Project](https://seanergys.eu)): asynschronous subscription to the Bus where data is published
+- Added config file to collect information from [Flux](http://flux-framework.org/) (using the Slurm plugin, that will probably change name in the future)
+- Added more energy conversion functions
+- Git plugin: Configuration files can *include* contents from another file (main o
+ne must contain 'host', 'token', optional 'branch', and 'include' file)
+- Git plugin: Errors are now stored and passed to the portal, shown as console.error (so the user can see the error and fix by themselves)
+- Git plugin: New 'name' key to allow users to change displayed name on overview table and tab, without modifying the database
+- Git plugin: Added possibility to change CSV delimiter using 'csv_delimiter' inside 'sources'
+- Git plugin: Added regression and outlier validation functions (full reformulation of the validation scheme
+- Git plugin: Added option to aggregate metric values
+- JuRepTool: Added better and more error handling
+- JuRepTool: Added check to see if file is being written before reading it (try a few times before giving up)
+- Documentation: Added information about new validations,  errors in the console and aggregations
+
+<h4> Changed </h4>
+
+- Improved and extended internal logging (to simplify debugging)
+- Improved `monitor_file` to accept multiple watch files
+- Improved 'listerrors` script
+- Modifications for improved collection of error messages
+- Improved reservation tables to store historical entries (example config)
+- Improved checks on the tables in `checkDB` and fixed sign
+- Improving report of YAML error
+- Automaticaly adds `demo` key to support view (according to envvar) to indicate JURI this mode
+- Improved checks when generating CSV files
+- Improved crontab server script (`serverAll.pl`): configurable automatic start of `mmpmon` daemon with env-var `LLVIEW_MMPMON_MAX_DAEMON_NR`
+- Improved log handling to avoid race conditions and filling cache
+- Adapted to new version of ag-grid (new API)
+- Improved timelines of actions
+- Internal generalisations: fallbacks for `step`->`jobid` and `id`->`nodeid`, states to accept also flux states (`sched`, `run`, etc.), `reason` not mandatory, `accountmap` accept suffixes
+- Improved `increase_counter.pl` script to create counter file when not existent
+- Added possibility to give `nodelist_pattern` to change the current format `(nodeid,ncores)`
+- On the DBs, we now Keep previous data from entries of a job that receives incomplete new entries (as in the case of Flux events)
+- Changed `waittime` handling: use from LML when existing, or calculate in a more generic way
+- Git plugin: Strings used in SQL and commands are sanitized for safety
+- Git plugin: validator can now return layout additions (shapes/annotations) for plotly
+- Git plugin: Changed definition of column templates to use new ag-grid types defined on JURI
+- Slurm plugin: Improved config for account info
+- Slurm plugin: Improved accounting tables to merge data from Slurm
+- Slurm plugin: Added config options for support accounts
+- Slurm plugin: Added function for `reason` node is down
+
+<h4> Fixed </h4>
+
+- Added missing case on file management (files with `state=FSTATUS_COMPRESSED`)
+- Fixed escaping of delimiter only for CSV (it was breaking md files)
+- Fixed parsing list of tables in csv (worked only for json)
+- Fixed JuRepTool's table (that store jobs to be put on `plotlists.dat` file) to avoid stuck jobs (example config)
+- Fixed race conditions on tables (example config)
+- Fixed the way running processes are checked on `monitor_file` (to avoid error messages when day changes)
+- Git plugin: allow dots on branch names
+- Git plugin: Fixed generation of empty yaml files not to break full workflow;
+- Slurm plugin: Force overlapping window on `sacct` to avoid having jobs with stuck information (e.g., state)
+- Slurm plugin: Improved parsing of Slurm blocks (including line breaks on values)
+- Slurm plugin: Fixed accumulation of values into string
+- Slurm plugin: Fixed folder concatenation for mkdir
+- Slurm plugin: Fixed objects for support users with projects and support
+- File plugin: Added type on pstat object to avoid duplication
+- JuRepTool: fixed reading error in pandas with `float16`
+
+
 ### 2.4.4-base (March 11, 2026)
 
 Important bug fixes, improvements on plugins (Prometheus plugin is now GenericAPI, as it is much more general), and more!
@@ -51,8 +126,6 @@ Important bug fixes, improvements on plugins (Prometheus plugin is now GenericAP
 - Example config: Fixed queries of the node status to avoid duplicate counting of nodes on the Usage graph
 - Example config: Fixed GPU list (had issues when job restarted)
 - Example config: Further improvements
-
-
 
 
 ### 2.4.3-base (January 18, 2026)

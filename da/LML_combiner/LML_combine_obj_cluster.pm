@@ -93,7 +93,7 @@ sub update_job_info {
       
       # update nodelist 
       next if(!exists($jobref->{state}));
-      if($jobref->{state} ne "Running") {
+      if($jobref->{state} !~ /^run/i) {
         if(!exists($jobref->{nodelist})) {
           $jobref->{nodelist}="-";
           $jobref->{totaltasks}=0;
@@ -107,7 +107,7 @@ sub update_job_info {
         print "update_job_info: could not find attributes for job $id to compute totalcores\n" if($debug);
       }
       
-      if($jobref->{state} eq "Running") {
+      if($jobref->{state} =~ /^run/i) {
         if(exists($jobref->{gpulist})) {
           foreach $spec (split(/\),?\(/,$jobref->{gpulist})) {
             if($spec=~/\(?([^,]+),(\d+)\)?/) {
@@ -134,7 +134,7 @@ sub get_job_node_usage {
     if($dataptr->{OBJECT}->{$id}->{type} eq "job") {
       $jobref=$dataptr->{INFODATA}->{$id};
       next if(!exists($jobref->{state}));
-      if($jobref->{state} eq "Running") {
+      if($jobref->{state} =~ /^run/i) {
         if(exists($jobref->{nodelist})) {
           foreach $spec (split(/\),?\(/,$jobref->{nodelist})) {
             $spec=~/\(?([^,]+),(\d+)\)?/;$node=$1;$pos=$2;

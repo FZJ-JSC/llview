@@ -1,0 +1,212 @@
+# Copyright (c) 2023 Forschungszentrum Juelich GmbH.
+# This file is part of LLview. 
+#
+# This is an open source software distributed under the GPLv3 license. More information see the LICENSE file at the top level.
+#
+# Contributions must follow the Contributor License Agreement. More information see the CONTRIBUTING.md file at the top level.
+#
+# Contributors:
+#    Filipe Guimarães (Forschungszentrum Juelich GmbH) 
+
+sysinfo:
+  LML: './sysinfo_LML.xml'
+  motd: '/etc/motd'
+  type: 'system'
+  prefix: 'sys'
+  apply_function: sysinfo
+  # apply: 'built-in'
+
+# accountinfo:
+#   cmd: 'squeue -o "%u|%a"'
+#   LML: './slurmaccounts_LML.xml'
+#   type: 'usermap_slurm'
+#   prefix: 'SU'
+#   apply_function: accountinfo
+# #  support:
+# #    type: 'supportmap_slurm'
+# #    prefix: 'SS'
+# #    users:
+# #      - support_username1
+# #      - support_username2
+#   mapping:
+#     id: 'id'
+#     ts: 'ts'
+#     ACCOUNT: 'project'
+#     USER: 'wsaccount'
+
+# nodeinfo:
+#   cmd: 'scontrol show node --detail --all'
+#   LML: './nodes_LML.xml'
+#   type: 'node'
+#   prefix: 'nd'
+#   apply_function: nodeinfo
+#   systemname: ${LLVIEW_SYSTEMNAME}
+#     # env: LLVIEW_SYSTEMNAME # Note that there's no ${...} here
+#     # file: /path/to/file
+#   # exclude: 
+#   #   - gpus: '4'
+#   # include: 
+#   #   - 'jrc000.*'
+#   #   - 'jrc020.*'
+#   mem_reserved: # The systemname has to be given as a key here, if the mem_reserved is to be used
+#     system: 8000 # Value that does not give negative numbers in any node,
+#   modify_before_mapping:
+#     State: modify_state
+#     CPULoad: modify_load
+#   mapping:
+#     NodeName: 'id'
+#     CPUTot: 'ncores'
+#     CPULoad: 'load'
+#     ActiveFeatures: 'features'
+#     RealMemory: 'physmem'
+#     State: 'state'
+#     Reason: 'reason'
+#     AllocMem: 'allocmem'
+#     FreeMem: 'freemem'
+#     UsedMem: 'memU'
+#     gpus: 'gpus'
+#     classes: 'classes'
+#     CurrentWatts: 'currentwatts'
+
+jobinfo:
+  cmd: "flux jobs -a -A -c 0 -o '{id.dec}|{username}|{bank}|{queue}|{name}|{t_submit!D}|{sched.t_estimate!D}|{t_run!D}|{t_cleanup!D}|{duration}|{runtime}|{status}|{result}|{nnodes}|{ncores}|{ntasks}|{priority}|{urgency}|{dependencies}|{returncode}|{waitstatus}|{sched.reason_pending}|{exception.type}|{exception.note}|{cwd}|{nodelist}'"
+  LML: './jobs_LML.xml'
+  type: 'job'
+  # exclude:
+  #   Partition: 'dc-gpu'
+  # include:
+  #   Partition: 'dc-gpu'
+  prefix: 'j'
+  apply_function: jobinfo
+  modify_after_parse:
+    NODELIST: expand_NodeList
+    T_SUBMIT: modify_date
+    T_RUN: modify_date
+    T_CLEANUP: modify_date
+  # modify_before_mapping:
+  #   JobState: modify_state
+  mapping:
+    JOBID:            'jobid'
+    USER:             'owner'
+    BANK:             'account'
+    QUEUE:            'queue'
+    NAME:             'name'
+    T_SUBMIT:         'queuedate'
+    T_ESTIMATE:       'estimate_time'
+    T_RUN:            'starttime'
+    T_CLEANUP:        'endtime'
+    DURATION:         'wall'
+    RUNTIME:          'runtime'
+    STATUS:           'status'
+    RESULT:           'detailedstatus'
+    NNODES:           'numnodes'
+    NCORES:           'totalcores'
+    NTASKS:           'totaltasks'
+    DEPENDENCIES:     'dependencies'
+    PRI:              'userprio'
+    URGENCY:          'urgency'
+    RC:               'return_code' # high-level return code, equivalent to Slurm's rc
+    WSTATUS:          'waitstatus'  # raw wait status; extract signal in post-processing; signal = waitstatus & 0x7f ; exitcode = (waitstatus >> 8) & 0xff
+    REASON:           'reason'
+    EXCEPTION-TYPE:   'exception_type' # When job ended via a Flux exception (e.g.: cancel, timeout, alloc, exec)
+    EXCEPTION-NOTE:   'exception_note' # Free-text detail about the exception (e.g.: "per user request", "job.timelimit", "nodes unavailable")
+    CWD:              'working_directory'
+    NODELIST:         'nodelist'
+
+# reservationinfo:
+#   cmd: 'scontrol show reservation --detail --all'
+#   LML: './reservation_LML.xml'
+#   type: 'reservation'
+#   # exclude:
+#   #   Partition: 'dc-gpu'
+#   # include:
+#   #   Partition: 'dc-gpu'
+#   prefix: 'r'
+#   modify_after_parse:
+#     NodeList: expand_NodeList
+#     StartTime: modify_date
+#     EndTime: modify_date
+#   mapping:
+#     ReservationName: 'resid'
+#     Duration: 'wall'
+#     EndTime: 'endtime'
+#     Nodes: 'nodelist'
+#     # Resid: 'resid' # 'resname' was not used, instead, the ReservationName was put into resid
+#     StartTime: 'starttime'
+#     State: 'state'
+#     Users: 'userlist'
+#     CoreCnt: 'corecnt'
+#     Flags: 'flags'
+#     NodeCnt: 'nodecnt'
+#     Accounts: 'accounts'
+
+# classesinfo:
+#   cmd: 'sacctmgr -P show qos'
+#   LML: './classes_LML.xml'
+#   type: 'class'
+#   # exclude:
+#   #   Partition: 'dc-gpu'
+#   # include:
+#   #   Partition: 'dc-gpu'
+#   prefix: 'c'
+#   mapping:
+#     Name: 'name'
+#     Flags: 'Flags'
+#     GraceTime: 'GraceTime'
+#     MaxJobsPA: 'max_jobs_pa'
+#     MaxJobsPU: 'max_jobs_pu'
+#     MaxSubmitPA: 'max_submit_pa'
+#     MaxSubmitPU: 'max_submit_pu'
+#     MaxTRES: 'max_size'
+#     MaxTRESPA: 'max_tres_pa'
+#     MaxTRESPU: 'max_tres_pu'
+#     MaxTRESPerNode: 'max_tres_pn'
+#     MaxWall: 'max_wall'
+#     MinTRES: 'min_size'
+#     UsageFactor: 'UsageFactor'
+#     Priority: 'Priority'
+#   modify_after_parse:
+#     MaxTRES: 'remove_key'
+#     MaxWall: 'to_hours'
+
+# stepinfo: # One entry per step
+#   cmd: 'sacct -P -a -o JobIDRaw,State,Exitcode,Start,End,time,JobName%30,Partition,User,Account,NNodes,NTasks,NCPUS,NodeList%30,AveCPUFreq,AvePages,ConsumedEnergyRaw -s BF,CA,CD,DL,F,NF,OOM,RQ,RS,RV,S,TO,R'
+  
+#   # If a timestamp file is given, the query should be made in a given period
+#   # This is set by the flags '-S <start_time> -E <end_time>' and the file
+#   # 'timestamp['file']' stores the last timestamp for which information was obtained
+#   timestamp:
+#     file: './jobs_step_last_timestamp.dat'
+#     ts_delay: 30
+#   LML: './jobs_step_LML.xml'
+#   type: 'step'
+#   prefix: 's'
+#   apply_function: stepinfo
+#   mapping:
+#     jobid: 'jobid'
+#     step: 'step'
+#     rc: 'rc'
+#     signr: 'signr'
+#     State: 'state'
+#     JobName: 'jobname'
+#     Start: 'start'
+#     End: 'end'
+#     Timelimit: 'time'
+#     NNodes: 'nnodes'
+#     NTasks: 'ntasks'
+#     NCPUS: 'ncpus'
+#     NodeList: 'nodelist'
+#     Partition: 'partition'
+#     User: 'user'
+#     Account: 'account'
+#     ConsumedEnergyRaw: 'FinalConsumedEnergyStep'
+#     # AveCPUFreq: 'AveCPUFreq'
+#     AvePages: 'AvePages'
+#   modify_after_parse:
+#     State: 'id_to_username'
+#   add:
+#     - foreach: 'jobid'
+#     # Substitutions are done using sed to avoid rewriting (or accumulating) values in the same key
+#       cmd: "sstat $$jobid$$ -P -a -o JobID,ConsumedEnergyRaw | sed -e 's/JobID/JobIDRaw/' -e 's/ConsumedEnergyRaw/ConsumedEnergy/'"
+#       mapping:
+#         ConsumedEnergy: 'ConsumedEnergy'

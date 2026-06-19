@@ -36,7 +36,11 @@ sub adapt_data_demo_mode {
   my $nodebug=1;
   # job information
   foreach my $jobref (@{$data->{JOBS_ENTRIES}}, @{$data->{JOBSTEP_ENTRIES}}) {
-    my $jobid=$jobref->{step};
+    my $jobid=$jobref->{step} // $jobref->{jobid};
+    if (!defined($jobid)) {
+      printf(STDERR "[LLmonDB_input_LML_jobmap.pm] ERROR: step or jobid is not defined: " . Dumper($jobref) . "\n");
+    }
+
     if(exists($jobref->{owner})) {
       $jobref->{owner}=$self->get_demo_login($jobref->{owner},$nodebug);
     }

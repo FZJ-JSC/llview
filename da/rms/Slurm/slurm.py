@@ -316,6 +316,12 @@ def reasonsinfo(options: dict, reasons_info: dict) -> dict:
 def accountinfo(options: dict, accounts_info) -> dict:
   """
   Specific function to modify accounts, and add extra items to accountinfo
+  Args:
+    options (dict): The configuration options for the accountinfo output.
+    accounts_info (SlurmInfo): The parsed data object containing the user accounts.
+
+  Returns:
+    dict: A dictionary containing the newly generated support user entries.
   """
   accountextra = {}
   accountmodified = {}
@@ -323,33 +329,35 @@ def accountinfo(options: dict, accounts_info) -> dict:
   ts = time.time()
 
   # Updating the accounts dictionary by adding or removing keys
-  for accountname,accountinfo in accounts_info.items():
-    accountmodified.setdefault(accountinfo['USER'],{})
+  for accountname, accountinfo_data in accounts_info.items():
+    accountmodified.setdefault(accountinfo_data['USER'], {})
 
-    for key,value in accountinfo.items():
-      if key not in accountmodified[accountinfo['USER']]:
-        accountmodified[accountinfo['USER']][key] = value
+    for key, value in accountinfo_data.items():
+      if key not in accountmodified[accountinfo_data['USER']]:
+        accountmodified[accountinfo_data['USER']][key] = value
       elif key == 'ACCOUNT':
-        accountmodified[accountinfo['USER']][key] += f",{value}"
-      # Adding 'id' to dictionary
-      accountmodified[accountinfo['USER']]['id'] = accountinfo['USER']
-      # Adding 'ts' to dictionary
-      accountmodified[accountinfo['USER']]['ts'] = ts
+        accountmodified[accountinfo_data['USER']][key] += f",{value}"
+        
+      # The 'id' and 'ts' fields are explicitly added to the dictionary
+      accountmodified[accountinfo_data['USER']]['id'] = accountinfo_data['USER']
+      accountmodified[accountinfo_data['USER']]['ts'] = ts
 
-  support_config = options.get("support",{})
-  support_users = support_config.get("users",[])
-  support_prefix = support_config.get("prefix","SS")
-  support_type = support_config.get("type","supportmap_slurm")
+  support_config = options.get("support", {})
+  support_users = support_config.get("users", [])
+  support_prefix = support_config.get("prefix", "SS")
+  support_type = support_config.get("type", "supportmap_slurm")
+  
   for support in support_users:
-    accountextra.setdefault(support,{})
-    accountextra[support]['__prefix'] = support_prefix
-    accountextra[support]['__type'] = support_type
-    accountextra[support]['id'] = support
-    accountextra[support]['ts'] = ts
-    accountextra[support]['USER'] = support
+    # A unique dictionary key is created to prevent overwriting the standard user entry
+    support_key = f"{support}_support"
+    accountextra.setdefault(support_key, {})
+    accountextra[support_key]['__prefix'] = support_prefix
+    accountextra[support_key]['__type'] = support_type
+    accountextra[support_key]['id'] = support
+    accountextra[support_key]['ts'] = ts
+    accountextra[support_key]['USER'] = support
 
-
-  # Modifying the accounts_info to the one based on username
+  # The main accounts_info data is replaced with the newly indexed dictionary
   accounts_info._dict = accountmodified
 
   return accountextra
@@ -749,15 +757,23 @@ class SlurmInfo:
             self._raw[current_unit]["__prefix"] = prefix
           if "__type" not in self._raw[current_unit] and stype:
             self._raw[current_unit]["__type"] = stype
-          for key,value in unit.items():
-            # If the value exist, join with new one separated by comma
-            # Unless the value is the current_unit, since that does not need accumulation
-            # (Only add if values are different)
-            if (key in self._raw[current_unit]) and (self._raw[current_unit][key] is not None) and (value != current_unit) and (value not in self._raw[current_unit][key].split(',')):
-              value_to_add = f"{self._raw[current_unit][key]},{value}"
+          for key, value in unit.items():
+            existing_val = self._raw[current_unit].get(key)
+            # Existing accumulated values are updated only if a new, valid string is encountered
+            if existing_val is not None and value != current_unit:
+              # Empty strings or values already present in the list are ignored
+              if value and value not in existing_val.split(','):
+                # A leading comma is avoided if the existing value is empty
+                if existing_val:
+                  value_to_add = f"{existing_val},{value}"
+                else:
+                  value_to_add = value
+              else:
+                # The existing accumulated string is preserved instead of being overwritten
+                value_to_add = existing_val
             else:
               value_to_add = value
-            self.add_value(key,value_to_add,self._raw[current_unit])
+            self.add_value(key, value_to_add, self._raw[current_unit])
       self._dict |= self._raw
     return
 
@@ -1325,8 +1341,10 @@ def main():
       timing[name]['__id'] = f'pstat_get{key}'
       slurm_info.add(timing)
 
-      slurm_info.to_LML(f"{args.outfolder.rstrip('/')+'/' if args.outfolder else ''}{options['LML']}")
-
+      # The output folder and LML filename are safely joined and normalized
+      output_dir = args.outfolder if args.outfolder else ""
+      final_filepath = os.path.normpath(os.path.join(output_dir, options['LML']))
+      slurm_info.to_LML(final_filepath)
     else:
       # Accumulating for a single LML
       unique = unique + slurm_info
