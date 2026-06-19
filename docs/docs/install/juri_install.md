@@ -96,7 +96,10 @@ Inside `$LLVIEW_WEB_DATA` must be placed:
         $JURI_HOME/utils/linkjuri.sh $JURI_HOME $LLVIEW_WEB_DATA
         ```
 - The access setup of the portal can be done on the [`.htaccess`](#htaccess) file on the main folder `$LLVIEW_WEB_DATA` (i.e., the parent of `data/`). An example is given in JURI's repo. 
-    **Note:** It is not linked with `linkjuri.sh` as this file may include sensitive data.
+
+!!! Warning
+    The main `.htaccess` file is not linked with `linkjuri.sh`, as this file may include sensitive data.  
+
 - The linked folder `$LLVIEW_WEB_DATA` can then be exposed to external access, e.g.:
     ```
     ln -s $LLVIEW_WEB_DATA /srv/www/htdocs/system

@@ -111,6 +111,8 @@ sub init_convert_functions {
                                 "toGiB"      => \&to_gib,
                                 "toMiB"      => \&to_mib,
                                 "to_ms"      => \&to_ms,
+                                "JouletoWh"  => \&jouletowh,
+                                "JouletokWh" => \&jouletokwh,
                                 "MJouletoWh" => \&mjouletowh,
                                 "toThousand" => \&to_thousand,
                                 "toMillion"  => \&to_million,
@@ -592,6 +594,16 @@ sub to_gib {
 sub to_ms {
   my ($num,$self)=@_;
   return($num*1000.0);
+}
+
+sub jouletowh {
+  my ($num,$self)=@_;
+  return($num*0.0002777777778);
+}
+
+sub jouletokwh {
+  my ($num,$self)=@_;
+  return($num*0.0000002777777778);
 }
 
 sub mjouletowh {

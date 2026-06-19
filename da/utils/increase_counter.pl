@@ -12,22 +12,29 @@
 
 use strict;
 use Time::HiRes qw ( time );
+use FindBin;
+use lib "$FindBin::RealBin/../lib";
+use LML_da_util qw( check_folder );
 
 my $cntfile = shift(@ARGV);
+printf("[%s] cntfile  = %s\n", $0, $cntfile);
 
-printf("[%s] cntfile  = %s\n",$0,$cntfile);
+# Extract directory and ensure it exists
+my $dir = `dirname $cntfile`;
+chomp($dir);
+&check_folder($dir);
 
-my $current_cnt=0;
-
-if (-f $cntfile ) {
-    $current_cnt=`cat $cntfile`;
+my $current_cnt = 0;
+if (-f $cntfile) {
+    $current_cnt = `cat $cntfile`;
+    chomp($current_cnt);
 }
+
 $current_cnt++;
-open(STEP, "> $cntfile") or die "cannot open $cntfile";
+
+open(STEP, "> $cntfile") or die "cannot open $cntfile: $!";
 print STEP $current_cnt;
 close(STEP);
 
-printf("[%s] cnt  = %d \n",$0,$current_cnt);
-
+printf("[%s] cnt  = %d \n", $0, $current_cnt);
 exit;
-

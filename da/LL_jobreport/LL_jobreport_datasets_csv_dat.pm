@@ -800,7 +800,9 @@ sub process_data_query_and_save_csv_dat_cache {
   }
 }
 
-# Queues the file operation into the caching engine for parallel execution
+# The file operation is queued into the caching engine for parallel execution.
+# Write operations are bypassed if the checksum indicates the data is unchanged, 
+# unless the target file does not physically exist.
 #
 # Arguments:
 #   $self         - (Object) The LML_jobreport instance
@@ -808,7 +810,7 @@ sub process_data_query_and_save_csv_dat_cache {
 #   $file         - (String) Target output file path
 #   $ds           - (HashRef) Database status reference
 #   $dataref      - (ArrayRef) Rows assigned to this file
-#   $format       - (String) Explicit formatting string (if provided)
+#   $format       - (String) Formatting string
 #   $header       - (String) Header line
 #   $tscol        - (Integer) Index of the timestamp column
 #   $col_convert  - (HashRef) Conversion functions to apply to columns
@@ -816,6 +818,8 @@ sub process_data_query_and_save_csv_dat_cache {
 #   $max_entries  - (Integer) Maximum number of rows allowed per file
 #   $dataset      - (HashRef) Original dataset configuration definitions
 #   $raw_cols     - (ArrayRef) The mapped column structure to extract
+#   $checksumvar  - (String|Undef) The column used for checksum calculation
+#   $checksum     - (Float) The calculated checksum integer for this file
 #
 # Returns:
 #   (Void)
@@ -826,10 +830,16 @@ sub register_data_for_file_csv_dat_cache {
   my $shortfile = $file;
   $shortfile =~ s/$self->{OUTDIR}\///s;
 
-  # Checksum bypass logic. Skips writing entirely if data is unchanged
   my $process_file = 1;
   if (defined($checksumvar)) {
-    $ds->{$shortfile}->{checksum} = 0 if (!exists($ds->{$shortfile}->{checksum}));
+    if (!defined($checksum)) {
+      printf(STDERR "%s [ERROR] No checksum evaluated for %s. Database may be corrupt.\n", $self->{INSTNAME}, $shortfile);
+      $checksum = 0;
+    }
+    if (!exists($ds->{$shortfile}->{checksum})) {
+      printf(STDERR "%s [WARNING] Missing checksum tracking for %s. Initializing to zero.\n", $self->{INSTNAME}, $shortfile);
+      $ds->{$shortfile}->{checksum} = 0;
+    }
     if ($checksum != $ds->{$shortfile}->{checksum}) {
       $ds->{$shortfile}->{checksum} = $checksum;
     } else {
@@ -839,8 +849,12 @@ sub register_data_for_file_csv_dat_cache {
     $ds->{$shortfile}->{checksum} = 0;
   }
 
+  # Files that do not physically exist (or are flagged for continuous renewal) must bypass the checksum optimization to ensure initial creation.
+  if (!exists($ds->{$shortfile}->{status}) || $ds->{$shortfile}->{status} == FSTATUS_NOT_EXISTS) {
+    $process_file = 1;
+  }
+
   if ($process_file) {
-    # Cached complete datasets must always overwrite the old file, breaking the infinite append loop
     $self->{TABLECACHE}->{$table_cache}->{csv_openop}->{$file} = ">";
     $self->{TABLECACHE}->{$table_cache}->{csv_use_printf}->{$file} = exists($dataset->{format_str}) ? 1 : 0;
 
@@ -889,12 +903,12 @@ sub write_data_to_file_csv_dat_cache {
 
   my $starttime = time();
   
-  # Files are sorted by the number of rows they contain (descending) to implement 
-  # Longest Processing Time (LPT) scheduling.
+  # Files are sorted by the number of rows they contain (descending).
+  # Array sizes are safely evaluated to 0 if the dataset is completely empty, preventing undefined reference exceptions.
   my @filelist = sort { 
-    scalar(@{$self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$b}}) 
-    <=> 
-    scalar(@{$self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$a}}) 
+    my $count_a = defined($self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$a}) ? scalar(@{$self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$a}}) : 0;
+    my $count_b = defined($self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$b}) ? scalar(@{$self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$b}}) : 0;
+    $count_b <=> $count_a 
   } keys(%{$self->{TABLECACHE}->{$table_cache}->{csv_fileop}});
   
   my $numfiles  = scalar @filelist;
@@ -917,7 +931,8 @@ sub write_data_to_file_csv_dat_cache {
     $fcount++;
 
     my $file         = $filelist[$fnum];
-    my $dataset_rows = $self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$file};
+    # The dataset row reference is safely initialized to an empty array if undefined.
+    my $dataset_rows = $self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$file} || [];
     my $raw_cols     = $self->{TABLECACHE}->{$table_cache}->{csv_raw_cols}->{$file};
     my $format       = $self->{TABLECACHE}->{$table_cache}->{csv_format}->{$file};
     my $header       = $self->{TABLECACHE}->{$table_cache}->{csv_header}->{$file};

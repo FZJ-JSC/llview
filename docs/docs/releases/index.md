@@ -1,6 +1,7 @@
 # LLview Internal Releases
 
-A simplified package of LLview is also available Open Source on GitHub. [See more](public.md)
+LLview is also available Open Source on GitHub. [See more](public.md)
+The main part that is not yet included on the public release is the Live view.
 
 Developments on the internal releases of LLview are not following the new implementations as the public one. New fixes and improvements done on the internal releases are brought periodically to the public release, but not vice-versa. The versions of the internal "releases" are kept in place for simplicity.
 A single version of JURI is used for both internal and public versions of LLview. [See here the changelog for JURI](juri.md).

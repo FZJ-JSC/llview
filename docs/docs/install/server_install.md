@@ -143,7 +143,7 @@ The `jobreport` action maily creates the data to be presented to the user and co
 
 The `transferreports` step inside the `jobreport` action is used to transfer data securely from the LLview Server to the Web Server. To use this step as it is by default, it is necessary to create an ssh-key pair:
     ```
-    cd $LLVIEW_DATA/$SYSTEMNAME/perm/
+    cd $LLVIEW_DATA/$LLVIEW_SYSTEMNAME/perm/
     mkdir keys
     cd keys
     ssh-keygen -a 100 -t ed25519 -C 'LLview job report transport from LLview-Server' -f www_llview_system_jobreport

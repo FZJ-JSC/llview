@@ -31,7 +31,7 @@ sub adapt_workflows {
   ($nextchainnr,$jobid_to_wf,$wf_max_wjid)=$self->load_jobid_wf_map();
   
   foreach $jobref (@{$data->{JOBS_ENTRIES}}) {
-    my $jobid=$jobref->{step};
+    my $jobid=$jobref->{step} // $jobref->{jobid};
     $jobsref->{$jobid}=$jobref;
     
     $jobref->{chainid}=$jobref->{'wf_id'}=$jobref->{'wf_jid'}="-";

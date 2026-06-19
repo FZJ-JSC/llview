@@ -1,0 +1,32 @@
+config:
+  interval: 60
+  trigger: "./seanerbus.trigger"
+  bus_host: "localhost"
+  bus_port: 5398
+
+outputs:
+  flux_jobs:
+    LML: "./flux_jobs_LML.xml"
+    prefix: "j"
+    type: "job"
+    subscriptions:
+      - uuid: "f50de671-c6c4-49a5-b684-22d2c321f605"
+        interpreter: "FluxLifecycleEventV1"
+        index_key: "jobid"
+        metrics:
+          jobid: { path: "jobid" }
+          state: { path: "state" }
+          nnodes: { path: "resources.nnodes" }
+          ncpus: { path: "resources.ncpus" }
+          ngpus: { path: "resources.ngpus" }
+          owner: { path: "submit_info.owner" }
+          budget: { path: "submit_info.budget" }
+          submittime: { path: "submit_info.submittime", modify: "modify_date" }
+          walltime: { path: "submit_info.walltime" }
+          nodelist: { path: "run_info.nodelist", agg: "concatenate", modify: "expand_NodeList" }
+          rc_state: { path: "finish_info.rc_state" }
+
+# TODO:
+# make checkpoint in case the code crashes: write the collected events and ts for checkpointing, to be recoved in case of crashing. Needs to add data using request/response to complete information during downtime
+# Add log.debug before writing the LML files, and when data is received from the bus, to have more visibility on the process and potential issues.
+

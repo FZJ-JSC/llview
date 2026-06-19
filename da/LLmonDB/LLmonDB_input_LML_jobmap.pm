@@ -116,8 +116,11 @@ sub get_jobnodemap_from_LML {
   my $cnt=0;
 
   foreach $jobref (@{$entries}) {
-    next if(!exists($jobref->{step}));
-    $jobid=$jobref->{step};
+    $jobid = $jobref->{step} // $jobref->{jobid};
+    if (!defined($jobid)) {
+      printf(STDERR "[LLmonDB_input_LML_jobmap.pm] ERROR: step or jobid is not defined: " . Dumper($jobref) . "\n");
+    }
+    next unless defined($jobid);
 
     if(exists($jobref->{nodelist})) {
       if($jobref->{nodelist} ne "-") {
@@ -193,8 +196,11 @@ sub get_jobtsmap_from_LML {
   my $cnt=0;
 
   foreach $jobref (@{$entries}) {
-    next if(!exists($jobref->{step}));
-    $jobid=$jobref->{step};
+    $jobid = $jobref->{step} // $jobref->{jobid};
+    if (!defined($jobid)) {
+      printf(STDERR "[LLmonDB_input_LML_jobmap.pm] ERROR: step or jobid is not defined: " . Dumper($jobref) . "\n");
+    }
+    next unless defined($jobid);
 
     my $active=0;
     if(exists($jobref->{nodelist})) {

@@ -313,7 +313,20 @@ sub process_collectDB_update_from_other_DB {
     foreach my $key (keys(%{$qdata})) {
       foreach my $k (keys(%{$qdata->{$key}})) {
         print STDERR "TMPDEB: ERROR: $key $k<\n" if (!defined($qdata->{$key}->{$k}));
-        $existdata->{$key}->{$qcolmap->{$k}}=$qdata->{$key}->{$k};
+        
+        my $new_val = $qdata->{$key}->{$k};
+        my $mapped_col = $qcolmap->{$k};
+        my $default_val = $colsdef->{$mapped_col};
+        
+        # A protective mechanism is enforced to prevent partial LML updates (which are padded with 
+        # default values) from overwriting valid, previously established metadata in the target table.
+        if (defined($existdata->{$key}->{$mapped_col}) && 
+            $existdata->{$key}->{$mapped_col} ne $default_val && 
+            $new_val eq $default_val) {
+          # The existing valid value is retained; the default fallback is ignored.
+        } else {
+          $existdata->{$key}->{$mapped_col} = $new_val;
+        }
       }
     }
   }
@@ -328,8 +341,13 @@ sub process_collectDB_update_from_other_DB {
         if(exists($qdata->{$lkey})) {
           $existdata->{$key}->{$col}=$qdata->{$lkey}->{$qref->{qcol}};
         } else {
-          # print "TMPDEB: existdata->{$key}->{$col}=$existdata->{$key}->{$col}=qdata->{$lkey}->{$qref->{qcol}}\n";
-          $existdata->{$key}->{$col}=$qref->{default};
+          # A protective mechanism prevents temporary lookup failures from erasing established mappings.
+          if (defined($existdata->{$key}->{$col}) && 
+              $existdata->{$key}->{$col} ne $qref->{default}) {
+            # The existing valid mapping is retained.
+          } else {
+            $existdata->{$key}->{$col}=$qref->{default};
+          }
         }
       }
     }

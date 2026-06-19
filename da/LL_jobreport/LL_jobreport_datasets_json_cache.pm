@@ -327,56 +327,65 @@ sub process_data_query_drop_table_json {
   delete($self->{TABLECACHE}->{$table_cache});
 }
 
+# The JSON file operation is queued into the caching engine for parallel execution.
+#
+# Arguments:
+#   $self               - (Object) The LML_jobreport instance
+#   $table_cache        - (String) Name of the memory cache pool
+#   $file               - (String) Target output file path
+#   $ds                 - (HashRef) Database status reference
+#   $dataref            - (ArrayRef) Rows assigned to this file
+#   $col_convert_by_col - (HashRef) Conversion functions to apply to columns
+#   $checksumvar        - (String|Undef) The column used for checksum calculation
+#   $checksum           - (Float) The calculated checksum integer for this file
+#   $max_entries        - (Integer) Maximum number of rows allowed per file
+#   $dataset            - (HashRef) Original dataset configuration definitions
+#
+# Returns:
+#   (Void)
 sub register_data_for_file_json_cache {
   my $self = shift;
-  my ($table_cache,$file,$ds,$dataref,$col_convert_by_col,$checksumvar,$checksum,$max_entries,$dataset)=@_;
+  my ($table_cache, $file, $ds, $dataref, $col_convert_by_col, $checksumvar, $checksum, $max_entries, $dataset) = @_;
 
-  # convert values
-  my $ds_converted;
-  my $shortfile=$file;$shortfile=~s/$self->{OUTDIR}\///s;
+  my $shortfile = $file;
+  $shortfile =~ s/$self->{OUTDIR}\///s;
 
-  # check checksum, do not process file if checksum unchanged
-  my $process_file=1;  
-  if(defined($checksumvar)) {
-    if(!defined($checksum)) {
-      print STDERR "ERROR: no checksum for $file\n";
+  my $process_file = 1;  
+  if (defined($checksumvar)) {
+    if (!defined($checksum)) {
+      printf(STDERR "%s [ERROR] No checksum evaluated for %s. Database may be corrupt.\n", $self->{INSTNAME}, $shortfile);
+      $checksum = 0;
     }
-    if(!exists($ds->{$shortfile}->{checksum})) {
-      print STDERR "ERROR: no checksum info for $shortfile\n";
+    if (!exists($ds->{$shortfile}->{checksum})) {
+      printf(STDERR "%s [WARNING] Missing checksum tracking for %s. Initializing to zero.\n", $self->{INSTNAME}, $shortfile);
+      $ds->{$shortfile}->{checksum} = 0;
     }
-    if($checksum != $ds->{$shortfile}->{checksum}) {
-      # if(($shortfile=~/running/) && ($checksum==0)) {
-      #   print STDERR "TMPDEB: checksum: $shortfile checksum changed: $checksum != $ds->{$shortfile}->{checksum} \n";
-      # }
-      $ds->{$shortfile}->{checksum}=$checksum;
+    if ($checksum != $ds->{$shortfile}->{checksum}) {
+      $ds->{$shortfile}->{checksum} = $checksum;
     } else {
-      # if(($shortfile=~/running/) && ($checksum==0)) {
-      #   print STDERR "TMPDEB: checksum: checksum NOT changed: $checksum != $ds->{$shortfile}->{checksum} $shortfile\n";
-      # }
-      $process_file=0;	    
+      $process_file = 0;	    
     }
   } else {
-    $ds->{$shortfile}->{checksum}=0;
+    $ds->{$shortfile}->{checksum} = 0;
   }
 
-  if($process_file) {
-    # update last ts stored to file
-    $ds->{$shortfile}->{dataset}=$shortfile;
-    $ds->{$shortfile}->{status}=FSTATUS_EXISTS;
-    $ds->{$shortfile}->{name}=$dataset->{name} if(!exists($ds->{$shortfile}->{name}));
-    $ds->{$shortfile}->{lastts_saved}=$self->{CURRENTTS}; # due to lack of time dependent data
-    $ds->{$shortfile}->{mts}=$self->{CURRENTTS}; # last change ts
+  # Files that do not physically exist must bypass the checksum optimization to ensure initial creation.
+  if (!exists($ds->{$shortfile}->{status}) || $ds->{$shortfile}->{status} == FSTATUS_NOT_EXISTS) {
+    $process_file = 1;
+  }
+
+  if ($process_file) {
+    $ds->{$shortfile}->{dataset} = $shortfile;
+    $ds->{$shortfile}->{status} = FSTATUS_EXISTS;
+    $ds->{$shortfile}->{name} = $dataset->{name} if (!exists($ds->{$shortfile}->{name}));
+    $ds->{$shortfile}->{lastts_saved} = $self->{CURRENTTS}; 
+    $ds->{$shortfile}->{mts} = $self->{CURRENTTS}; 
     $self->{COUNT_OP_NEW_FILE}++;
 
-    # store fileop operation, to be performed later
-    $self->{TABLECACHE}->{$table_cache}->{con_convert}->{$file}=$col_convert_by_col;
-    $self->{TABLECACHE}->{$table_cache}->{fileop}->{$file}=$dataref;
-    $self->{TABLECACHE}->{$table_cache}->{max_entries}->{$file}=$max_entries;
-  } else {
-    printf("%s register_data_for_file_json_cache: INFO: file skipped due to un-changed checksum %s\n",
-            $self->{INSTNAME}, $shortfile) if($debug);
+    $self->{TABLECACHE}->{$table_cache}->{con_convert}->{$file} = $col_convert_by_col;
+    $self->{TABLECACHE}->{$table_cache}->{fileop}->{$file} = $dataref;
+    $self->{TABLECACHE}->{$table_cache}->{max_entries}->{$file} = $max_entries;
   }
-  return();
 }
 
 sub write_data_to_file_json_cache {
@@ -399,7 +408,8 @@ sub write_data_to_file_json_cache {
     # convert values
     my $ds_converted=[];
     my $col_convert_by_col=$self->{TABLECACHE}->{$table_cache}->{con_convert}->{$file};
-    my $dataset=$self->{TABLECACHE}->{$table_cache}->{fileop}->{$file};
+    # The dataset row reference is safely initialized to an empty array if undefined.
+    my $dataset=$self->{TABLECACHE}->{$table_cache}->{fileop}->{$file} || [];
     my $shortfile=$file;$shortfile=~s/$self->{OUTDIR}\///s;
     my $max_entries=$self->{TABLECACHE}->{$table_cache}->{max_entries}->{$file};
     printf("%s write_data_to_file_json_cache: max_entries=%d ($table_cache,$file)\n", $self->{INSTNAME},$max_entries) if($max_entries>5000);
