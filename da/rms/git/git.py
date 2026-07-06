@@ -978,7 +978,7 @@ class BenchRepo:
       return host.replace("://", f"://{credentials}")
     return host
 
-  def get_or_update_repo(self,folder="./"):
+  def get_or_update_repo(self, folder="./"):
     """
     Getting folder to clone or pull the repo
     If not given, use current working directory
@@ -1003,6 +1003,14 @@ class BenchRepo:
       if not re.match(r'^[\w\-\/\.]+$', branch):
         raise ValueError(f"Invalid characters in branch name: '{branch}'. Aborting.\n")
 
+    # Password is safely extracted to prevent KeyErrors during log sanitation
+    pwd = config.get('password')
+
+    # Environment variables are copied to enforce non-interactive Git commands.
+    # This prevents Git from permanently hanging the script if it expects a terminal password prompt.
+    git_env = os.environ.copy()
+    git_env['GIT_TERMINAL_PROMPT'] = '0'
+
     # If folder does not exist, git clone the repo
     # otherwise try to git pull in the folder
     if not os.path.isdir(folder):
@@ -1013,20 +1021,25 @@ class BenchRepo:
       # Cloning repo
       self.log.info(f"Folder {folder} does not exist. Cloning...\n")
 
-      cmd = ['git', 'clone', '-q', config['host']]
-      cmd.append(folder)
-      self.log.debug("Cloning repo with command: {}\n".format(' '.join(cmd).replace(f":{config['password']}@",":***@")))
-      p = run(cmd, stdout=PIPE)
+      cmd = ['git', 'clone', '-q', config['host'], folder]
+      
+      # Commands are sanitized safely to avoid exposing passwords in the logs
+      safe_cmd = ' '.join(cmd).replace(f":{pwd}@", ":***@") if pwd else ' '.join(cmd)
+      self.log.debug(f"Cloning repo with command: {safe_cmd}\n")
+      
+      p = run(cmd, stdout=PIPE, stderr=PIPE, env=git_env, text=True)
       if p.returncode:
-        raise ValueError(f"Error {p.returncode} running command: {' '.join(cmd).replace(f':{config["password"]}@', ':***@')}")
+        err_msg = p.stderr.strip() if p.stderr else "Unknown Git Error"
+        raise ValueError(f"Git Clone Error {p.returncode}: {err_msg}\nCommand: {safe_cmd}")
       
       # Branch is switched immediately after cloning if specified
       if branch:
         cmd = ['git', '-C', folder, 'switch', '-q', branch]
-        self.log.debug("Changing branch with command: {}\n".format(' '.join(cmd)))
-        p = run(cmd, stdout=PIPE)
+        self.log.debug(f"Changing branch with command: {' '.join(cmd)}\n")
+        p = run(cmd, stdout=PIPE, stderr=PIPE, env=git_env, text=True)
         if p.returncode:
-          raise ValueError(f"Error {p.returncode} running command: {' '.join(cmd)}")
+          err_msg = p.stderr.strip() if p.stderr else "Unknown Git Error"
+          raise ValueError(f"Git Switch Error {p.returncode}: {err_msg}\nCommand: {' '.join(cmd)}")
     else:
       if ('update' in config) and (not config['update']):
         self.log.info(f"Folder {folder} already exists, but update is skipped...\n")
@@ -1037,19 +1050,19 @@ class BenchRepo:
         # Branch is switched before pulling to ensure updates are fetched for the correct target
         if branch:
           cmd = ['git', '-C', folder, 'switch', '-q', branch]
-          self.log.debug("Changing branch with command: {}\n".format(' '.join(cmd)))
-          p = run(cmd, stdout=PIPE)
+          self.log.debug(f"Changing branch with command: {' '.join(cmd)}\n")
+          p = run(cmd, stdout=PIPE, stderr=PIPE, env=git_env, text=True)
           if p.returncode:
-            raise ValueError(f"Error {p.returncode} running command: {' '.join(cmd)}")
+            err_msg = p.stderr.strip() if p.stderr else "Unknown Git Error"
+            raise ValueError(f"Git Switch Error {p.returncode}: {err_msg}\nCommand: {' '.join(cmd)}")
 
-        # cmd = ['git', '-C', folder, 'pull', config['host']]
         cmd = ['git', '-C', folder, 'pull', '-q']
-        # self.log.debug("Running command: {}\n".format(' '.join(cmd).replace(f":{config['password']}@",":***@")))
-        self.log.debug("Running command: {}\n".format(' '.join(cmd)))
-        p = run(cmd, stdout=PIPE)
+        self.log.debug(f"Running command: {' '.join(cmd)}\n")
+        p = run(cmd, stdout=PIPE, stderr=PIPE, env=git_env, text=True)
         if p.returncode:
-          # self.log.error("Error {} running command: {}\n".format(p.returncode,' '.join(cmd).replace(f":{config['password']}@",":***@")))
-          raise ValueError(f"Error {p.returncode} running command: {' '.join(cmd)}")
+          err_msg = p.stderr.strip() if p.stderr else "Unknown Git Error"
+          raise ValueError(f"Git Pull Error {p.returncode}: {err_msg}\nCommand: {' '.join(cmd)}")
+          
     return True
 
   def get_sources(self):
@@ -2041,15 +2054,6 @@ class BenchRepo:
     # This set will track unique benchmarks to generate the final aggregation tables
     benchmarks_processed = set()
 
-    # Calculate length for N items: (N * 1 char for status) + (N-1 * 1 char for dash)
-    history_str_len = (history_n * 2) - 1
-
-    # Define the aggregation logic for status priority: F > W > S
-    # If any row is 'F', the whole timestamp is 'F'.
-    # Else if any row is 'W', the whole timestamp is 'W'.
-    # Else 'S'.
-    status_priority_sql = "CASE WHEN SUM(CASE WHEN \"_status\" = 'F' THEN 1 ELSE 0 END) > 0 THEN 'F' WHEN SUM(CASE WHEN \"_status\" = 'W' THEN 1 ELSE 0 END) > 0 THEN 'W' ELSE 'S' END"
-
     # Saving custom display names, in case they are given
     # to use on the cb_benchmarks query below
     custom_display_names = {}
@@ -2164,18 +2168,30 @@ class BenchRepo:
       match_conditions = [f'T2."{key.replace(" ", "_")}" = T1."{key.replace(" ", "_")}"' for key in parameters]
       match_expr = " AND ".join(match_conditions) if match_conditions else "1=1" # Safety fallback
       
-      # Building the History Subquery:
-      # - Filter by the current parameters (match_expr)
-      # - Group by "ts" to collapse multiple points into ONE status
-      # - Use status_priority_sql to ensure F > W > S
-      # - Order by "ts" ASC
-      # - Concatenate the results
-      inner_history_sql = f"SELECT GROUP_CONCAT(daily_stat, '-') FROM (SELECT {status_priority_sql} as daily_stat FROM \"cb_{combined_name}_data\" AS T2 WHERE {match_expr} GROUP BY \"ts\" ORDER BY \"ts\" ASC)"
+      # The History Subquery isolates the latest 'N' executions, calculates the health breakdown per batch, 
+      # and packages the metadata into a delimited string for the frontend tooltip rendering.
+      inner_history_sql = f"""
+      SELECT GROUP_CONCAT(daily_stat, '-') FROM (
+          SELECT (CASE WHEN f_cnt > 0 THEN 'F' WHEN w_cnt > 0 THEN 'W' ELSE 'S' END) || ':' || batch_ts || ':' || tot_cnt || ':' || s_cnt || ':' || w_cnt || ':' || f_cnt AS daily_stat, batch_ts
+          FROM (
+              SELECT 
+                  "ts" as batch_ts,
+                  COUNT(*) as tot_cnt,
+                  SUM(CASE WHEN "_status" = 'S' THEN 1 ELSE 0 END) as s_cnt,
+                  SUM(CASE WHEN "_status" = 'W' THEN 1 ELSE 0 END) as w_cnt,
+                  SUM(CASE WHEN "_status" = 'F' THEN 1 ELSE 0 END) as f_cnt
+              FROM "cb_{combined_name}_data" AS T2 
+              WHERE {match_expr} 
+              GROUP BY "ts" 
+              ORDER BY "ts" DESC 
+              LIMIT {history_n}
+          )
+          ORDER BY batch_ts ASC
+      )
+      """.strip().replace('\n', ' ')
 
-      # We also need a subquery to count the DISTINCT timestamps for the final dash logic (when there are further status points)
       count_subquery = f"SELECT COUNT(DISTINCT \"ts\") FROM \"cb_{combined_name}_data\" AS T2 WHERE {match_expr}"
-
-      history_expr = f"(CASE WHEN ({count_subquery}) > {history_n} THEN '-' || substr(({inner_history_sql}), -{history_str_len}) ELSE ({inner_history_sql}) END)"
+      history_expr = f"(CASE WHEN ({count_subquery}) > {history_n} THEN '-' || ({inner_history_sql}) ELSE ({inner_history_sql}) END)"
 
       # Build a HAVING clause to exclude groups where ANY grouping parameter is empty
       # (These "ghost" groups would be "stuck" separately on the table, since they are not valid runs)
@@ -2239,14 +2255,28 @@ class BenchRepo:
 
     # After processing all tabs, create the intermediate timestamp tables for each benchmark
     for benchname in benchmarks_processed:
-      # Subquery to get one status per timestamp (F wins over S, so we use MIN) for the global timeline
-      # No match_expr needed here because we are aggregating the whole benchmark table.
-      inner_history_sql_global = f"SELECT GROUP_CONCAT(daily_stat, '-') FROM (SELECT {status_priority_sql} as daily_stat FROM \"cb_{benchname.replace(' ','_')}_timestamps\" GROUP BY \"ts\" ORDER BY \"ts\" ASC)"
+      # The global history query mirrors the tab-level logic, packaging the metadata for the portal-wide Overview table
+      inner_history_sql_global = f"""
+      SELECT GROUP_CONCAT(daily_stat, '-') FROM (
+          SELECT (CASE WHEN f_cnt > 0 THEN 'F' WHEN w_cnt > 0 THEN 'W' ELSE 'S' END) || ':' || batch_ts || ':' || tot_cnt || ':' || s_cnt || ':' || w_cnt || ':' || f_cnt AS daily_stat, batch_ts
+          FROM (
+              SELECT 
+                  "ts" as batch_ts,
+                  COUNT(*) as tot_cnt,
+                  SUM(CASE WHEN "_status" = 'S' THEN 1 ELSE 0 END) as s_cnt,
+                  SUM(CASE WHEN "_status" = 'W' THEN 1 ELSE 0 END) as w_cnt,
+                  SUM(CASE WHEN "_status" = 'F' THEN 1 ELSE 0 END) as f_cnt
+              FROM "cb_{benchname.replace(' ', '_')}_timestamps" 
+              GROUP BY "ts" 
+              ORDER BY "ts" DESC 
+              LIMIT {history_n}
+          )
+          ORDER BY batch_ts ASC
+      )
+      """.strip().replace('\n', ' ')
 
-      # Subquery to count UNIQUE runs for the dash logic
       count_subquery_global = f"SELECT COUNT(DISTINCT \"ts\") FROM \"cb_{benchname.replace(' ','_')}_timestamps\""
-
-      history_expr_global = f"(CASE WHEN ({count_subquery_global}) > {history_n} THEN '-' || substr(({inner_history_sql_global}), -{history_str_len}) ELSE ({inner_history_sql_global}) END)"
+      history_expr_global = f"(CASE WHEN ({count_subquery_global}) > {history_n} THEN '-' || ({inner_history_sql_global}) ELSE ({inner_history_sql_global}) END)"
 
       tables.append({'table': {
         'name': f"cb_{benchname.replace(' ', '_')}_timestamps",
@@ -2724,7 +2754,13 @@ class BenchRepo:
           sorted_keys = sorted([k for k in graphparameters.keys() if k in current_group_by])
           
           # Sort the values (sets) into lists to ensure consistent product generation
-          sorted_value_lists = [sorted(list(graphparameters[k])) for k in sorted_keys]
+          # A natural sort algorithm is applied so numeric strings (e.g., '2' and '10') are ordered mathematically
+          sorted_value_lists = [
+            sorted(
+              list(graphparameters[k]), 
+              key=lambda v: [float(c) if c.replace('.', '', 1).isdigit() else c.lower() for c in re.split(r'(\d+(?:\.\d+)?)', str(v))]
+            ) for k in sorted_keys
+          ]
 
           valid_combinations = [] 
           # Generating all possible combinations of the graph parameters for this plot
@@ -2755,7 +2791,13 @@ class BenchRepo:
                 valid_combinations.append(current_combination)
             
             # Sorting list by key and value
-            valid_combinations.sort(key=lambda d: tuple(sorted(d.items())))
+            # Natural sort is utilized again to guarantee correct numerical sequence for the final traces
+            valid_combinations.sort(
+              key=lambda d: tuple(
+                (k, [float(c) if c.replace('.', '', 1).isdigit() else c.lower() for c in re.split(r'(\d+(?:\.\d+)?)', str(v))]) 
+                for k, v in sorted(d.items())
+              )
+            )
 
           # Handle case where there are no groups/traces (single curve)
           # If valid_combinations is empty, we create a single dummy 'traceelem' (empty dict)
@@ -3312,6 +3354,7 @@ def get_credentials(name,config):
   log = logging.getLogger('logger')
   username = None
   password = None
+  
   if "token" in config:
     username = 'oauth2'
     password = config['token']
@@ -3337,26 +3380,38 @@ def get_credentials(name,config):
     elif config['credentials'] == 'none':
       log.debug("Queries will be done without authentication\n")
       return None,None
-  # If username was not obtained in config or module, ask now
+      
+  # If username was not obtained in config or module, ask now securely
   if not username:
-    username = input("Username:")
+    try:
+      username = input("Username:")
+    except EOFError:
+      username = None
+      
     if not username:
       log.info("No username given, queries will be done without authentication\n")
       return None,None
-  # If username was not obtained in config or module, ask now
+      
+  # If password was not obtained in config or module, ask now securely
   if not password:
     if keyring:
       log.info("Keyring module found, attempting to retrieve password.\n")
       password = keyring.get_password('llview_prometheus', username)
       if password is None:
-        password_input = getpass.getpass(f"Enter password for {username} on '{name}' (will be stored in keychain):")
-        keyring.set_password(name, username, password_input)
-        password = password_input
+        try:
+          password_input = getpass.getpass(f"Enter password for {username} on '{name}' (will be stored in keychain):")
+          keyring.set_password(name, username, password_input)
+          password = password_input
+        except EOFError:
+          password = None
     else:
       log.warning("Keyring module cannot be imported, password will not be saved.\n")
-      password = getpass.getpass(f"Enter password for {username}:")
+      try:
+        password = getpass.getpass(f"Enter password for {username}:")
+      except EOFError:
+        password = None
+        
   return username,password
-
 
 
 def parse_config_yaml(filename):

@@ -373,6 +373,45 @@ def my_custom_validator(values: List[Union[float, int, None]], params: Dict[str,
     return results, layout_additions
 ```
 
+## 7. Role-Based Visibility
+
+Benchmarks can be securely routed and displayed in specific role-based views (User, Project, Mentor, Support). Data is automatically distributed securely on the backend, and UI elements are dynamically filtered based on the authenticated user's access level.
+
+If the `visibility` block is entirely omitted from a benchmark's configuration, the benchmark is exclusively generated for the **Support** view by default.
+
+### Configuration Syntax
+
+To grant access to other views, a `visibility` dictionary is added to the root of the benchmark definition.
+
+```yaml
+MyBenchmark:
+  description: 'General benchmark suite.'
+  host: 'https://git.example.com/project/benchmarks.git'
+  
+  visibility:
+    support: true               # (Optional) Displays in the Support view. Default: true
+    
+    project: ['projA', 'projB'] # Displays in the Project view (for PIs) of the specified projects
+    
+    user:
+      projA: ['user1', 'user2'] # Displays in the User view for specific users belonging to projA
+      projB: ['all']            # Displays in the User view for ALL users belonging to projB
+      
+    mentor: ['mentor1']         # Displays in the Mentor view for specified mentors
+```
+
+### Visibility Options Reference
+
+| Role | Expected Format | Description |
+| :--- | :--- | :--- |
+| **`support`** | Boolean | Controls visibility in the global Support view. Defaults to `true`. |
+| **`project`** | List of strings | Grants access to the Project view for the Principal Investigators (PIs) of the listed projects. |
+| **`user`** | Dictionary | Grants access to the User view. Keys must be project names. Values must be a list of authorized usernames, or the string `['all']` to grant access to every user within that specific project. |
+| **`mentor`** | List of strings | Grants access to the Mentor view for the specified mentor usernames. |
+
+!!! Info "Data Security"
+    When visibility rules are defined, personalized database queries and CSV files are generated specifically for each authorized user or project. This ensures that users cannot manually download or inspect benchmark datasets belonging to other projects, even if they guess the file paths.
+
 ***
 
 [^1]: C. Leys, C. Ley, O. Klein, P. Bernard, and L. Licata, *Detecting outliers: Do not use standard deviation around the mean, use absolute deviation around the median.* Journal of Experimental Social Psychology 49, 764-766 (2013).
