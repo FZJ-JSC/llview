@@ -1608,10 +1608,13 @@ class BenchRepo:
       # (This must be done before collecting the unique graph parameters
       # to remove unwanted values, but should be done after the validation for the status
       # to avoid filtering failed runs and keep them in the status history)
+      # Table parameters are passed strictly so their filters are enforced even on Failed runs.
+      table_keys = list(parameters.keys())
       self.apply_pattern(
                           current_data,
                           exclude=to_exclude,
-                          include=to_include
+                          include=to_include,
+                          strict_keys=table_keys
                         )
 
       # If data was filtered down to nothing, but we started with valid data (stub exists),
@@ -3035,12 +3038,14 @@ class BenchRepo:
         self.add_value(key,value,parsed_data[current_unit])
     return
 
-  def apply_pattern(self,elements,exclude={},include={}):
+  def apply_pattern(self, elements, exclude={}, include={}, strict_keys=None):
     """
     Loops over all units in elements to:
     - remove items that match 'exclude'
     - keep only items that match 'include'
+    - strict_keys: List of metric names. Filters on these keys are enforced even if the run Failed.
     """
+    strict_keys = strict_keys or []
     to_remove = set()
     if isinstance(elements,set):
       # When elements is a set (e.g. 'sources' list)
@@ -3054,18 +3059,27 @@ class BenchRepo:
     elif isinstance(elements,list):
       # When elements is a list (e.g. 'metrics' list, containing a list of dicts)
       # Check if each of the elements of the list contains the patterns
-      for idx,unit in enumerate(elements):
+      for idx, unit in enumerate(elements):
 
         # We want to preserve Failed runs to be able to set correctly the status history
         # If the unit (row) is marked as FAILED, we skip all filtering logic.
         # This ensures the failed run is kept in the list regardless of missing data.
-        if isinstance(unit, dict) and unit.get('_status') == 'F':
-            continue 
+        # However, table parameters (strict_keys) are still enforced even for failed runs,
+        # such that we can remove "bad" table rows.
+        is_failed = isinstance(unit, dict) and unit.get('_status') == 'F'
         
-        if exclude and self.check_unit(idx,unit,exclude,text="excluded"):
-          to_remove.add(idx)
-        if include and not self.check_unit(idx,unit,include,text="included"):
-          to_remove.add(idx)
+        if exclude:
+          # If the run Failed, we only evaluate exclude rules targeting strict table parameters.
+          # We securely isolate the strict rules into a temporary dictionary.
+          active_exclude = {k: v for k, v in exclude.items() if k in strict_keys} if is_failed else exclude
+          if active_exclude and self.check_unit(idx, unit, active_exclude, text="excluded"):
+            to_remove.add(idx)
+            continue # Already removed, no need to check inclusion
+        if include:
+          # If the run Failed, we only evaluate include rules targeting strict table parameters.
+          active_include = {k: v for k, v in include.items() if k in strict_keys} if is_failed else include
+          if active_include and not self.check_unit(idx, unit, active_include, text="included"):
+            to_remove.add(idx)
       for idx in sorted(to_remove, reverse=True): # Must be removed from last to first, otherwise elements change
         del elements[idx]
     elif isinstance(elements,dict):
@@ -3125,41 +3139,41 @@ class BenchRepo:
     #           return True            
     return False
 
-  def check_unit(self,unitname,unit,pattern,text="included/excluded"):
+  def check_unit(self, unitname, unit, pattern, text="included/excluded"):
     """
     Check 'current_unit' name with rules for exclusion or inclusion. (exclusion is applied first)
     Returns True if unit is to be skipped
     """
-    if isinstance(pattern,str): # If rule is a simple string
-      if re.search(pattern, unitname):
+    if isinstance(pattern, str): 
+      if re.search(str(pattern), str(unitname)):
         self.log.debug(f"Unit {unitname} is {text} due to {pattern} rule\n")
         return True
-    elif isinstance(pattern,list): # If list of rules
-      for pat in pattern: # loop over list - that can be strings or dictionaries
-        if isinstance(pat,str): # If item in list is a simple string
-          if re.search(pat, unitname):
+    elif isinstance(pattern, list): 
+      for pat in pattern: 
+        if isinstance(pat, str) or isinstance(pat, int) or isinstance(pat, float): 
+          if re.search(str(pat), str(unitname)):
             self.log.debug(f"Unit {unitname} is {text} due to {pat} rule in list\n")
             return True
-        elif isinstance(pat,dict): # If item in list is a dictionary
-          for key,value in pat.items():
-            if isinstance(value,str): # if dictionary value is a simple string
-              if (key in unit) and re.search(value, unit[key]):
+        elif isinstance(pat, dict): 
+          for key, value in pat.items():
+            if isinstance(value, str) or isinstance(value, int) or isinstance(value, float): 
+              if (key in unit) and re.search(str(value), str(unit[key])):
                 self.log.debug(f"Unit {unitname} is {text} due to {value} rule in {key} key of list\n")
                 return True
-            elif isinstance(value,list): # if dictionary value is a list
+            elif isinstance(value, list): 
               for v in value:
-                if (key in unit) and re.search(v, unit[key]): # At this point, v in list can only be a string
+                if (key in unit) and re.search(str(v), str(unit[key])): 
                   self.log.debug(f"Unit {unitname} is {text} due to {v} rule in list of {key} key of list\n")
                   return True
-    elif isinstance(pattern,dict): # If dictionary with rules
-      for key,value in pattern.items():
-        if isinstance(value,str): # if dictionary value is a simple string
-          if (key in unit) and re.search(value, unit[key]):
+    elif isinstance(pattern, dict): 
+      for key, value in pattern.items():
+        if isinstance(value, str) or isinstance(value, int) or isinstance(value, float): 
+          if (key in unit) and re.search(str(value), str(unit[key])):
             self.log.debug(f"Unit {unitname} is {text} due to {value} rule in {key} key\n")
             return True
-        elif isinstance(value,list): # if dictionary value is a list
+        elif isinstance(value, list): 
           for v in value:
-            if (key in unit) and re.search(v, unit[key]): # At this point, v in list can only be a string
+            if (key in unit) and re.search(str(v), str(unit[key])): 
               self.log.debug(f"Unit {unitname} is {text} due to {v} rule in list of {key} key\n")
               return True
     return False
