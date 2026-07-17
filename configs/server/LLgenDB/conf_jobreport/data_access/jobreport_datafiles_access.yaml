@@ -154,16 +154,16 @@
     pre_rows:           'Require valid-user' 
     %include "jobreport_datafiles_access_groupfile_support.yaml"
 
-- dataset:
-    name: cb_access
-    set:                 access_cb
-    filepath:           '$outputdir/cb/.htaccess'
-    format:             'access'
-    stat_database:       jobreport_access_stat
-    stat_table:          datasetstat_support_access
-    filemode:            new 
-    pre_rows:           'Require valid-user' 
-    %include "jobreport_datafiles_access_groupfile_support.yaml"
+# - dataset:
+#     name: cb_access
+#     set:                 access_cb
+#     filepath:           '$outputdir/cb/.htaccess'
+#     format:             'access'
+#     stat_database:       jobreport_access_stat
+#     stat_table:          datasetstat_support_access
+#     filemode:            new 
+#     pre_rows:           'Require valid-user' 
+#     %include "jobreport_datafiles_access_groupfile_support.yaml"
     
 ###############################
 # Group file
@@ -202,7 +202,6 @@
     filemode:            new
     row_format:         'support: %s\n' 
     row_columns:        'support'
-
     
 
 ###############################
