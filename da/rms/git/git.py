@@ -452,6 +452,102 @@ def regression_detector(values: List[Union[float, int, None]], params: Dict[str,
   return results, layout_additions
 
 
+def match_validator(values: List[Union[float, int, str, None]], params: Dict[str, Any], x_values: List[Any] = None) -> Tuple[List[bool], Dict[str, Any]]:
+  """
+  Categorical or numeric values are evaluated for equality or inequality against defined targets.
+  
+  Args:
+    values: List of values to check.
+    params: Dictionary containing 'eq' (allowed values) or 'neq' (forbidden values).
+            Optional parameters:
+            - 'annotation_text': String to customize the graph label (defaults to '').
+            - 'add_visuals': Boolean to toggle the generation of red circles on the graph (defaults to True).
+    x_values: Optional list of x-axis values utilized to place visual annotations.
+    
+  Returns:
+    Tuple containing:
+    - List[bool]: True if the value matches the criteria, False if a Warning is triggered.
+    - Dict: Plotly layout additions (annotations highlighting the flagged values, if enabled).
+    
+  Raises:
+    ValueError: If neither 'eq' nor 'neq' parameters are provided.
+  """
+  results = []
+  layout_additions = {'shapes': [], 'annotations': []}
+  
+  eq_targets = params.get('eq')
+  neq_targets = params.get('neq')
+  
+  if eq_targets is None and neq_targets is None:
+    raise ValueError("match_validator requires 'eq' or 'neq' parameter.")
+    
+  # Targets are normalized into lists to allow multiple acceptable/unacceptable matches
+  if eq_targets is not None and not isinstance(eq_targets, list):
+    eq_targets = [eq_targets]
+  if neq_targets is not None and not isinstance(neq_targets, list):
+    neq_targets = [neq_targets]
+    
+  # Targets are cast to strings securely to prevent type mismatches during evaluation
+  eq_targets = [str(t) for t in eq_targets] if eq_targets else None
+  neq_targets = [str(t) for t in neq_targets] if neq_targets else None
+  
+  is_ts = params.get('is_ts', False)
+  add_visuals = params.get('add_visuals', True)
+  annotation_text = params.get('annotation_text', '')
+  
+  def format_x(x: Any) -> Any:
+    if is_ts and isinstance(x, (float, int)):
+      return datetime.datetime.fromtimestamp(x).strftime('%Y-%m-%d %H:%M:%S')
+    return x
+
+  for i, val in enumerate(values):
+    # Missing data is treated as valid to avoid redundant failures
+    if val is None:
+      results.append(True)
+      continue
+      
+    val_str = str(val)
+    is_valid = True
+    
+    if eq_targets is not None and val_str not in eq_targets:
+      is_valid = False
+    if neq_targets is not None and val_str in neq_targets:
+      is_valid = False
+      
+    results.append(is_valid)
+    
+    # Visual elements are generated only if explicitly enabled
+    if not is_valid and add_visuals and params.get('annotations', True) is not False:
+      if x_values and x_values[i] is not None:
+        x_formatted = format_x(x_values[i])
+        
+        # An unfilled circle is placed directly over the data point
+        layout_additions['annotations'].append({
+          'x': x_formatted,
+          'y': val,
+          'text': '&#9711;',
+          'showarrow': False,
+          'font': {'color': 'rgba(255, 0, 0, 0.7)', 'size': 20},
+          'xanchor': 'center',
+          'yanchor': 'middle'
+        })
+        
+        # Custom or default warning text is floated above the circle if defined
+        if annotation_text:
+          layout_additions['annotations'].append({
+            'x': x_formatted,
+            'y': val,
+            'text': annotation_text,
+            'showarrow': False,
+            'yshift': 15,
+            'font': {'color': 'rgba(255, 0, 0, 0.9)', 'size': 15},
+            'xanchor': 'center',
+            'yanchor': 'bottom'
+          })
+
+  return results, layout_additions
+
+
 # Fixing/improving multiline output and strings with special characters of YAML dump
 def str_presenter(dumper, data):
   """
@@ -1448,6 +1544,22 @@ class BenchRepo:
 
       # Adding 'common_data' to all entries of 'current_data'
       current_data[:] = [(data|common_data) for data in current_data]
+
+      # Value mappings are applied to rewrite entries before aggregation or validation occurs.
+      # Empty strings or missing values can be securely substituted by defining an empty string key in the map.
+      for data in current_data:
+        for metric_name in used_metrics:
+          spec = metrics_section[metric_name]
+          if isinstance(spec, dict) and 'map' in spec:
+            val = data.get(metric_name)
+            # The data value is safely cast to a string to ensure accurate dictionary matching
+            val_str = str(val).strip() if val is not None else ""
+            
+            # The configured map keys are also cast to strings to prevent YAML boolean parsing conflicts
+            str_map = {str(k).strip(): v for k, v in spec['map'].items()}
+            
+            if val_str in str_map:
+              data[metric_name] = str_map[val_str]
 
       # Executed exactly once to compute all intermediate metrics before validation occurs
       if agg_metrics or calc_headers:
@@ -3370,8 +3482,12 @@ def get_credentials(name,config):
   password = None
   
   if "token" in config:
+    # An explicitly falsy token (e.g., 'token: false' or 'token: ""') disables authentication for public repositories
+    if not config["token"]:
+      log.info("Token explicitly disabled. Git operations will proceed without authentication.\n")
+      return None, None
     username = 'oauth2'
-    password = config['token']
+    password = str(config['token'])
   elif "credentials" in config:
     if isinstance(config['credentials'],dict):
       # Trying to get 'username' and 'password' from configuration
@@ -3630,7 +3746,7 @@ def main():
         # Sanitize the fetched remote config, and remove protected keys from the downloaded file
         try:
           remote_config = sanitize_config_dict(remote_config, log, context=f"include file for {repo_name}")
-        except ValueError:
+        except ValueError as e:
           log.error(f"Failed to sanitize remote configuration for '{repo_name}'. Skipping repository.\n")
           # Adding error to registry
           error_msg = f"Configuration Error: Invalid characters in included file. {str(e)}"
@@ -3690,7 +3806,7 @@ def main():
             # Sanitize the fetched remote config, and remove protected keys from the downloaded file
             try:
               remote_tab_config = sanitize_config_dict(remote_tab_config, log, context=f"include file for tab {tab}")
-            except ValueError:
+            except ValueError as e:
               log.error(f"Failed to sanitize remote configuration for tab '{tab}'. Skipping tab.\n")
               # Adding error to registry
               error_msg = f"Configuration Error: Invalid characters in tab '{tab}'. {str(e)}"
