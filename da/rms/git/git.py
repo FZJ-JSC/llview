@@ -754,9 +754,12 @@ def sanitize_config_dict(config_dict, log, context=""):
 
 def fetch_remote_config(repo_config, log):
   """
-  Fetches a single file directly from a Git repository via API, without cloning.
-  Currently supports GitLab repositories.
+  Fetches a single file directly from a Git repository without a full clone.
+  - SSH URLs utilize 'git archive' to securely fetch the file using local SSH keys.
+  - HTTPS URLs utilize the GitLab REST API.
   """
+  import subprocess
+  
   host_url = repo_config.get('host')
   filepath = repo_config.get('include')
   branch = repo_config.get('branch', 'main')
@@ -766,53 +769,67 @@ def fetch_remote_config(repo_config, log):
     log.error("Missing 'host' or 'include' in configuration for remote fetch.\n")
     return None
 
+  # Clean the filepath to prevent tar or API errors
+  clean_filepath = os.path.normpath(filepath)
+
+  # --- SSH ROUTE ---
+  # If the host URL uses SSH, the native Git protocol is utilized to fetch the file 
+  # since HTTP REST APIs cannot authenticate using local SSH keys.
+  if host_url.startswith('git@') or host_url.startswith('ssh://'):
+    log.info(f"Fetching remote configuration via SSH: {host_url} (ref: {branch}, file: {clean_filepath})\n")
+    try:
+      # git archive securely streams a single file from the remote repository over SSH.
+      # tar -xO extracts the content directly to stdout for in-memory parsing.
+      cmd = f"git archive --remote={host_url} {branch} {clean_filepath} | tar -xO"
+      p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+      
+      if p.returncode == 0:
+        included_config = yaml.safe_load(p.stdout)
+        if isinstance(included_config, dict):
+          return included_config
+        else:
+          log.error(f"Remote file '{clean_filepath}' is not a valid YAML dictionary.\n")
+          return None
+      else:
+        err_msg = p.stderr.strip() if p.stderr else "Unknown Git Archive Error"
+        raise ValueError(f"SSH fetch failed (Exit {p.returncode}): {err_msg}")
+        
+    except yaml.YAMLError as ye:
+      raise ValueError(f"YAML Parsing Error in remote configuration '{clean_filepath}':\n{ye}\n")
+    except Exception as e:
+      raise ValueError(f"Error fetching remote configuration via SSH: {e}\n")
+
+  # --- HTTPS / API ROUTE ---
   try:
-    # Parse the host URL to build the GitLab API request
-    # Example host: https://gitlab.jsc.fz-juelich.de/SLPP/pepc/pepc-de-pthread
     parsed_url = urlparse(host_url)
-    
-    # The project path is everything after the domain, without leading/trailing slashes or .git
     project_path = parsed_url.path.strip('/').replace('.git', '')
-    
-    # GitLab API requires the project path to be URL-encoded
     encoded_project_path = quote(project_path, safe='')
-
-    #Normalize the filepath to remove './' or '../' artifacts ---
-    clean_filepath = os.path.normpath(filepath)
-
-    # Build the GitLab API URL for a single file
-    # Format: https://gitlab.example.com/api/v4/projects/<encoded_path>/repository/files/<filepath>/raw?ref=<branch>
+    
     api_url = f"{parsed_url.scheme}://{parsed_url.netloc}/api/v4/projects/{encoded_project_path}/repository/files/{quote(clean_filepath, safe='')}/raw"
     
     params = {'ref': branch}
     headers = {}
     
-    # Add Private-Token header if a token is provided
     if token:
-      headers['PRIVATE-TOKEN'] = token
+      headers['PRIVATE-TOKEN'] = str(token)
 
     log.info(f"Fetching remote configuration via API: {api_url} (ref: {branch})\n")
     
     response = requests.get(api_url, headers=headers, params=params, timeout=10)
     
     if response.status_code == 200:
-      # Parse the downloaded text as YAML
       included_config = yaml.safe_load(response.text)
       if isinstance(included_config, dict):
         return included_config
       else:
-        log.error(f"Remote file '{clean_filepath}' is not a valid YAML dictionary.\n")
-        return None
+        raise ValueError(f"Remote file '{clean_filepath}' is not a valid YAML dictionary.\n")
     else:
-      log.error(f"Failed to fetch remote config (HTTP {response.status_code}): {response.text}\n")
-      return None
+      raise ValueError(f"Failed to fetch remote config (HTTP {response.status_code}): {response.text}\n")
 
   except yaml.YAMLError as ye:
-    log.error(f"YAML Parsing Error in remote configuration '{filepath}':\n{ye}\n")
-    return None
+    raise ValueError(f"YAML Parsing Error in remote configuration '{clean_filepath}':\n{ye}\n")
   except Exception as e:
-    log.error(f"Error fetching remote configuration: {e}\n")
-    return None
+    raise ValueError(f"Error fetching remote configuration via API: {e}\n")
 
 """
 Centralized configuration defining the structural routing for each portal role.
@@ -3732,7 +3749,12 @@ def main():
       # Handling root-level remote configuration inclusion, if "include" is given
       if 'include' in repo_config:
         # Fetch the file directly into memory
-        remote_config = fetch_remote_config(repo_config, log)
+        try:
+          remote_config = fetch_remote_config(repo_config, log)
+        except ValueError as e:
+          log.error(f"Failed to load root included configuration for '{repo_name}': {e}\n")
+          failed_repos[repo_name].setdefault(None, []).append(str(e))
+          continue
 
         if not remote_config:
           # If fetch_remote_config returned None (due to 404, bad YAML, etc.),
@@ -3791,7 +3813,13 @@ def main():
               'include': tab_config['include']
             }
             # Fetch the file directly into memory
-            remote_tab_config = fetch_remote_config(fetch_config, log)
+            try:
+              remote_tab_config = fetch_remote_config(fetch_config, log)
+            except ValueError as e:
+              log.error(f"Failed to load included configuration for tab '{tab}' in '{repo_name}': {e}\n")
+              failed_repos[repo_name].setdefault(tab, []).append(str(e))
+              del repo_config['tabs'][tab]
+              continue
 
             if not remote_tab_config:
               # If fetch_remote_config returned None (due to 404, bad YAML, etc.),

@@ -211,7 +211,7 @@
     
 - dataset:
     name:            support_cb_csv
-    set:             csv_cb
+    set:             csv_cb_support
     filepath:       '$outputdir/cb/cb_list.csv.gz'
     data_database:   CB
     column_ts:      'max_ts'
