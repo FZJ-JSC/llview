@@ -337,3 +337,4 @@ extra_commands:
     enabled: true
     parse: raw
     cmd: "echo $SYSTEMNAME"
+
