@@ -55,6 +55,8 @@ sub new {
   $data->{IOIJOB_ENTRIES} = [];
   $data->{IOIWF_ENTRIES} = [];
   $data->{CAPABILITIES} = {};
+  $data->{CAPABILITIES_FORCED} = {};
+  $data->{ENTRIES_BY_CAP_FORCED} = {};
   $self->{MAPPING} = {};
   
   bless $self, $class;
@@ -236,30 +238,9 @@ sub update_structure {
         my $nodeid = $fh->{DATA}->{OBJECT}->{$key}->{name};
 
         if(exists($nodeinfo->{percore})) {
-          my @pairs=(split(",",$nodeinfo->{percore}));
-          # my $numphyscore=( scalar @pairs ) ;
-          my $numphyscore=( scalar @pairs ) / 2;
-          my $pcores;
-          foreach my $pair (@pairs) {
-            my($cpu,$usage)=(split(":",$pair));
-            my $ref;
-            $ref->{name}=$nodeid;
-            $ref->{core}=$cpu;
-            $ref->{usage}=$usage;
-            push(@{$data->{COREINFO_ENTRIES}},$ref);
-            if($cpu<$numphyscore) {
-                my $pcore=$cpu;
-                $pcores->{$pcore}->{name}=$nodeid;
-                $pcores->{$pcore}->{core}=$pcore;
-                $pcores->{$pcore}->{usage1}=$usage;
-            } else {
-              my $pcore=$cpu-$numphyscore;
-              $pcores->{$pcore}->{usage2}=$usage;
-            }
-          }
-          foreach my $p (sort(keys(%{$pcores}))) {
-            push(@{$data->{PCOREINFO_ENTRIES}},$pcores->{$p});
-          }
+          $nodeinfo->{percore}=~s/\d+://gs;	
+          $nodeinfo->{percore}='[' . $nodeinfo->{percore} . ']';
+          push(@{$data->{PCOREINFO_ENTRIES}},$nodeinfo);
         }
       } elsif ($ref->{type} eq 'icmap') {
         my $nodeinfo=$fh->{DATA}->{INFODATA}->{$key};

@@ -416,20 +416,34 @@ sub update_table {
           my $sqldebug=0;
           $sqldebug=$options->{update}->{sql_update_contents}->{sqldebug} if(exists($options->{update}->{sql_update_contents}->{sqldebug}));
           my $sql=$options->{update}->{sql_update_contents}->{sql};
-          if(exists($options->{update}->{sql_update_contents}->{vars})) {
-            foreach my $varpattern (split(/\s*,\s*/,$options->{update}->{sql_update_contents}->{vars})) {
-              if($varpattern=~/^\s*(.*)\s*\=\s*(.*)\s*$/) {
-                my($var,$val)=($1,$2);
-                $sql=~s/$var/$val/gs;
-              } else {
-                my $var=$varpattern;
-                if(exists($LMLminlastinsert->{$var})) {
-                  my $val=$LMLminlastinsert->{$var};
-                  $sql=~s/$var/$val/gs;
-                }
-                if(exists($LMLmaxlastinsert->{$var})) {
-                  my $val=$LMLmaxlastinsert->{$var};
-                  $sql=~s/$var/$val/gs;
+          if (exists($options->{update}->{sql_update_contents}->{vars})) {
+            # The vars attribute is normalized into an array to support both 
+            # single comma-separated strings and YAML list definitions.
+            my $vars_config = $options->{update}->{sql_update_contents}->{vars};
+            my @vars_array;
+            
+            if (ref($vars_config) eq 'ARRAY') {
+              @vars_array = @{$vars_config};
+            } else {
+              push(@vars_array, $vars_config);
+            }
+
+            # Each element is processed, supporting embedded comma-separated definitions
+            foreach my $var_item (@vars_array) {
+              foreach my $varpattern (split(/\s*,\s*/, $var_item)) {
+                if ($varpattern =~ /^\s*(.*)\s*\=\s*(.*)\s*$/) {
+                  my ($var, $val) = ($1, $2);
+                  $sql =~ s/$var/$val/gs;
+                } else {
+                  my $var = $varpattern;
+                  if (exists($LMLminlastinsert->{$var})) {
+                    my $val = $LMLminlastinsert->{$var};
+                    $sql =~ s/$var/$val/gs;
+                  }
+                  if (exists($LMLmaxlastinsert->{$var})) {
+                    my $val = $LMLmaxlastinsert->{$var};
+                    $sql =~ s/$var/$val/gs;
+                  }
                 }
               }
             }

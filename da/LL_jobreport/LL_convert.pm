@@ -128,6 +128,8 @@ sub init_convert_functions {
                                 "onlygtnull" => \&onlygtnull,
                                 "as_array"   => \&as_array,
                                 "corepattern" => \&corepattern,
+                                "corepattern2x" => \&corepattern2x,
+                                "corepattern4x" => \&corepattern4x,
                                 "tolower"     => \&tolower,
                                 "toupper"     => \&toupper,
                                 "toupperfirst" => \&toupperfirst,
@@ -514,16 +516,43 @@ sub wrapstr {
 }
 
 sub corepattern {
-    my ($text,$self)=@_;
-    return($text) if(!$text);
-    my $lh=int(length($text)/2);
-    my @first  = split(//, substr($text,0,$lh));
-    my @second = split(//, substr($text,$lh));
-    my $newtext="";
-    for(my $i=0;$i<=$#first;$i++) {
-	$newtext.="&#xc".$first[$i].$second[$i].";";
-    }
-    return($newtext);
+  my ($text,$self)=@_;
+  return($text) if(!$text);
+  my $lh=int(length($text));
+  my @first  = split(//, substr($text,0,$lh));
+  my $newtext="";
+  for(my $i=0;$i<=$#first;$i++) {
+    $newtext.="&#xc".$first[$i].";";
+  }
+  return($newtext);
+}
+
+sub corepattern2x {
+  my ($text,$self)=@_;
+  return($text) if(!$text);
+  my $lh=int(length($text)/2);
+  my @first  = split(//, substr($text,0,$lh));
+  my @second = split(//, substr($text,$lh));
+  my $newtext="";
+  for(my $i=0;$i<=$#first;$i++) {
+    $newtext.="&#xc".$first[$i].$second[$i].";";
+  }
+  return($newtext);
+}
+
+sub corepattern4x {
+  my ($text,$self)=@_;
+  return($text) if(!$text);
+  my $lh=int(length($text)/4);
+  my @first  = split(//, substr($text,0,$lh));
+  my @second = split(//, substr($text,$lh,$lh));
+  my @third  = split(//, substr($text,2*$lh,$lh));
+  my @forth  = split(//, substr($text,3*$lh,$lh));
+  my $newtext="";
+  for(my $i=0;$i<=$#first;$i++) {
+    $newtext.="&#xc".$first[$i].$second[$i].$third[$i].$forth[$i].";";
+  }
+  return($newtext);
 }
 
 sub hhmmss {
