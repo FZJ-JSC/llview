@@ -630,7 +630,7 @@ sub start_insert_sequence {
   return($sth);
 }
 
-# end insert sequence
+# insert sequence
 sub insert_sequence {
   my($self) = shift;
   my($sth,$dataref) = @_;

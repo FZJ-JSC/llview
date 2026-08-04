@@ -17,7 +17,6 @@ import dateutil
 import re
 import os
 import sys
-import traceback
 import math
 import csv
 import getpass
@@ -206,32 +205,32 @@ def outlier_detector(values: List[Union[float, int, None]], params: Dict[str, An
       
       # Visual elements are appended to circle the outlier and label it
       if x_values and x_values[i] is not None:
-         x_formatted = format_x(x_values[i])
-         
-         # An unfilled circle is placed directly over the data point.
-         # An HTML entity is utilized instead of a raw Unicode character to prevent 
-         # 'Wide character in print' errors in downstream Perl processors.
-         layout_additions['annotations'].append({
-           'x': x_formatted,
-           'y': val,
-           'text': '&#9711;',
-           'showarrow': False,
-           'font': {'color': 'rgba(255, 0, 0, 0.7)', 'size': 20},
-           'xanchor': 'center',
-           'yanchor': 'middle'
-         })
-         
-         # The 'Outlier' text is floated above the circle using a y-shift
-         layout_additions['annotations'].append({
-           'x': x_formatted,
-           'y': val,
-           'text': 'Outlier',
-           'showarrow': False,
-           'yshift': 15,
-           'font': {'color': 'rgba(255, 0, 0, 0.9)', 'size': 15},
-           'xanchor': 'center',
-           'yanchor': 'bottom'
-         })
+        x_formatted = format_x(x_values[i])
+        
+        # An unfilled circle is placed directly over the data point.
+        # An HTML entity is utilized instead of a raw Unicode character to prevent 
+        # 'Wide character in print' errors in downstream Perl processors.
+        layout_additions['annotations'].append({
+          'x': x_formatted,
+          'y': val,
+          'text': '&#9711;',
+          'showarrow': False,
+          'font': {'color': 'rgba(255, 0, 0, 0.7)', 'size': 20},
+          'xanchor': 'center',
+          'yanchor': 'middle'
+        })
+        
+        # The 'Outlier' text is floated above the circle using a y-shift
+        layout_additions['annotations'].append({
+          'x': x_formatted,
+          'y': val,
+          'text': 'Outlier',
+          'showarrow': False,
+          'yshift': 15,
+          'font': {'color': 'rgba(255, 0, 0, 0.9)', 'size': 15},
+          'xanchor': 'center',
+          'yanchor': 'bottom'
+        })
     else:
       results.append(True)
       
@@ -453,6 +452,102 @@ def regression_detector(values: List[Union[float, int, None]], params: Dict[str,
   return results, layout_additions
 
 
+def match_validator(values: List[Union[float, int, str, None]], params: Dict[str, Any], x_values: List[Any] = None) -> Tuple[List[bool], Dict[str, Any]]:
+  """
+  Categorical or numeric values are evaluated for equality or inequality against defined targets.
+  
+  Args:
+    values: List of values to check.
+    params: Dictionary containing 'eq' (allowed values) or 'neq' (forbidden values).
+            Optional parameters:
+            - 'annotation_text': String to customize the graph label (defaults to '').
+            - 'add_visuals': Boolean to toggle the generation of red circles on the graph (defaults to True).
+    x_values: Optional list of x-axis values utilized to place visual annotations.
+    
+  Returns:
+    Tuple containing:
+    - List[bool]: True if the value matches the criteria, False if a Warning is triggered.
+    - Dict: Plotly layout additions (annotations highlighting the flagged values, if enabled).
+    
+  Raises:
+    ValueError: If neither 'eq' nor 'neq' parameters are provided.
+  """
+  results = []
+  layout_additions = {'shapes': [], 'annotations': []}
+  
+  eq_targets = params.get('eq')
+  neq_targets = params.get('neq')
+  
+  if eq_targets is None and neq_targets is None:
+    raise ValueError("match_validator requires 'eq' or 'neq' parameter.")
+    
+  # Targets are normalized into lists to allow multiple acceptable/unacceptable matches
+  if eq_targets is not None and not isinstance(eq_targets, list):
+    eq_targets = [eq_targets]
+  if neq_targets is not None and not isinstance(neq_targets, list):
+    neq_targets = [neq_targets]
+    
+  # Targets are cast to strings securely to prevent type mismatches during evaluation
+  eq_targets = [str(t) for t in eq_targets] if eq_targets else None
+  neq_targets = [str(t) for t in neq_targets] if neq_targets else None
+  
+  is_ts = params.get('is_ts', False)
+  add_visuals = params.get('add_visuals', True)
+  annotation_text = params.get('annotation_text', '')
+  
+  def format_x(x: Any) -> Any:
+    if is_ts and isinstance(x, (float, int)):
+      return datetime.datetime.fromtimestamp(x).strftime('%Y-%m-%d %H:%M:%S')
+    return x
+
+  for i, val in enumerate(values):
+    # Missing data is treated as valid to avoid redundant failures
+    if val is None:
+      results.append(True)
+      continue
+      
+    val_str = str(val)
+    is_valid = True
+    
+    if eq_targets is not None and val_str not in eq_targets:
+      is_valid = False
+    if neq_targets is not None and val_str in neq_targets:
+      is_valid = False
+      
+    results.append(is_valid)
+    
+    # Visual elements are generated only if explicitly enabled
+    if not is_valid and add_visuals and params.get('annotations', True) is not False:
+      if x_values and x_values[i] is not None:
+        x_formatted = format_x(x_values[i])
+        
+        # An unfilled circle is placed directly over the data point
+        layout_additions['annotations'].append({
+          'x': x_formatted,
+          'y': val,
+          'text': '&#9711;',
+          'showarrow': False,
+          'font': {'color': 'rgba(255, 0, 0, 0.7)', 'size': 20},
+          'xanchor': 'center',
+          'yanchor': 'middle'
+        })
+        
+        # Custom or default warning text is floated above the circle if defined
+        if annotation_text:
+          layout_additions['annotations'].append({
+            'x': x_formatted,
+            'y': val,
+            'text': annotation_text,
+            'showarrow': False,
+            'yshift': 15,
+            'font': {'color': 'rgba(255, 0, 0, 0.9)', 'size': 15},
+            'xanchor': 'center',
+            'yanchor': 'bottom'
+          })
+
+  return results, layout_additions
+
+
 # Fixing/improving multiline output and strings with special characters of YAML dump
 def str_presenter(dumper, data):
   """
@@ -518,47 +613,69 @@ def flatten_json(json_data):
   
   return flattened_data
 
-def gen_tab_config(default=False,tabname='Benchmarks',suffix="cb",folder="./"):
+def gen_tab_config(default=False, tabname='Benchmarks', suffix="cb", folder="./", active_roles=None, global_visibility=None):
   """
-  This function generates the main tab configuration for LLview (with Overview + each Benchmark).
+  The main tab configuration files (Overview + each Benchmark) are generated for all roles.
+  Context paths are automatically routed to respect role-based folder structures securely.
   """
-  filename = os.path.join(folder,f'tab_{suffix}.yaml')
   log = logging.getLogger('logger')
-  log.info(f"Generating main tab configuration file {filename}\n")
+  active_roles = active_roles or {'support'}
+  global_visibility = global_visibility or {}
+  
+  for role, r_cfg in ROLE_CONFIGS.items():
+    if role not in active_roles:
+      continue
+      
+    suffix_role = f"{suffix}_{role}" if role != 'support' else suffix
+    filename = os.path.join(folder, f'tab_{suffix_role}.yaml')
+    log.info(f"Generating main tab configuration file {filename} (Role: {role})\n")
 
-  pages = [{
-    'page': {
-      'name': tabname,
-      'section': "benchmarks",
-      'icon': "bar-chart",
-      'pages': [
-        {
-          'page': {
-            'name': "Overview",
-            'section': "cblist",
-            'default': default,
-            'template': "/data/LLtemplates/CB",
-            'context': "data/cb/cb_list.csv",
-            # 'footer_graph_config': "/data/ll/footer_cblist.json",
-            'ref': [ 'datatable' ],
-            'data': {
-              'default_columns': [ 'Name', 'Timings', '#Points', 'Status' ]
-            }
-          }
-        },
-        {'include_here': None}
-      ]
+    frontend_replacements = {'$P': '#project#', '$U': '#user#', '$M': '#mentor#'}
+    frontend_dir = f"data/{r_cfg['out_dir']}".rstrip('/')
+    for k, v in frontend_replacements.items():
+      frontend_dir = frontend_dir.replace(k, v)
+
+    context_path = f"{frontend_dir}/cb_list.csv"
+
+    # Global visibility arrays are extracted to enforce security on the parent Overview tabs
+    overview_viz = global_visibility.get(role)
+    page_definition = {
+      'name': "Overview",
+      'section': "cblist",
+      'default': default,
+      'template': "/data/LLtemplates/CB",
+      'context': context_path,
+      'ref': ['datatable'],
+      'data': {
+        'default_columns': ['Name', 'Timings', '#Points', 'Status']
+      }
     }
-  }]
+    
+    if overview_viz and role != 'support':
+      if role == 'user':
+        # Sets are safely converted to lists for YAML serialization
+        page_definition['visibility'] = {p: list(u) for p, u in overview_viz.items()}
+      else:
+        page_definition['visibility'] = list(overview_viz)
 
-  # Writing out YAML configuration file
-  raw_output = yaml.safe_dump(pages, None, default_flow_style=None)
-  yaml_string = raw_output if isinstance(raw_output, str) else ""
-  # Adding the include line (LLview-specific, not YAML standard)
-  if yaml_string:
-    yaml_string = yaml_string.replace("- {include_here: null}",'%include "./page_cb.yaml"')
-  with open(filename, 'w') as file:
-    file.write(yaml_string)
+    pages = [{
+      'page': {
+        'name': tabname,
+        'section': "benchmarks",
+        'icon': "bar-chart",
+        'pages': [
+          {'page': page_definition},
+          {'include_here': None}
+        ]
+      }
+    }]
+
+    raw_output = yaml.safe_dump(pages, None, default_flow_style=None)
+    yaml_string = raw_output if isinstance(raw_output, str) else ""
+    if yaml_string:
+      yaml_string = yaml_string.replace("- {include_here: null}", f'%include "./page_{suffix_role}.yaml"')
+    with open(filename, 'w') as file:
+      file.write(yaml_string)
 
   return True
 
@@ -637,9 +754,12 @@ def sanitize_config_dict(config_dict, log, context=""):
 
 def fetch_remote_config(repo_config, log):
   """
-  Fetches a single file directly from a Git repository via API, without cloning.
-  Currently supports GitLab repositories.
+  Fetches a single file directly from a Git repository without a full clone.
+  - SSH URLs utilize 'git archive' to securely fetch the file using local SSH keys.
+  - HTTPS URLs utilize the GitLab REST API.
   """
+  import subprocess
+  
   host_url = repo_config.get('host')
   filepath = repo_config.get('include')
   branch = repo_config.get('branch', 'main')
@@ -649,53 +769,107 @@ def fetch_remote_config(repo_config, log):
     log.error("Missing 'host' or 'include' in configuration for remote fetch.\n")
     return None
 
+  # Clean the filepath to prevent tar or API errors
+  clean_filepath = os.path.normpath(filepath)
+
+  # --- SSH ROUTE ---
+  # If the host URL uses SSH, the native Git protocol is utilized to fetch the file 
+  # since HTTP REST APIs cannot authenticate using local SSH keys.
+  if host_url.startswith('git@') or host_url.startswith('ssh://'):
+    log.info(f"Fetching remote configuration via SSH: {host_url} (ref: {branch}, file: {clean_filepath})\n")
+    try:
+      # git archive securely streams a single file from the remote repository over SSH.
+      # tar -xO extracts the content directly to stdout for in-memory parsing.
+      cmd = f"git archive --remote={host_url} {branch} {clean_filepath} | tar -xO"
+      p = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+      
+      if p.returncode == 0:
+        included_config = yaml.safe_load(p.stdout)
+        if isinstance(included_config, dict):
+          return included_config
+        else:
+          log.error(f"Remote file '{clean_filepath}' is not a valid YAML dictionary.\n")
+          return None
+      else:
+        err_msg = p.stderr.strip() if p.stderr else "Unknown Git Archive Error"
+        raise ValueError(f"SSH fetch failed (Exit {p.returncode}): {err_msg}")
+        
+    except yaml.YAMLError as ye:
+      raise ValueError(f"YAML Parsing Error in remote configuration '{clean_filepath}':\n{ye}\n")
+    except Exception as e:
+      raise ValueError(f"Error fetching remote configuration via SSH: {e}\n")
+
+  # --- HTTPS / API ROUTE ---
   try:
-    # Parse the host URL to build the GitLab API request
-    # Example host: https://gitlab.jsc.fz-juelich.de/SLPP/pepc/pepc-de-pthread
     parsed_url = urlparse(host_url)
-    
-    # The project path is everything after the domain, without leading/trailing slashes or .git
     project_path = parsed_url.path.strip('/').replace('.git', '')
-    
-    # GitLab API requires the project path to be URL-encoded
     encoded_project_path = quote(project_path, safe='')
-
-    #Normalize the filepath to remove './' or '../' artifacts ---
-    clean_filepath = os.path.normpath(filepath)
-
-    # Build the GitLab API URL for a single file
-    # Format: https://gitlab.example.com/api/v4/projects/<encoded_path>/repository/files/<filepath>/raw?ref=<branch>
+    
     api_url = f"{parsed_url.scheme}://{parsed_url.netloc}/api/v4/projects/{encoded_project_path}/repository/files/{quote(clean_filepath, safe='')}/raw"
     
     params = {'ref': branch}
     headers = {}
     
-    # Add Private-Token header if a token is provided
     if token:
-      headers['PRIVATE-TOKEN'] = token
+      headers['PRIVATE-TOKEN'] = str(token)
 
     log.info(f"Fetching remote configuration via API: {api_url} (ref: {branch})\n")
     
     response = requests.get(api_url, headers=headers, params=params, timeout=10)
     
     if response.status_code == 200:
-      # Parse the downloaded text as YAML
       included_config = yaml.safe_load(response.text)
       if isinstance(included_config, dict):
         return included_config
       else:
-        log.error(f"Remote file '{clean_filepath}' is not a valid YAML dictionary.\n")
-        return None
+        raise ValueError(f"Remote file '{clean_filepath}' is not a valid YAML dictionary.\n")
     else:
-      log.error(f"Failed to fetch remote config (HTTP {response.status_code}): {response.text}\n")
-      return None
+      raise ValueError(f"Failed to fetch remote config (HTTP {response.status_code}): {response.text}\n")
 
   except yaml.YAMLError as ye:
-    log.error(f"YAML Parsing Error in remote configuration '{filepath}':\n{ye}\n")
-    return None
+    raise ValueError(f"YAML Parsing Error in remote configuration '{clean_filepath}':\n{ye}\n")
   except Exception as e:
-    log.error(f"Error fetching remote configuration: {e}\n")
-    return None
+    raise ValueError(f"Error fetching remote configuration via API: {e}\n")
+
+"""
+Centralized configuration defining the structural routing for each portal role.
+Keys required for integrating a new role:
+- out_dir: Relative directory structure for file storage utilizing backend variables (e.g., 'projects/$P').
+- db_select: SQL columns extracted from the visibility table to identify the authorized entity (e.g., 'v.project, v.user').
+- db_cols: Comma-separated column names utilized in the filemap and VAR definitions (e.g., 'project,user').
+- filemap: Demultiplexing map linking SQL columns to filepath variables (e.g., 'P:project,U:user').
+- forall_prefix: Variable prefixes utilized in the FORALL loop definitions (e.g., 'P,U').
+"""
+ROLE_CONFIGS = {
+  'support': {
+    'out_dir': 'cb',
+    'db_select': '',
+    'db_cols': '',
+    'filemap': '',
+    'forall_prefix': ''
+  },
+  'user': {
+    'out_dir': 'projects/$P/$U',
+    'db_select': 'v.project, v.user',
+    'db_cols': 'project,user',
+    'filemap': 'P:project,U:user',
+    'forall_prefix': 'P,U'
+  },
+  'project': {
+    'out_dir': 'projects/$P',
+    'db_select': 'v.project',
+    'db_cols': 'project',
+    'filemap': 'P:project',
+    'forall_prefix': 'P'
+  },
+  'mentor': {
+    'out_dir': 'mentors/$M',
+    'db_select': 'v.user as mentor',
+    'db_cols': 'mentor',
+    'filemap': 'M:mentor',
+    'forall_prefix': 'M'
+  }
+}
 
 class BenchRepo:
   """
@@ -917,7 +1091,7 @@ class BenchRepo:
       return host.replace("://", f"://{credentials}")
     return host
 
-  def get_or_update_repo(self,folder="./"):
+  def get_or_update_repo(self, folder="./"):
     """
     Getting folder to clone or pull the repo
     If not given, use current working directory
@@ -942,6 +1116,14 @@ class BenchRepo:
       if not re.match(r'^[\w\-\/\.]+$', branch):
         raise ValueError(f"Invalid characters in branch name: '{branch}'. Aborting.\n")
 
+    # Password is safely extracted to prevent KeyErrors during log sanitation
+    pwd = config.get('password')
+
+    # Environment variables are copied to enforce non-interactive Git commands.
+    # This prevents Git from permanently hanging the script if it expects a terminal password prompt.
+    git_env = os.environ.copy()
+    git_env['GIT_TERMINAL_PROMPT'] = '0'
+
     # If folder does not exist, git clone the repo
     # otherwise try to git pull in the folder
     if not os.path.isdir(folder):
@@ -952,20 +1134,25 @@ class BenchRepo:
       # Cloning repo
       self.log.info(f"Folder {folder} does not exist. Cloning...\n")
 
-      cmd = ['git', 'clone', '-q', config['host']]
-      cmd.append(folder)
-      self.log.debug("Cloning repo with command: {}\n".format(' '.join(cmd).replace(f":{config['password']}@",":***@")))
-      p = run(cmd, stdout=PIPE)
+      cmd = ['git', 'clone', '-q', config['host'], folder]
+      
+      # Commands are sanitized safely to avoid exposing passwords in the logs
+      safe_cmd = ' '.join(cmd).replace(f":{pwd}@", ":***@") if pwd else ' '.join(cmd)
+      self.log.debug(f"Cloning repo with command: {safe_cmd}\n")
+      
+      p = run(cmd, stdout=PIPE, stderr=PIPE, env=git_env, text=True)
       if p.returncode:
-        raise ValueError(f"Error {p.returncode} running command: {' '.join(cmd).replace(f':{config["password"]}@', ':***@')}")
+        err_msg = p.stderr.strip() if p.stderr else "Unknown Git Error"
+        raise ValueError(f"Git Clone Error {p.returncode}: {err_msg}\nCommand: {safe_cmd}")
       
       # Branch is switched immediately after cloning if specified
       if branch:
         cmd = ['git', '-C', folder, 'switch', '-q', branch]
-        self.log.debug("Changing branch with command: {}\n".format(' '.join(cmd)))
-        p = run(cmd, stdout=PIPE)
+        self.log.debug(f"Changing branch with command: {' '.join(cmd)}\n")
+        p = run(cmd, stdout=PIPE, stderr=PIPE, env=git_env, text=True)
         if p.returncode:
-          raise ValueError(f"Error {p.returncode} running command: {' '.join(cmd)}")
+          err_msg = p.stderr.strip() if p.stderr else "Unknown Git Error"
+          raise ValueError(f"Git Switch Error {p.returncode}: {err_msg}\nCommand: {' '.join(cmd)}")
     else:
       if ('update' in config) and (not config['update']):
         self.log.info(f"Folder {folder} already exists, but update is skipped...\n")
@@ -976,19 +1163,19 @@ class BenchRepo:
         # Branch is switched before pulling to ensure updates are fetched for the correct target
         if branch:
           cmd = ['git', '-C', folder, 'switch', '-q', branch]
-          self.log.debug("Changing branch with command: {}\n".format(' '.join(cmd)))
-          p = run(cmd, stdout=PIPE)
+          self.log.debug(f"Changing branch with command: {' '.join(cmd)}\n")
+          p = run(cmd, stdout=PIPE, stderr=PIPE, env=git_env, text=True)
           if p.returncode:
-            raise ValueError(f"Error {p.returncode} running command: {' '.join(cmd)}")
+            err_msg = p.stderr.strip() if p.stderr else "Unknown Git Error"
+            raise ValueError(f"Git Switch Error {p.returncode}: {err_msg}\nCommand: {' '.join(cmd)}")
 
-        # cmd = ['git', '-C', folder, 'pull', config['host']]
         cmd = ['git', '-C', folder, 'pull', '-q']
-        # self.log.debug("Running command: {}\n".format(' '.join(cmd).replace(f":{config['password']}@",":***@")))
-        self.log.debug("Running command: {}\n".format(' '.join(cmd)))
-        p = run(cmd, stdout=PIPE)
+        self.log.debug(f"Running command: {' '.join(cmd)}\n")
+        p = run(cmd, stdout=PIPE, stderr=PIPE, env=git_env, text=True)
         if p.returncode:
-          # self.log.error("Error {} running command: {}\n".format(p.returncode,' '.join(cmd).replace(f":{config['password']}@",":***@")))
-          raise ValueError(f"Error {p.returncode} running command: {' '.join(cmd)}")
+          err_msg = p.stderr.strip() if p.stderr else "Unknown Git Error"
+          raise ValueError(f"Git Pull Error {p.returncode}: {err_msg}\nCommand: {' '.join(cmd)}")
+          
     return True
 
   def get_sources(self):
@@ -1375,6 +1562,22 @@ class BenchRepo:
       # Adding 'common_data' to all entries of 'current_data'
       current_data[:] = [(data|common_data) for data in current_data]
 
+      # Value mappings are applied to rewrite entries before aggregation or validation occurs.
+      # Empty strings or missing values can be securely substituted by defining an empty string key in the map.
+      for data in current_data:
+        for metric_name in used_metrics:
+          spec = metrics_section[metric_name]
+          if isinstance(spec, dict) and 'map' in spec:
+            val = data.get(metric_name)
+            # The data value is safely cast to a string to ensure accurate dictionary matching
+            val_str = str(val).strip() if val is not None else ""
+            
+            # The configured map keys are also cast to strings to prevent YAML boolean parsing conflicts
+            str_map = {str(k).strip(): v for k, v in spec['map'].items()}
+            
+            if val_str in str_map:
+              data[metric_name] = str_map[val_str]
+
       # Executed exactly once to compute all intermediate metrics before validation occurs
       if agg_metrics or calc_headers:
         # Vertical aggregations are executed prior to horizontal formulas
@@ -1534,10 +1737,13 @@ class BenchRepo:
       # (This must be done before collecting the unique graph parameters
       # to remove unwanted values, but should be done after the validation for the status
       # to avoid filtering failed runs and keep them in the status history)
+      # Table parameters are passed strictly so their filters are enforced even on Failed runs.
+      table_keys = list(parameters.keys())
       self.apply_pattern(
                           current_data,
                           exclude=to_exclude,
-                          include=to_include
+                          include=to_include,
+                          strict_keys=table_keys
                         )
 
       # If data was filtered down to nothing, but we started with valid data (stub exists),
@@ -1875,7 +2081,7 @@ class BenchRepo:
       with open(filename, 'w') as file:
         yaml.safe_dump(data_list, file, default_flow_style=None)
 
-  def gen_configs(self,folder="./", history_n=5, failed_info=None):
+  def gen_configs(self, folder="./", history_n=5, failed_info=None):
     """
     Generates the different configuration files needed by LLview:
     - DBupdate configuration containing the DB and tables descriptions
@@ -1887,51 +2093,61 @@ class BenchRepo:
     - CSV configuration for the files with data for the footers
     - Footer configuration with the description of the tabs, graphs and curves
     """
-    suffix = self._name.replace(" ","_") if self._name else 'cb'
-
+    suffix = self._name.replace(" ", "_") if self._name else 'cb'
     return_code = True
 
     # DBupdate config
-    success = self.gen_dbupdate_conf(os.path.join(folder,f'db_{suffix}.yaml'),history_n=history_n)
+    success = self.gen_dbupdate_conf(os.path.join(folder, f'db_{suffix}.yaml'), history_n=history_n)
     if not success:
-      self.log.error("Error generating DB configuration file{}. Skipping...\n".format((' for \''+self._name+'\'') if self._name else ''))
+      self.log.error("Error generating DB configuration file{}. Skipping...\n".format((' for \'' + self._name + '\'') if self._name else ''))
       return_code = False
 
-    # Page config
-    success = self.gen_page_conf(os.path.join(folder,f'page_{suffix}.yaml'), failed_info=failed_info)
+    # Template config (Template is role-agnostic and only needs to be generated once)
+    success = self.gen_template_conf(os.path.join(folder, f'template_{suffix}.yaml'))
     if not success:
-      self.log.error("Error generating Page configuration file{}. Skipping...\n".format((' for \''+self._name+'\'') if self._name else ''))
+      self.log.error("Error generating Template configuration file{}. Skipping...\n".format((' for \'' + self._name + '\'') if self._name else ''))
       return_code = False
 
-    # Template config
-    success = self.gen_template_conf(os.path.join(folder,f'template_{suffix}.yaml'))
-    if not success:
-      self.log.error("Error generating Template configuration file{}. Skipping...\n".format((' for \''+self._name+'\'') if self._name else ''))
-      return_code = False
+    # Configurations are systematically generated for each authorized portal role
+    for role, role_config in ROLE_CONFIGS.items():
+      role_benchmarks = []
+      for benchname, tabname, benchmark_data in self._iter_all_data():
+        viz = benchmark_data['config'].get('visibility', {})
+        
+        # Benchmarks are securely filtered to ensure files are only generated for authorized roles
+        if role == 'support':
+          if viz.get('support', True):
+            role_benchmarks.append((benchname, tabname, benchmark_data))
+        else:
+          # All other roles are dynamically evaluated directly against the visibility schema
+          if viz.get(role):
+            role_benchmarks.append((benchname, tabname, benchmark_data))
 
-    # Table CSV config
-    success = self.gen_tablecsv_conf(os.path.join(folder,f'tablecsv_{suffix}.yaml'))
-    if not success:
-      self.log.error("Error generating Table CSV configuration file{}. Skipping...\n".format((' for \''+self._name+'\'') if self._name else ''))
-      return_code = False
+      # Roles possessing no authorized benchmarks are securely skipped to prevent empty file generation
+      if not role_benchmarks and role != 'support':
+        continue
 
-    # VARS config
-    success = self.gen_vars_conf(os.path.join(folder,f'vars_{suffix}.yaml'))
-    if not success:
-      self.log.error("Error generating Vars configuration file{}. Skipping...\n".format((' for \''+self._name+'\'') if self._name else ''))
-      return_code = False
+      suffix_role = f"{suffix}_{role}" if role != 'support' else suffix
 
-    # Footer CSVs config
-    success = self.gen_footercsv_conf(os.path.join(folder,f'csv_{suffix}.yaml'))
-    if not success:
-      self.log.error("Error generating Footer CSVs configuration file{}. Skipping...\n".format((' for \''+self._name+'\'') if self._name else ''))
-      return_code = False
+      # Page config
+      success = self.gen_page_conf(os.path.join(folder, f'page_{suffix_role}.yaml'), role=role, failed_info=failed_info, role_benchmarks=role_benchmarks)
+      if not success: return_code = False
 
-    # Footer config
-    success = self.gen_footer_conf(os.path.join(folder,f'footer_{suffix}.yaml'))
-    if not success:
-      self.log.error("Error generating Footer configuration file{}. Skipping...\n".format((' for \''+self._name+'\'') if self._name else ''))
-      return_code = False
+      # Table CSV config
+      success = self.gen_tablecsv_conf(os.path.join(folder, f'tablecsv_{suffix_role}.yaml'), role=role, role_benchmarks=role_benchmarks)
+      if not success: return_code = False
+
+      # VARS config
+      success = self.gen_vars_conf(os.path.join(folder, f'vars_{suffix_role}.yaml'), role=role, role_benchmarks=role_benchmarks)
+      if not success: return_code = False
+
+      # Footer CSVs config
+      success = self.gen_footercsv_conf(os.path.join(folder, f'csv_{suffix_role}.yaml'), role=role, role_benchmarks=role_benchmarks)
+      if not success: return_code = False
+
+      # Footer config
+      success = self.gen_footer_conf(os.path.join(folder, f'footer_{suffix_role}.yaml'), role=role, role_benchmarks=role_benchmarks)
+      if not success: return_code = False
 
     return return_code
 
@@ -1954,7 +2170,7 @@ class BenchRepo:
           if 'metrics' in tab_data:
             yield benchname, tabname, tab_data
 
-  def _quote(self,identifier):
+  def _quote(self, identifier):
     return f'"{identifier}"'
 
   def gen_dbupdate_conf(self, filename, history_n=5):
@@ -1970,18 +2186,10 @@ class BenchRepo:
     # This set will track unique benchmarks to generate the final aggregation tables
     benchmarks_processed = set()
 
-    # Calculate length for N items: (N * 1 char for status) + (N-1 * 1 char for dash)
-    history_str_len = (history_n * 2) - 1
-
-    # Define the aggregation logic for status priority: F > W > S
-    # If any row is 'F', the whole timestamp is 'F'.
-    # Else if any row is 'W', the whole timestamp is 'W'.
-    # Else 'S'.
-    status_priority_sql = "CASE WHEN SUM(CASE WHEN \"_status\" = 'F' THEN 1 ELSE 0 END) > 0 THEN 'F' WHEN SUM(CASE WHEN \"_status\" = 'W' THEN 1 ELSE 0 END) > 0 THEN 'W' ELSE 'S' END"
-
     # Saving custom display names, in case they are given
     # to use on the cb_benchmarks query below
     custom_display_names = {}
+    visibility_inserts = []
 
     # Looping over all the benchmarks inside this object
     # (It can be done for each benchmark/tab or for all collected ones when singleLML is used)
@@ -1991,7 +2199,7 @@ class BenchRepo:
 
       # Table names cannot (should not?) contain spaces, but tab names may have spaces
       # This name is for the per-tab/per-benchmark tables
-      combined_name = benchname.replace(" ","_") + (f"_{tabname.replace(' ','_')}" if tabname else "")
+      combined_name = benchname.replace(" ", "_") + (f"_{tabname.replace(' ', '_')}" if tabname else "")
       columns = []
 
       # Getting references to relevant data
@@ -2002,9 +2210,27 @@ class BenchRepo:
       # Extract the Custom Display Name
       custom_display_names[benchname] = config.get('name', benchname)
 
+      # Visibility mappings are serialized into explicit SQL INSERT commands
+      viz = config.get('visibility', {})
+      if viz.get('support', True):
+        visibility_inserts.append(f"INSERT INTO \"cb_visibility\" VALUES ('{combined_name}', 'support', '*', '*');")
+        
+      for p in viz.get('project', []):
+        visibility_inserts.append(f"INSERT INTO \"cb_visibility\" VALUES ('{combined_name}', 'project', '{p}', '*');")
+        
+      for p, users in viz.get('user', {}).items():
+        for u in users:
+          visibility_inserts.append(f"INSERT INTO \"cb_visibility\" VALUES ('{combined_name}', 'user', '{p}', '{u}');")
+          
+      # Generic roles are dynamically inserted into the mapping table
+      for role_key, val in viz.items():
+        if role_key not in ['support', 'project', 'user']:
+          for entity_id in val:
+            visibility_inserts.append(f"INSERT INTO \"cb_visibility\" VALUES ('{combined_name}', '{role_key}', '*', '{entity_id}');")
+
       # Looping over all the metrics that are used in this benchmark, which should be put into the DB
       for metric, mtype in metrics.items():
-        metric_str = metric.replace(' ','_')
+        metric_str = metric.replace(' ', '_')
         # Defining a column for current metric
         column = {
           'name': metric_str,
@@ -2028,31 +2254,30 @@ class BenchRepo:
       })
 
       # Main data table (per tab), which triggers an intermediate timestamps table
-      tables.append({'table': { 
-                                'name': f"cb_{combined_name}_data",
-                                'options': {
-                                            'update': {
-                                                        'LML': f"cb_{combined_name}",
-                                                        'mode': 'replace',
-                                                        'sql_update_contents': {
-                                                          'vars': 'mintsinserted',
-                                                          'sqldebug': 1,
-                                                          # This SQL first deletes its old entries from the timestamp table,
-                                                          # then inserts the new ones, tagging them with its own name as the source.
-                                                          # Group by timestamp; MIN(_status) ensures 'F' wins over 'S'
-                                                          'sql': f"""DELETE FROM "cb_{benchname.replace(' ','_')}_timestamps" WHERE source = "{combined_name}";
-              INSERT INTO "cb_{benchname.replace(' ','_')}_timestamps" ("ts", "source", "_status")
+      tables.append({'table': {
+        'name': f"cb_{combined_name}_data",
+        'options': {
+          'update': {
+            'LML': f"cb_{combined_name}",
+            'mode': 'replace',
+            'sql_update_contents': {
+              'vars': 'mintsinserted',
+              'sqldebug': 1,
+              # This SQL first deletes its old entries from the timestamp table,
+              # then inserts the new ones, tagging them with its own name as the source.
+              # Group by timestamp; MIN(_status) ensures 'F' wins over 'S'
+              'sql': f"""DELETE FROM "cb_{benchname.replace(' ', '_')}_timestamps" WHERE source = "{combined_name}";
+              INSERT INTO "cb_{benchname.replace(' ', '_')}_timestamps" ("ts", "source", "_status")
                         SELECT "ts", "{combined_name}", "_status"
                         FROM "cb_{combined_name}_data";
 """.strip(),
-                                                                    },
-                                                      },
-                                            # This triggers its own overview and the benchmark's timestamp aggregator
-                                            'update_trigger': [f"cb_{combined_name}_data", f"cb_{combined_name}_overview", f"cb_{benchname.replace(' ','_')}_timestamps"]
-                                          },
-                                'columns': columns,
-                              }
-                    })
+            },
+          },
+          # This triggers its own overview and the benchmark's timestamp aggregator
+          'update_trigger': [f"cb_{combined_name}_data", f"cb_{combined_name}_overview", f"cb_{benchname.replace(' ', '_')}_timestamps"]
+        },
+        'columns': columns,
+      }})
 
       # Getting list of metrics that are plotted on the graphs
       graph_metrics = [plot['y'] for tab, plot in self._iter_plots(config) if 'y' in plot]
@@ -2072,26 +2297,33 @@ class BenchRepo:
 
       # This tells the subquery: "Only look at data that matches the current Overview row"
       # Example result: T2."System" = T1."System" AND T2."Experiment" = T1."Experiment"
-      match_conditions = []
-      for key in parameters:
-        col_name = key.replace(' ', '_')
-        match_conditions.append(f'T2."{col_name}" = T1."{col_name}"')
+      match_conditions = [f'T2."{key.replace(" ", "_")}" = T1."{key.replace(" ", "_")}"' for key in parameters]
+      match_expr = " AND ".join(match_conditions) if match_conditions else "1=1" # Safety fallback
       
-      match_expr = " AND ".join(match_conditions)
-      if not match_expr: match_expr = "1=1" # Safety fallback
+      # The History Subquery isolates the latest 'N' executions, calculates the health breakdown per batch, 
+      # and packages the metadata into a delimited string for the frontend tooltip rendering.
+      inner_history_sql = f"""
+      SELECT GROUP_CONCAT(daily_stat, '-') FROM (
+          SELECT (CASE WHEN f_cnt > 0 THEN 'F' WHEN w_cnt > 0 THEN 'W' ELSE 'S' END) || ':' || batch_ts || ':' || tot_cnt || ':' || s_cnt || ':' || w_cnt || ':' || f_cnt AS daily_stat, batch_ts
+          FROM (
+              SELECT 
+                  "ts" as batch_ts,
+                  COUNT(*) as tot_cnt,
+                  SUM(CASE WHEN "_status" = 'S' THEN 1 ELSE 0 END) as s_cnt,
+                  SUM(CASE WHEN "_status" = 'W' THEN 1 ELSE 0 END) as w_cnt,
+                  SUM(CASE WHEN "_status" = 'F' THEN 1 ELSE 0 END) as f_cnt
+              FROM "cb_{combined_name}_data" AS T2 
+              WHERE {match_expr} 
+              GROUP BY "ts" 
+              ORDER BY "ts" DESC 
+              LIMIT {history_n}
+          )
+          ORDER BY batch_ts ASC
+      )
+      """.strip().replace('\n', ' ')
 
-      # Building the History Subquery:
-      # - Filter by the current parameters (match_expr)
-      # - Group by "ts" to collapse multiple points into ONE status
-      # - Use status_priority_sql to ensure F > W > S
-      # - Order by "ts" ASC
-      # - Concatenate the results
-      inner_history_sql = f"SELECT GROUP_CONCAT(daily_stat, '-') FROM (SELECT {status_priority_sql} as daily_stat FROM \"cb_{combined_name}_data\" AS T2 WHERE {match_expr} GROUP BY \"ts\" ORDER BY \"ts\" ASC)"
-
-      # We also need a subquery to count the DISTINCT timestamps for the final dash logic (when there are further status points)
       count_subquery = f"SELECT COUNT(DISTINCT \"ts\") FROM \"cb_{combined_name}_data\" AS T2 WHERE {match_expr}"
-
-      history_expr = f"(CASE WHEN ({count_subquery}) > {history_n} THEN '-' || substr(({inner_history_sql}), -{history_str_len}) ELSE ({inner_history_sql}) END)"
+      history_expr = f"(CASE WHEN ({count_subquery}) > {history_n} THEN '-' || ({inner_history_sql}) ELSE ({inner_history_sql}) END)"
 
       # Build a HAVING clause to exclude groups where ANY grouping parameter is empty
       # (These "ghost" groups would be "stuck" separately on the table, since they are not valid runs)
@@ -2100,11 +2332,12 @@ class BenchRepo:
       having_str = "HAVING " + " AND ".join(having_clauses) if having_clauses else ""
 
       # Description of the overview table
-      tables.append({'table': { 'name': f'cb_{combined_name}_overview',
-                                'options': {
-                                            'update': {
-                                                        'sql_update_contents': {
-                                                          'sql': f"""DELETE FROM "cb_{combined_name}_overview";
+      tables.append({'table': {
+        'name': f'cb_{combined_name}_overview',
+        'options': {
+          'update': {
+            'sql_update_contents': {
+              'sql': f"""DELETE FROM "cb_{combined_name}_overview";
                 INSERT INTO "cb_{combined_name}_overview" ("id", "name", "_status", "count", "valid_count", "min_ts", "max_ts"
                                 {params_str}{insert_metrics_str}
                                 )
@@ -2120,43 +2353,71 @@ class BenchRepo:
                         GROUP by {groupby_params_str}
                         {having_str};
 """.strip(),
-                                                                    },
-                                                      },
-                                          },
-                                'columns': [
-                                  {'name': 'id',             'type': 'ukey_t'},
-                                  {'name': 'name',           'type': 'str_t'},
-                                  {'name': '_status',        'type': 'str_t'},
-                                  {'name': 'count',          'type': 'int_t'},
-                                  {'name': 'valid_count',    'type': 'int_t'},
-                                  {'name': 'min_ts',         'type': 'ts_t'},
-                                  {'name': 'max_ts',         'type': 'ts_t'},
-                                ]
-                                +[{'name': key.replace(' ', '_'), 'type': f'{metrics[key]}_t'} for key in parameters] 
-                                # Aggregates (min/avg/max) are ALWAYS floats and can be NULL (in case there are failed runs for all entries of a row)
-                                +[{'name': f"{key.replace(' ', '_')}_{suffix}", 'type': 'float_null_t'} for key in graph_metrics for suffix in ['min','avg','max']],
-                              }
-                    })
+            },
+          },
+        },
+        'columns': [
+          {'name': 'id', 'type': 'ukey_t'},
+          {'name': 'name', 'type': 'str_t'},
+          {'name': '_status', 'type': 'str_t'},
+          {'name': 'count', 'type': 'int_t'},
+          {'name': 'valid_count', 'type': 'int_t'},
+          {'name': 'min_ts', 'type': 'ts_t'},
+          {'name': 'max_ts', 'type': 'ts_t'},
+        ] + [{'name': key.replace(' ', '_'), 'type': f'{metrics[key]}_t'} for key in parameters] + [{'name': f"{key.replace(' ', '_')}_{suffix}", 'type': 'float_null_t'} for key in graph_metrics for suffix in ['min', 'avg', 'max']],
+      }})
+
+    # The mapping table utilized to securely demultiplex role-based queries is established
+    tables.append({'table': {
+      'name': 'cb_visibility',
+      'options': {
+        'update': {
+          'sql_update_contents': {
+            'sql': "DELETE FROM \"cb_visibility\";\n" + "\n".join(visibility_inserts)
+          }
+        }
+      },
+      'columns': [
+        {'name': 'benchmark_id', 'type': 'str_t'},
+        {'name': 'role', 'type': 'str_t'},
+        {'name': 'project', 'type': 'str_t'},
+        {'name': 'user', 'type': 'str_t'}
+      ]
+    }})
 
     # After processing all tabs, create the intermediate timestamp tables for each benchmark
     for benchname in benchmarks_processed:
-      # Subquery to get one status per timestamp (F wins over S, so we use MIN) for the global timeline
-      # No match_expr needed here because we are aggregating the whole benchmark table.
-      inner_history_sql_global = f"SELECT GROUP_CONCAT(daily_stat, '-') FROM (SELECT {status_priority_sql} as daily_stat FROM \"cb_{benchname.replace(' ','_')}_timestamps\" GROUP BY \"ts\" ORDER BY \"ts\" ASC)"
+      # The global history query mirrors the tab-level logic, packaging the metadata for the portal-wide Overview table
+      inner_history_sql_global = f"""
+      SELECT GROUP_CONCAT(daily_stat, '-') FROM (
+          SELECT (CASE WHEN f_cnt > 0 THEN 'F' WHEN w_cnt > 0 THEN 'W' ELSE 'S' END) || ':' || batch_ts || ':' || tot_cnt || ':' || s_cnt || ':' || w_cnt || ':' || f_cnt AS daily_stat, batch_ts
+          FROM (
+              SELECT 
+                  "ts" as batch_ts,
+                  COUNT(*) as tot_cnt,
+                  SUM(CASE WHEN "_status" = 'S' THEN 1 ELSE 0 END) as s_cnt,
+                  SUM(CASE WHEN "_status" = 'W' THEN 1 ELSE 0 END) as w_cnt,
+                  SUM(CASE WHEN "_status" = 'F' THEN 1 ELSE 0 END) as f_cnt
+              FROM "cb_{benchname.replace(' ', '_')}_timestamps" 
+              GROUP BY "ts" 
+              ORDER BY "ts" DESC 
+              LIMIT {history_n}
+          )
+          ORDER BY batch_ts ASC
+      )
+      """.strip().replace('\n', ' ')
 
-      # Subquery to count UNIQUE runs for the dash logic
       count_subquery_global = f"SELECT COUNT(DISTINCT \"ts\") FROM \"cb_{benchname.replace(' ','_')}_timestamps\""
-
-      history_expr_global = f"(CASE WHEN ({count_subquery_global}) > {history_n} THEN '-' || substr(({inner_history_sql_global}), -{history_str_len}) ELSE ({inner_history_sql_global}) END)"
+      history_expr_global = f"(CASE WHEN ({count_subquery_global}) > {history_n} THEN '-' || ({inner_history_sql_global}) ELSE ({inner_history_sql_global}) END)"
 
       tables.append({'table': {
-                                'name': f"cb_{benchname.replace(' ','_')}_timestamps",
-                                # This table's job is to collect all timestamps and trigger the final update
-                                'options': {
-                                            'update': {
-                                                        'sql_update_contents': {
-                                                          'sqldebug': 1,
-                                                          'sql': f"""DELETE FROM "cb_benchmarks" WHERE "id"="{benchname}";
+        'name': f"cb_{benchname.replace(' ', '_')}_timestamps",
+        # This table's job is to collect all timestamps and trigger the final update
+        'options': {
+          'update': {
+            'sql_update_contents': {
+              'sqldebug': 1,
+              'sql': f"""DELETE FROM "cb_benchmarks" WHERE "id"="{benchname}";
                           INSERT INTO "cb_benchmarks" ("id", "name", "count", "valid_count", "min_ts", "max_ts", "_status")
                                     SELECT "{benchname}",
                                           "{custom_display_names[benchname]}",
@@ -2164,83 +2425,97 @@ class BenchRepo:
                                           SUM(CASE WHEN "_status" <> 'F' THEN 1 ELSE 0 END),
                                           MIN("ts"), MAX("ts"),
                                           {history_expr_global}
-                                    FROM (SELECT * FROM "cb_{benchname.replace(' ','_')}_timestamps" ORDER BY "ts" ASC);
+                                    FROM (SELECT * FROM "cb_{benchname.replace(' ', '_')}_timestamps" ORDER BY "ts" ASC);
 """.strip(),
-                                                                    },
-                                                      },
-                                          },
-                                # It needs a 'ts' column and a 'source' column to track which tab the data came from
-                                'columns': [
-                                  {'name': 'ts',      'type': 'ts_t'},
-                                  {'name': 'source',  'type': 'str_t'},
-                                  {'name': '_status', 'type': 'str_t'},
-                                ],
-                              }
-                    })
+            },
+          },
+        },
+        # It needs a 'ts' column and a 'source' column to track which tab the data came from
+        'columns': [
+          {'name': 'ts', 'type': 'ts_t'},
+          {'name': 'source', 'type': 'str_t'},
+          {'name': '_status', 'type': 'str_t'},
+        ],
+      }})
 
     # Writing out YAML configuration file
     self.safe_yaml_write(tables, filename)
     return True
 
-  def gen_page_conf(self, filename, failed_info=None):
+  def gen_page_conf(self, filename, role='support', failed_info=None, role_benchmarks=None):
     """
     Create YAML file to be used in LLview for Page configuration
     """
-    self.log.info(f"Generating Page configuration file {filename}\n")
+    self.log.info(f"Generating Page configuration file {filename} (Role: {role})\n")
 
     # Intermediate dictionary to group pages and tabs by benchmark name
     # The keys will be the benchmark names
     pages_data = {}
-
     failed_info = failed_info or {}
+    benchmarks_to_process = role_benchmarks if role_benchmarks else self._iter_all_data()
+
+    r_cfg = ROLE_CONFIGS.get(role, ROLE_CONFIGS['support'])
+    frontend_replacements = {'$P': '#project#', '$U': '#user#', '$M': '#mentor#'}
+    frontend_dir = f"data/{r_cfg['out_dir']}"
+    for k, v in frontend_replacements.items():
+      frontend_dir = frontend_dir.replace(k, v)
 
     # Looping over all the benchmarks and tabs
-    for benchname, tabname, benchmark_data in self._iter_all_data():
+    for benchname, tabname, benchmark_data in benchmarks_to_process:
       # Create the file-safe name for paths
-      combined_name = benchname.replace(" ","_") + (f"_{tabname.replace(' ','_')}" if tabname else "")
-
+      combined_name = benchname.replace(" ", "_") + (f"_{tabname.replace(' ', '_')}" if tabname else "")
+      
       # Getting reference to config
       config = benchmark_data['config']
-
+      
       # If the user provided 'name:' in the root config, use it
       # otherwise, fall back to the benchname (the repo name)
       custom_display_name = config.get('name', benchname)
+
+      # Output paths are routed securely based on the active role configuration
+      context_path = f"{frontend_dir}/cb_{combined_name}.csv"
+      footer_path = f"/{frontend_dir}/footer_cb_{combined_name}.json"
 
       # Common dictionary structure for a page or a tab's content
       content_definition = {
         'default': False,
         'template': f'/data/LLtemplates/CB_{combined_name}',
-        'context': f"data/cb/cb_{combined_name}.csv",
-        'footer_graph_config': f"/data/ll/footer_cb_{combined_name}.json",
-        'description': config.get('description',''),
-        'ref': [ 'datatable' ],
+        'context': context_path,
+        'footer_graph_config': footer_path,
+        'description': config.get('description', ''),
+        'ref': ['datatable'],
         'data': {
-          'default_columns': [ 'Name', 'Timings', 'Parameters', '#Points', 'Status' ],
-          'info': [{'Benchmark' : custom_display_name}] 
-          }
+          'default_columns': ['Name', 'Timings', 'Parameters', '#Points', 'Status'],
+          'info': [{'Benchmark': custom_display_name}]
+        }
       }
+
+      # The visibility configuration is injected directly into the layout so the JavaScript frontend can hide unauthorized tabs
+      viz = config.get('visibility', {})
+      if role != 'support':
+        content_definition['visibility'] = viz.get(role, {} if role == 'user' else [])
+
       if tabname:
         # --- This is a tab ---
         # Get or create the main page entry for this benchmark
         # This ensures we have a place to append the tab
         benchmark_page = pages_data.setdefault(benchname, {
           'name': custom_display_name,
-          'section': f'cb_{custom_display_name.replace(" ","_")}',
+          'section': f'cb_{custom_display_name.replace(" ", "_")}',
           'tabs': [] # Initialize the list of tabs
         })
-
+        
         # Add the tab's specific name to its content
         content_definition['name'] = tabname
-        content_definition['section'] = f'cb_{tabname.replace(" ","_")}'
+        content_definition['section'] = f'cb_{tabname.replace(" ", "_")}'
         
         # Add the fully defined tab to the page's list of tabs
         benchmark_page['tabs'].append(content_definition)
-
       else:
         # --- This is a standalone page (no tabs) ---
         # Add the page's name to its content
         content_definition['name'] = custom_display_name
-        content_definition['section'] = f'cb_{custom_display_name.replace(" ","_")}'
+        content_definition['section'] = f'cb_{custom_display_name.replace(" ", "_")}'
         
         # Store it directly under its benchmark name
         pages_data[benchname] = content_definition
@@ -2270,31 +2545,27 @@ class BenchRepo:
           # Parent stub is created if the entire repository failed to initialize
           pages_data[benchname] = {
             'name': custom_name, 
-            'section': f'cb_{safe_section_name.replace(" ","_")}',
-            'error': "Benchmark partially or fully failed to load.",
+            'section': f'cb_{safe_section_name.replace(" ", "_")}', 
+            'error': "Benchmark partially or fully failed to load.", 
             'tabs': []
           }
-        
         benchmark_page = pages_data[benchname]
         
         # Specific tab is checked for existence
         existing_tab = next((t for t in benchmark_page.get('tabs', []) if t.get('name') == tabname), None)
-        
         if existing_tab:
           # Warning message is appended to the error key if the tab exists and contains data
           existing_err = existing_tab.get('error', '')
           existing_tab['error'] = existing_err + ("<br>" if existing_err else "") + joined_msgs
         else:
           # Stub tab is created to display the error if the tab failed completely
-          stub_tab = {
-            'name': tabname,
-            'section': f'cb_{tabname.replace(" ","_")}',
-            'default': False,
-            'error': joined_msgs,
+          benchmark_page['tabs'].append({
+            'name': tabname, 
+            'section': f'cb_{tabname.replace(" ", "_")}', 
+            'default': False, 
+            'error': joined_msgs, 
             'ref': []
-          }
-          benchmark_page['tabs'].append(stub_tab)
-            
+          })
       else:
         # Root level errors are handled here
         if benchname in pages_data:
@@ -2304,10 +2575,10 @@ class BenchRepo:
         else:
           # Stub page is created if the standalone page failed completely
           pages_data[benchname] = {
-            'name': custom_name,
-            'section': f'cb_{safe_section_name.replace(" ","_")}',
-            'default': False,
-            'error': joined_msgs,
+            'name': custom_name, 
+            'section': f'cb_{safe_section_name.replace(" ", "_")}', 
+            'default': False, 
+            'error': joined_msgs, 
             'ref': []
           }
 
@@ -2322,15 +2593,13 @@ class BenchRepo:
           process_failure(self._name, t_name, err_list)
 
     # After collecting all data, format it into the final list structure for YAML
-    pages = []
-    for page_data in pages_data.values():
-      pages.append({'page': page_data})
-
+    pages = [{'page': page_data} for page_data in pages_data.values()]
+    
     # Writing out YAML configuration file
     self.safe_yaml_write(pages, filename)
     return True
 
-  def gen_template_conf(self,filename):
+  def gen_template_conf(self, filename):
     """
     Create YAML file to be used in LLview for Template configuration
     """
@@ -2340,71 +2609,30 @@ class BenchRepo:
     # Looping over all the benchmarks and tabs
     for benchname, tabname, benchmark_data in self._iter_all_data():
       # Create the file-safe name for paths and identifiers
-      combined_name = benchname.replace(" ","_") + (f"_{tabname.replace(' ','_')}" if tabname else "")
-
+      combined_name = benchname.replace(" ", "_") + (f"_{tabname.replace(' ', '_')}" if tabname else "")
+      
       # Get a reference to the parameters for this specific benchmark/tab
       parameters = benchmark_data['parameters']
 
       # The column definitions are built for each benchmark/tab
       columns = [{
-        'headerName': "Parameters",
-        'groupId': "parameters",
-        'children': [{
-        'field': key,
-        'headerName': key,
-        'cellDataType': 'text',
-        'headerTooltip': description} for key, description in parameters.items()]
-      },
-      {
-        'headerName': "Timings",
-        'groupId': "Timings",
+        'headerName': "Parameters", 'groupId': "parameters",
+        'children': [{'field': key, 'headerName': key, 'cellDataType': 'text', 'headerTooltip': description} for key, description in parameters.items()]
+      }, {
+        'headerName': "Timings", 'groupId': "Timings",
         'children': [
-          {
-            'field': "min_ts",
-            'headerName': "Date of First Run", 
-            'headerTooltip': "Minimum timestamp on the benchmark",
-            'cellDataType': "dateString",
-            'filter': "DateTimeParentFilter",
-            'floatingFilterComponent': "DateFloatingFilterComponent",
-          },
-          {
-            'field': "max_ts",
-            'headerName': "Date of Last Run", 
-            'headerTooltip': "Maximum timestamp on the benchmark",
-            'cellDataType': "dateString",
-            'filter': "DateTimeParentFilter",
-            'floatingFilterComponent': "DateFloatingFilterComponent",
-          },
+          {'field': "min_ts", 'headerName': "Date of First Run", 'headerTooltip': "Minimum timestamp on the benchmark", 'cellDataType': "dateString", 'filter': "DateTimeParentFilter", 'floatingFilterComponent': "DateFloatingFilterComponent"},
+          {'field': "max_ts", 'headerName': "Date of Last Run", 'headerTooltip': "Maximum timestamp on the benchmark", 'cellDataType': "dateString", 'filter': "DateTimeParentFilter", 'floatingFilterComponent': "DateFloatingFilterComponent"},
         ]
-      },
-      {
-        'headerName': "#Points",
-        'groupId': "#Points",
+      }, {
+        'headerName': "#Points", 'groupId': "#Points",
         'children': [
-          {
-            'field': "count",
-            'headerName': "Total", 
-            'headerTooltip': "Total number of points",
-            'cellDataType': "number",
-          },
-          {
-            'field': "valid_count",
-            'headerName': "Valid", 
-            'headerTooltip': "Number of valid points",
-            'cellDataType': "number",
-          },
+          {'field': "count", 'headerName': "Total", 'headerTooltip': "Total number of points", 'cellDataType': "number"},
+          {'field': "valid_count", 'headerName': "Valid", 'headerTooltip': "Number of valid points", 'cellDataType': "number"},
         ]
-      },
-      {
-        'field': "_status",
-        'headerName': "Status",
-        'cellRenderer': "(params) => cell_status(params)",
-        'headerTooltip': 'Status of the last runs, oldest (left) to newest (right)',
-        'cellStyle': { 
-          'display': 'flex', 
-          'align-items': 'center', 
-          'justify-content': 'center',
-        }
+      }, {
+        'field': "_status", 'headerName': "Status", 'cellRenderer': "(params) => cell_status(params)", 'headerTooltip': 'Status of the last runs, oldest (left) to newest (right)',
+        'cellStyle': {'display': 'flex', 'align-items': 'center', 'justify-content': 'center'}
       }]
 
       # The main dataset dictionary for this benchmark/tab
@@ -2417,107 +2645,137 @@ class BenchRepo:
         'format': 'datatable',
         'columns': columns
       }}
-
       datasets.append(dataset)
 
     # Writing out YAML configuration file
     self.safe_yaml_write(datasets, filename)
-
     return True
 
-  def gen_tablecsv_conf(self,filename):
+  def gen_tablecsv_conf(self, filename, role='support', role_benchmarks=None):
     """
     Create YAML file to be used in LLview for Table CSV configuration
     """
-    self.log.info(f"Generating Table CSV configuration file {filename}\n")
+    self.log.info(f"Generating Table CSV configuration file {filename} (Role: {role})\n")
 
     datasets = []
+    benchmarks_to_process = role_benchmarks if role_benchmarks else self._iter_all_data()
+    r_cfg = ROLE_CONFIGS.get(role, ROLE_CONFIGS['support'])
+    backend_dir = f"$outputdir/{r_cfg['out_dir']}".rstrip('/')
 
     # Looping over all the benchmarks and tabs
-    for benchname, tabname, benchmark_data in self._iter_all_data():
+    for benchname, tabname, benchmark_data in benchmarks_to_process:
       # Create the file-safe name for paths and identifiers
-      combined_name = benchname.replace(" ","_") + (f"_{tabname.replace(' ','_')}" if tabname else "")
-
+      combined_name = benchname.replace(" ", "_") + (f"_{tabname.replace(' ', '_')}" if tabname else "")
+      
       # Get a reference to the table parameters for this specific benchmark/tab
       parameters = benchmark_data['parameters']
 
       # Columns to be included in the csv file: all that are not table parameters (which will be in the filename)
       # Graph metrics/measurements (y) including 'ts', parameters for different traces (graphparameters), and annotations
       columns = [key for key in parameters.keys()]
-      columns_str = [f'"{key.replace(" ","_")}"' for key in columns]
-      dataset = {'dataset': {
-        'name': f'cb_{combined_name}_csv',
-        'set': 'csv_cb',
-        'filepath': f'$outputdir/cb/cb_{combined_name}.csv.gz',
-        'data_database':   'CB',
+      columns_str = [f'"{key.replace(" ", "_")}"' for key in columns]
+
+      dataset_base = {
+        'name': f'cb_{combined_name}_{role}_csv',
+        'set': f'csv_cb_{role}',
+        'filepath': f"{backend_dir}/cb_{combined_name}.csv.gz",
+        'data_database': 'CB',
         'data_table': f'cb_{combined_name}_overview',
-        'stat_table': 'datasetstat_support',
+        'stat_table': f'datasetstat_{role}',
         'stat_database': 'jobreport_json_stat',
         'column_ts': 'max_ts',
         'renew': 'always',
         'csv_delimiter': ';',
         'format': 'csv',
         'column_convert': 'min_ts->todate_std_hhmm,max_ts->todate_std_hhmm',
-        'header':  f"name;count;valid_count;min_ts;max_ts;_status;{';'.join(columns)}",
-        'columns': f"name,count,valid_count,min_ts,max_ts,_status,{','.join(columns_str)}",
-      }}
+      }
 
-      datasets.append(dataset)
+      # Role-based configurations utilizing explicit dictionary lookups are injected
+      if role == 'support':
+        dataset_base['header'] = f"name;count;valid_count;min_ts;max_ts;_status;{';'.join(columns)}"
+        dataset_base['columns'] = f"name,count,valid_count,min_ts,max_ts,_status,{','.join(columns_str)}"
+      else:
+        dataset_base['FORALL'] = f"{r_cfg['forall_prefix']}:VAR_{role}_cb_{combined_name}"
+        dataset_base['column_filemap'] = r_cfg['filemap']
+        
+        extra_headers = r_cfg['db_cols'].split(',')
+        all_headers = extra_headers + ['name', 'count', 'valid_count', 'min_ts', 'max_ts', '_status'] + columns
+        all_columns = extra_headers + ['name', 'count', 'valid_count', 'min_ts', 'max_ts', '_status'] + columns_str
+        
+        dataset_base['header'] = ';'.join(all_headers)
+        dataset_base['columns'] = ','.join(all_columns)
+        dataset_base['sql'] = f"SELECT {r_cfg['db_select']}, o.* FROM cb_{combined_name}_overview o JOIN cb_visibility v ON v.benchmark_id = '{combined_name}' WHERE v.role = '{role}'"
+
+      datasets.append({'dataset': dataset_base})
 
     # Writing out YAML configuration file
     self.safe_yaml_write(datasets, filename)
-
     return True
 
-  def gen_vars_conf(self,filename):
+  def gen_vars_conf(self, filename, role='support', role_benchmarks=None):
     """
     Create YAML file to be used to define Vars in LLview configuration
     """
-    self.log.info(f"Generating Vars configuration file {filename}\n")
+    self.log.info(f"Generating Vars configuration file {filename} (Role: {role})\n")
 
-    vars = []
+    vars_list = []
+    benchmarks_to_process = role_benchmarks if role_benchmarks else self._iter_all_data()
+    r_cfg = ROLE_CONFIGS.get(role, ROLE_CONFIGS['support'])
 
     # Looping over all the benchmarks and tabs
-    for benchname, tabname, benchmark_data in self._iter_all_data():
+    for benchname, tabname, benchmark_data in benchmarks_to_process:
       # Create the file-safe name for paths and identifiers
-      combined_name = benchname.replace(" ","_") + (f"_{tabname.replace(' ','_')}" if tabname else "")
+      combined_name = benchname.replace(" ", "_") + (f"_{tabname.replace(' ', '_')}" if tabname else "")
 
-      var = {
-        'name': f'VAR_cb_{combined_name}',
-        'type': 'hash_values',    
-        'database': 'CB',
-        'table': f'cb_{combined_name}_overview',
-        'columns':  'id',
-        'sql': f'SELECT "id" FROM "cb_{combined_name}_overview"'
-      }
-
-      vars.append(var)
+      # Demultiplexing variables mapped directly from the central ROLE_CONFIGS dictionary are appended
+      if role == 'support':
+        vars_list.append({
+          'name': f'VAR_cb_{combined_name}',
+          'type': 'hash_values',    
+          'database': 'CB',
+          'table': f'cb_{combined_name}_overview',
+          'columns': 'id',
+          'sql': f'SELECT "id" FROM "cb_{combined_name}_overview"'
+        })
+      else:
+        vars_list.append({
+          'name': f'VAR_{role}_cb_{combined_name}',
+          'type': 'hash_values',    
+          'database': 'CB',
+          'table': 'cb_visibility',
+          'columns': r_cfg['db_cols'],
+          'sql': f"SELECT {r_cfg['db_cols']} FROM cb_visibility WHERE benchmark_id='{combined_name}' AND role='{role}'"
+        })
+        vars_list.append({
+          'name': f'VAR_{role}_cb_{combined_name}_footer',
+          'type': 'hash_values',    
+          'database': 'CB',
+          'table': 'cb_visibility',
+          'columns': f"{r_cfg['db_cols']},id",
+          'sql': f"SELECT {r_cfg['db_select']}, o.id FROM cb_{combined_name}_overview o JOIN cb_visibility v ON v.benchmark_id = '{combined_name}' WHERE v.role='{role}'"
+        })
 
     # Writing out YAML configuration file
-    self.safe_yaml_write(vars, filename)
-
+    self.safe_yaml_write(vars_list, filename)
     return True
 
-  def gen_footercsv_conf(self,filename):
+  def gen_footercsv_conf(self, filename, role='support', role_benchmarks=None):
     """
     Create YAML file to be used for Footer CSVs in LLview configuration
     """
-    self.log.info(f"Generating Vars configuration file {filename}\n")
+    self.log.info(f"Generating Footer CSV configuration file {filename} (Role: {role})\n")
 
-    format_types = {
-      'int': '%s',   # We will use the string output to allow empty values without errors on LLview's workflow
-      'float': '%s', # We will use the string output to allow empty values without errors on LLview's workflow
-      'str': '%s',
-      'bool': '%d',
-      'date': '%s',
-      'ts': '%s',
-    }
+    format_types = {'int': '%s', 'float': '%s', 'str': '%s', 'bool': '%d', 'date': '%s', 'ts': '%s'}
     datasets = []
-    # Looping over all the benchmarks and tabs
-    for benchname, tabname, benchmark_data in self._iter_all_data():
-      # Create the file-safe name for paths and identifiers
-      combined_name = benchname.replace(" ","_") + (f"_{tabname.replace(' ','_')}" if tabname else "")
+    benchmarks_to_process = role_benchmarks if role_benchmarks else self._iter_all_data()
+    r_cfg = ROLE_CONFIGS.get(role, ROLE_CONFIGS['support'])
+    backend_dir = f"$outputdir/{r_cfg['out_dir']}".rstrip('/')
 
+    # Looping over all the benchmarks and tabs
+    for benchname, tabname, benchmark_data in benchmarks_to_process:
+      # Create the file-safe name for paths and identifiers
+      combined_name = benchname.replace(" ", "_") + (f"_{tabname.replace(' ', '_')}" if tabname else "")
+      
       # Get references to the data for this specific benchmark/tab
       metrics = benchmark_data['metrics']
       parameters = benchmark_data['parameters']
@@ -2525,45 +2783,67 @@ class BenchRepo:
       # Columns to be included in the csv file: all that are not table parameters (which will be in the filename)
       # Graph metrics/measurements (y) including 'ts', parameters for different traces (graphparameters), and annotations
       columns = [key for key in metrics.keys() if key not in parameters]
-      columns_str = [f'"{key.replace(" ","_")}"' for key in columns]
-      dataset = {'dataset': {
-        'name':           f'cb_{combined_name}_csv',
-        'set':            f'cb_csv',
-        'FORALL':         f"A:VAR_cb_{combined_name}",
-        'filepath':       f"$outputdir/cb/cb_{combined_name}_${{A}}.csv" ,
-        'columns':        ','.join(columns_str),
-        'header':         ','.join(['date' if key=='ts' else key for key in columns]),
+      columns_str = [f'"{key.replace(" ", "_")}"' for key in columns]
+      
+      dataset_base = {
+        'name': f'cb_{combined_name}_{role}_csv',
+        'set': f'cb_csv_{role}',
+        'format_str': ','.join([format_types[metrics[key]] for key in columns]),
+        'column_ts': 'ts',
+        'format': 'csv',
+        'renew': 'always',
+        'data_database': 'CB',
+        'data_table': f'cb_{combined_name}_data',
+        'stat_database': 'jobreport_CB_stat',
+        'stat_table': f'datasetstat',
         'column_convert': 'ts->todate_1',
-        'column_filemap': 'A:id',
-        'format_str':     ','.join([format_types[metrics[key]] for key in columns]),
-        'column_ts':      'ts',
-        'format':         'csv',
-        'renew':          'always',
-        'data_database':   'CB',
-        'data_table':      f'cb_{combined_name}_data',
-        'stat_database':   'jobreport_CB_stat',
-        'stat_table':      'datasetstat',
-      }}
+      }
 
-      datasets.append(dataset)
+      # Demultiplexing configurations are securely injected from the central ROLE_CONFIGS dictionary
+      if role == 'support':
+        dataset_base['FORALL'] = f"A:VAR_cb_{combined_name}"
+        dataset_base['filepath'] = f"{backend_dir}/cb_{combined_name}_${{A}}.csv"
+        dataset_base['columns'] = ','.join(columns_str)
+        dataset_base['header'] = ','.join(['date' if key == 'ts' else key for key in columns])
+        dataset_base['column_filemap'] = 'A:id'
+      else:
+        dataset_base['FORALL'] = f"{r_cfg['forall_prefix']},A:VAR_{role}_cb_{combined_name}_footer"
+        dataset_base['filepath'] = f"{backend_dir}/cb_{combined_name}_${{A}}.csv"
+        
+        extra_headers = r_cfg['db_cols'].split(',')
+        dataset_base['columns'] = f"{','.join(extra_headers)},{','.join(columns_str)}"
+        dataset_base['header'] = f"{','.join(extra_headers)},{','.join(['date' if key == 'ts' else key for key in columns])}"
+        dataset_base['column_filemap'] = f"{r_cfg['filemap']},A:id"
+        dataset_base['sql'] = f"SELECT {r_cfg['db_select']}, d.* FROM cb_{combined_name}_data d JOIN cb_visibility v ON v.benchmark_id = '{combined_name}' WHERE v.role = '{role}'"
+
+      datasets.append({'dataset': dataset_base})
 
     # Writing out YAML configuration file
     self.safe_yaml_write(datasets, filename)
-
     return True
 
 
-  def gen_footer_conf(self,filename):
+  def gen_footer_conf(self, filename, role='support', role_benchmarks=None):
     """
     Create YAML file to be used in LLview for the Footer configuration
     """
-    self.log.info(f"Generating Footer configuration file {filename}\n")
+    self.log.info(f"Generating Footer configuration file {filename} (Role: {role})\n")
 
     footers = []
+    benchmarks_to_process = role_benchmarks if role_benchmarks else self._iter_all_data()
+    r_cfg = ROLE_CONFIGS.get(role, ROLE_CONFIGS['support'])
+    
+    frontend_replacements = {'$P': '#project#', '$U': '#user#', '$M': '#mentor#'}
+    frontend_dir = f"data/{r_cfg['out_dir']}".rstrip('/')
+    for k, v in frontend_replacements.items():
+      frontend_dir = frontend_dir.replace(k, v)
+    
+    backend_dir = f"$outputdir/{r_cfg['out_dir']}".rstrip('/')
+
     # Looping over all the benchmarks and tabs
-    for benchname, tabname, benchmark_data in self._iter_all_data():
+    for benchname, tabname, benchmark_data in benchmarks_to_process:
       # Create the file-safe name for paths and identifiers
-      combined_name = benchname.replace(" ","_") + (f"_{tabname.replace(' ','_')}" if tabname else "")
+      combined_name = benchname.replace(" ", "_") + (f"_{tabname.replace(' ', '_')}" if tabname else "")
 
       # Getting references to all necessary data for this benchmark/tab
       metrics = benchmark_data['metrics']
@@ -2579,6 +2859,9 @@ class BenchRepo:
         actual_tab_name = tab_name if tab_name is not None else 'Benchmarks'
         # Get or create the list for this tab and append the plot
         footer_tabs_map.setdefault(actual_tab_name, []).append(plot_config)
+
+      # Secure output datapaths are configured based on the central ROLE_CONFIGS dictionary
+      datapath_prefix = f"{frontend_dir}/cb_{combined_name}"
 
       # Loop over footer tabs
       footersetelems = []
@@ -2603,7 +2886,13 @@ class BenchRepo:
           sorted_keys = sorted([k for k in graphparameters.keys() if k in current_group_by])
           
           # Sort the values (sets) into lists to ensure consistent product generation
-          sorted_value_lists = [sorted(list(graphparameters[k])) for k in sorted_keys]
+          # A natural sort algorithm is applied so numeric strings (e.g., '2' and '10') are ordered mathematically
+          sorted_value_lists = [
+            sorted(
+              list(graphparameters[k]), 
+              key=lambda v: [float(c) if c.replace('.', '', 1).isdigit() else c.lower() for c in re.split(r'(\d+(?:\.\d+)?)', str(v))]
+            ) for k in sorted_keys
+          ]
 
           valid_combinations = [] 
           # Generating all possible combinations of the graph parameters for this plot
@@ -2634,7 +2923,13 @@ class BenchRepo:
                 valid_combinations.append(current_combination)
             
             # Sorting list by key and value
-            valid_combinations.sort(key=lambda d: tuple(sorted(d.items())))
+            # Natural sort is utilized again to guarantee correct numerical sequence for the final traces
+            valid_combinations.sort(
+              key=lambda d: tuple(
+                (k, [float(c) if c.replace('.', '', 1).isdigit() else c.lower() for c in re.split(r'(\d+(?:\.\d+)?)', str(v))]) 
+                for k, v in sorted(d.items())
+              )
+            )
 
           # Handle case where there are no groups/traces (single curve)
           # If valid_combinations is empty, we create a single dummy 'traceelem' (empty dict)
@@ -2664,12 +2959,7 @@ class BenchRepo:
             color_list = colormaps[BenchRepo.DEFAULT_COLORMAP].colors # type: ignore
           
           indices_to_sort = range(len(color_list))
-          colors = cycle([
-            to_hex(color_list[idx]) for idx in sorted(
-              indices_to_sort, 
-              key=sort_function
-            )
-          ])
+          colors = cycle([to_hex(color_list[idx]) for idx in sorted(indices_to_sort, key=sort_function)])
 
           # Loop over traces
           traces = []
@@ -2688,32 +2978,17 @@ class BenchRepo:
             if traceelem:
               name_str = '<br>'.join(f"{key}: {traceelem[key]}" for mtype in sorted(self.default.keys(), reverse=True) for key in sorted(traceelem.keys()) if metrics[key] == mtype)
               # Creating 'where' to update 'ts' to 'date', as we do this change in the csv header
-              where_clause = {}
-              for k, v in traceelem.items():
-                csv_key = 'date' if k == 'ts' else k
-                where_clause[csv_key] = v
-
-              update_dict = {
-                'name': name_str,
-                'where': where_clause
-              }
+              where_clause = {('date' if k == 'ts' else k): v for k, v in traceelem.items()}
+              update_dict = {'name': name_str, 'where': where_clause}
             else:
               # Single curve case: Name matches the Y-axis metric, no 'where' filter
-              update_dict = {
-                'name': graphelem,
-              }
+              update_dict = {'name': graphelem}
 
-            plot_properties.update({ 
-              'ycol': graphelem,
-              'yaxis': "y",
-              **update_dict # Merge the specific props
-            })
+            plot_properties.update({'ycol': graphelem, 'yaxis': "y", **update_dict})
             
             # Setting the colors
-            if 'marker' in plot_properties:
-              plot_properties['marker']['color'] = color
-            if 'line' in plot_properties:
-              plot_properties['line']['color'] = color
+            if 'marker' in plot_properties: plot_properties['marker']['color'] = color
+            if 'line' in plot_properties: plot_properties['line']['color'] = color
 
             # Adding on-hover/annotation data, if present
             # Get the annotations directly from the plot config
@@ -2728,15 +3003,9 @@ class BenchRepo:
 
           # Update layout with config ones (Merged Global + Local)
           layout = {
-            'yaxis': {
-              'title': graphelem + (f" [{config['metrics'][graphelem]['unit']}]" if "unit" in config.get('metrics', {}).get(graphelem, {}) else "")
-            },
-            'xaxis': {
-              'title': x_metric if x_metric != 'ts' else None
-            },
-            'legend': {
-              'x': "1.02", 'xanchor': "left", 'y': "0.98", 'yanchor': "top", 'orientation': "v"
-            }
+            'yaxis': {'title': graphelem + (f" [{config['metrics'][graphelem]['unit']}]" if "unit" in config.get('metrics', {}).get(graphelem, {}) else "")},
+            'xaxis': {'title': x_metric if x_metric != 'ts' else None},
+            'legend': {'x': "1.02", 'xanchor': "left", 'y': "0.98", 'yanchor': "top", 'orientation': "v"}
           }
           self.deep_update(layout, current_trace_layout)
 
@@ -2757,7 +3026,7 @@ class BenchRepo:
               'name': graphelem,
               'xcol': x_col_name,
               'layout': layout,
-              'datapath': f"data/cb/cb_{combined_name}{''.join([f'_#{key}#' for key in parameters.keys()])}.csv",
+              'datapath': f"{datapath_prefix}{''.join([f'_#{key}#' for key in parameters.keys()])}.csv",
               'traces': traces,
             }
           }
@@ -2775,9 +3044,9 @@ class BenchRepo:
       footer = { 
         'footer': {
           'name': combined_name,
-          'filepath': f"$outputdir/ll/footer_cb_{combined_name}.json",
+          'filepath': f"{backend_dir}/footer_cb_{combined_name}.json",
           'stat_database': 'jobreport_json_stat',
-          'stat_table': 'datasetstat_footer',
+          'stat_table': f'datasetstat_footer',
           'footerset': footersetelems,
         }
       }
@@ -2785,7 +3054,6 @@ class BenchRepo:
 
     # Writing out YAML configuration file
     self.safe_yaml_write(footers, filename)
-
     return True
 
   def parse(self, cmd, timestamp="", prefix="", stype=""):
@@ -2899,12 +3167,14 @@ class BenchRepo:
         self.add_value(key,value,parsed_data[current_unit])
     return
 
-  def apply_pattern(self,elements,exclude={},include={}):
+  def apply_pattern(self, elements, exclude={}, include={}, strict_keys=None):
     """
     Loops over all units in elements to:
     - remove items that match 'exclude'
     - keep only items that match 'include'
+    - strict_keys: List of metric names. Filters on these keys are enforced even if the run Failed.
     """
+    strict_keys = strict_keys or []
     to_remove = set()
     if isinstance(elements,set):
       # When elements is a set (e.g. 'sources' list)
@@ -2918,18 +3188,27 @@ class BenchRepo:
     elif isinstance(elements,list):
       # When elements is a list (e.g. 'metrics' list, containing a list of dicts)
       # Check if each of the elements of the list contains the patterns
-      for idx,unit in enumerate(elements):
+      for idx, unit in enumerate(elements):
 
         # We want to preserve Failed runs to be able to set correctly the status history
         # If the unit (row) is marked as FAILED, we skip all filtering logic.
         # This ensures the failed run is kept in the list regardless of missing data.
-        if isinstance(unit, dict) and unit.get('_status') == 'F':
-            continue 
+        # However, table parameters (strict_keys) are still enforced even for failed runs,
+        # such that we can remove "bad" table rows.
+        is_failed = isinstance(unit, dict) and unit.get('_status') == 'F'
         
-        if exclude and self.check_unit(idx,unit,exclude,text="excluded"):
-          to_remove.add(idx)
-        if include and not self.check_unit(idx,unit,include,text="included"):
-          to_remove.add(idx)
+        if exclude:
+          # If the run Failed, we only evaluate exclude rules targeting strict table parameters.
+          # We securely isolate the strict rules into a temporary dictionary.
+          active_exclude = {k: v for k, v in exclude.items() if k in strict_keys} if is_failed else exclude
+          if active_exclude and self.check_unit(idx, unit, active_exclude, text="excluded"):
+            to_remove.add(idx)
+            continue # Already removed, no need to check inclusion
+        if include:
+          # If the run Failed, we only evaluate include rules targeting strict table parameters.
+          active_include = {k: v for k, v in include.items() if k in strict_keys} if is_failed else include
+          if active_include and not self.check_unit(idx, unit, active_include, text="included"):
+            to_remove.add(idx)
       for idx in sorted(to_remove, reverse=True): # Must be removed from last to first, otherwise elements change
         del elements[idx]
     elif isinstance(elements,dict):
@@ -2989,41 +3268,41 @@ class BenchRepo:
     #           return True            
     return False
 
-  def check_unit(self,unitname,unit,pattern,text="included/excluded"):
+  def check_unit(self, unitname, unit, pattern, text="included/excluded"):
     """
     Check 'current_unit' name with rules for exclusion or inclusion. (exclusion is applied first)
     Returns True if unit is to be skipped
     """
-    if isinstance(pattern,str): # If rule is a simple string
-      if re.search(pattern, unitname):
+    if isinstance(pattern, str): 
+      if re.search(str(pattern), str(unitname)):
         self.log.debug(f"Unit {unitname} is {text} due to {pattern} rule\n")
         return True
-    elif isinstance(pattern,list): # If list of rules
-      for pat in pattern: # loop over list - that can be strings or dictionaries
-        if isinstance(pat,str): # If item in list is a simple string
-          if re.search(pat, unitname):
+    elif isinstance(pattern, list): 
+      for pat in pattern: 
+        if isinstance(pat, str) or isinstance(pat, int) or isinstance(pat, float): 
+          if re.search(str(pat), str(unitname)):
             self.log.debug(f"Unit {unitname} is {text} due to {pat} rule in list\n")
             return True
-        elif isinstance(pat,dict): # If item in list is a dictionary
-          for key,value in pat.items():
-            if isinstance(value,str): # if dictionary value is a simple string
-              if (key in unit) and re.search(value, unit[key]):
+        elif isinstance(pat, dict): 
+          for key, value in pat.items():
+            if isinstance(value, str) or isinstance(value, int) or isinstance(value, float): 
+              if (key in unit) and re.search(str(value), str(unit[key])):
                 self.log.debug(f"Unit {unitname} is {text} due to {value} rule in {key} key of list\n")
                 return True
-            elif isinstance(value,list): # if dictionary value is a list
+            elif isinstance(value, list): 
               for v in value:
-                if (key in unit) and re.search(v, unit[key]): # At this point, v in list can only be a string
+                if (key in unit) and re.search(str(v), str(unit[key])): 
                   self.log.debug(f"Unit {unitname} is {text} due to {v} rule in list of {key} key of list\n")
                   return True
-    elif isinstance(pattern,dict): # If dictionary with rules
-      for key,value in pattern.items():
-        if isinstance(value,str): # if dictionary value is a simple string
-          if (key in unit) and re.search(value, unit[key]):
+    elif isinstance(pattern, dict): 
+      for key, value in pattern.items():
+        if isinstance(value, str) or isinstance(value, int) or isinstance(value, float): 
+          if (key in unit) and re.search(str(value), str(unit[key])):
             self.log.debug(f"Unit {unitname} is {text} due to {value} rule in {key} key\n")
             return True
-        elif isinstance(value,list): # if dictionary value is a list
+        elif isinstance(value, list): 
           for v in value:
-            if (key in unit) and re.search(v, unit[key]): # At this point, v in list can only be a string
+            if (key in unit) and re.search(str(v), str(unit[key])): 
               self.log.debug(f"Unit {unitname} is {text} due to {v} rule in list of {key} key\n")
               return True
     return False
@@ -3146,6 +3425,47 @@ class BenchRepo:
 
     return
 
+def normalize_visibility_config(viz_config: Dict[str, Any]) -> Dict[str, Any]:
+  """
+  Visibility configuration is normalized into a strict schema mirroring ROLE_CONFIGS.
+  Keys are mapped directly, and shorthands are expanded to ensure compatibility
+  with downstream SQL and frontend filtering.
+  
+  Args:
+    viz_config: Raw visibility dictionary parsed from YAML.
+    
+  Returns:
+    Normalized dictionary containing explicit role assignments.
+  """
+  normalized = {'support': True}
+  if not viz_config:
+    return normalized
+    
+  normalized['support'] = bool(viz_config.get('support', True))
+  
+  if 'project' in viz_config:
+    p_val = viz_config['project']
+    if isinstance(p_val, str):
+      normalized['project'] = [p_val]
+    elif isinstance(p_val, list):
+      normalized['project'] = p_val
+      
+  if 'user' in viz_config:
+    u_val = viz_config['user']
+    normalized['user'] = {}
+    if isinstance(u_val, dict):
+      for p, users in u_val.items():
+        if isinstance(users, str):
+          normalized['user'][p] = [users] if users != 'all' else ['all']
+        elif isinstance(users, list):
+          normalized['user'][p] = users
+          
+  # Custom roles are securely preserved and normalized into lists
+  for key, val in viz_config.items():
+    if key not in ['support', 'project', 'user']:
+      normalized[key] = val if isinstance(val, list) else [val]
+      
+  return normalized
 
 def log_continue(log,message):
   """
@@ -3177,9 +3497,14 @@ def get_credentials(name,config):
   log = logging.getLogger('logger')
   username = None
   password = None
+  
   if "token" in config:
+    # An explicitly falsy token (e.g., 'token: false' or 'token: ""') disables authentication for public repositories
+    if not config["token"]:
+      log.info("Token explicitly disabled. Git operations will proceed without authentication.\n")
+      return None, None
     username = 'oauth2'
-    password = config['token']
+    password = str(config['token'])
   elif "credentials" in config:
     if isinstance(config['credentials'],dict):
       # Trying to get 'username' and 'password' from configuration
@@ -3202,26 +3527,38 @@ def get_credentials(name,config):
     elif config['credentials'] == 'none':
       log.debug("Queries will be done without authentication\n")
       return None,None
-  # If username was not obtained in config or module, ask now
+      
+  # If username was not obtained in config or module, ask now securely
   if not username:
-    username = input("Username:")
+    try:
+      username = input("Username:")
+    except EOFError:
+      username = None
+      
     if not username:
       log.info("No username given, queries will be done without authentication\n")
       return None,None
-  # If username was not obtained in config or module, ask now
+      
+  # If password was not obtained in config or module, ask now securely
   if not password:
     if keyring:
       log.info("Keyring module found, attempting to retrieve password.\n")
       password = keyring.get_password('llview_prometheus', username)
       if password is None:
-        password_input = getpass.getpass(f"Enter password for {username} on '{name}' (will be stored in keychain):")
-        keyring.set_password(name, username, password_input)
-        password = password_input
+        try:
+          password_input = getpass.getpass(f"Enter password for {username} on '{name}' (will be stored in keychain):")
+          keyring.set_password(name, username, password_input)
+          password = password_input
+        except EOFError:
+          password = None
     else:
       log.warning("Keyring module cannot be imported, password will not be saved.\n")
-      password = getpass.getpass(f"Enter password for {username}:")
+      try:
+        password = getpass.getpass(f"Enter password for {username}:")
+      except EOFError:
+        password = None
+        
   return username,password
-
 
 
 def parse_config_yaml(filename):
@@ -3391,6 +3728,11 @@ def main():
     # Start generic timer
     start_time = time.time()
 
+    # Active roles are tracked to ensure tab files are only generated when strictly necessary
+    active_roles = {'support'}
+    # Global visibility logic is tracked to ensure the parent 'Overview' tabs render securely across portals
+    global_visibility = {'projects': {}, 'mentors': []}
+
     # Looping over outer entries, that should represent repositories
     for repo_name, repo_config in config.items():
       log.info(f"Processing '{repo_name}'\n")
@@ -3407,7 +3749,12 @@ def main():
       # Handling root-level remote configuration inclusion, if "include" is given
       if 'include' in repo_config:
         # Fetch the file directly into memory
-        remote_config = fetch_remote_config(repo_config, log)
+        try:
+          remote_config = fetch_remote_config(repo_config, log)
+        except ValueError as e:
+          log.error(f"Failed to load root included configuration for '{repo_name}': {e}\n")
+          failed_repos[repo_name].setdefault(None, []).append(str(e))
+          continue
 
         if not remote_config:
           # If fetch_remote_config returned None (due to 404, bad YAML, etc.),
@@ -3421,7 +3768,7 @@ def main():
         # Sanitize the fetched remote config, and remove protected keys from the downloaded file
         try:
           remote_config = sanitize_config_dict(remote_config, log, context=f"include file for {repo_name}")
-        except ValueError:
+        except ValueError as e:
           log.error(f"Failed to sanitize remote configuration for '{repo_name}'. Skipping repository.\n")
           # Adding error to registry
           error_msg = f"Configuration Error: Invalid characters in included file. {str(e)}"
@@ -3466,7 +3813,13 @@ def main():
               'include': tab_config['include']
             }
             # Fetch the file directly into memory
-            remote_tab_config = fetch_remote_config(fetch_config, log)
+            try:
+              remote_tab_config = fetch_remote_config(fetch_config, log)
+            except ValueError as e:
+              log.error(f"Failed to load included configuration for tab '{tab}' in '{repo_name}': {e}\n")
+              failed_repos[repo_name].setdefault(tab, []).append(str(e))
+              del repo_config['tabs'][tab]
+              continue
 
             if not remote_tab_config:
               # If fetch_remote_config returned None (due to 404, bad YAML, etc.),
@@ -3481,7 +3834,7 @@ def main():
             # Sanitize the fetched remote config, and remove protected keys from the downloaded file
             try:
               remote_tab_config = sanitize_config_dict(remote_tab_config, log, context=f"include file for tab {tab}")
-            except ValueError:
+            except ValueError as e:
               log.error(f"Failed to sanitize remote configuration for tab '{tab}'. Skipping tab.\n")
               # Adding error to registry
               error_msg = f"Configuration Error: Invalid characters in tab '{tab}'. {str(e)}"
@@ -3526,6 +3879,23 @@ def main():
       # Loop over tabs (if existing) or single page
       # (group points to either the tabs or to the single page)
       for group_name, group_config in group.items():
+        # Visibility configurations are normalized early to ensure a strict schema 
+        # is available for subsequent data generation and authorization loops.
+        group_config['visibility'] = normalize_visibility_config(group_config.get('visibility', {}))
+        
+        ## Active roles are identified and registered to prevent the generation of empty tab files later
+        viz = group_config['visibility']
+        for role_key, data in viz.items():
+          if data and role_key != 'support':
+            active_roles.add(role_key)
+            if role_key == 'user':
+              for p, u_list in data.items():
+                global_visibility.setdefault(role_key, {}).setdefault(p, set()).update(u_list)
+            elif role_key == 'project':
+              global_visibility.setdefault(role_key, set()).update(data)
+            else:
+              global_visibility.setdefault(role_key, set()).update(data)
+        
         sources = group_config.get('sources') or {}
         group = 'tab' if internal_tabs else 'repository'
         # combined_name is used for logging and tracking specific tabs
@@ -3739,8 +4109,8 @@ def main():
   else:
     log.error(f"No repos given.\n")
 
-  # Creating LLview tab configuration file
-  success = gen_tab_config(default=args.setdefault,tabname=args.tabname, folder=(args.outconfigfolder if args.outconfigfolder else ''))
+  # LLview tab configuration files are systematically generated exclusively for active roles
+  success = gen_tab_config(default=args.setdefault, tabname=args.tabname, folder=(args.outconfigfolder if args.outconfigfolder else ''), active_roles=active_roles, global_visibility=global_visibility)
   if not success:
     log.error(f"Error generating tab configuration file!\n")
 

@@ -106,11 +106,12 @@ The `metrics` section defines every data point you want to track. A metric can b
 | `header` | (Optional) The column name in the CSV. Defaults to the metric key name if omitted. |
 | `key` | (Required for `from: metadata`) The key name in the JSON metadata. |
 | `regex` | (Required for `from: filename`) Regular expression to extract data from filenames. |
-| `default` | (Optional) A specific value to use if the metric is missing or empty in the source. If set, missing data will **not** trigger a "Failed" status. |
+| `map` | (Optional) Dictionary used to dynamically rewrite CSV values before validation or visualization occurs (e.g., converting '0' to 'false'). Empty strings can be utilized as a key to target specific blank CSV entries. |
+| `default` | (Optional) A specific value to use if the metric is missing entirely from the source file. Note: The default value is applied *after* the `map` phase. If set, missing data will **not** trigger a "Failed" status. |
 | `unit` | (Optional) String to display in graph axis labels (e.g., 'ns/d', 'GB/s'). |
 | `description` | (Recommended) Brief text describing the metric. Used as a tooltip in the table. |
 |  <span style="white-space:nowrap">`include`/`exclude`</span> | (Optional) List of values or Regex patterns to filter specific data rows based on this metric. |
-| `validate` | (Optional) A list of validation rules (e.g., regressions, outliers, min/max ranges) to automatically flag anomalies. See **[Data Validation](#6-data-validation)**. |
+| `validate` | (Optional) A list of validation rules (e.g., regressions, outliers, categorigal matching, min/max ranges) to automatically flag anomalies. See **[Data Validation](#6-data-validation)**. |
 
 
 ## 3. Dashboard Structure & Status
@@ -296,7 +297,28 @@ metrics:
         noise_floor_pct: 1.0    # (Optional) Minimum percentage variance enforced to prevent false positives in overly stable datasets. Default: 1.0
 ```
 
-### C. Static Thresholds (`range_validator`)
+### C. Categorical Matching (`match_validator`)
+Specific strings or numeric values can be explicitly enforced or forbidden. If an invalid category is detected, the run is flagged with a 'W' status in the overview table. 
+
+This validator is particularly useful for verifying discrete states, flags, or configuration modes. By default, an anomalous point is visually circled on the graph, but this can be disabled if the graph's native layout already makes the discrepancy obvious.
+
+```yaml
+metrics:
+  Execution_Mode:
+    type: str
+    validate:
+      - name: match_validator
+        eq: ['optimized', 'standard'] # (Optional) Only these values are permitted. Anything else triggers a Warning.
+        # neq: ['failed', 'error']    # (Optional) These explicit values are forbidden.
+        add_visuals: false            # (Optional) Disables the red circle on the graph. Default: true
+        annotation_text: 'Issue'      # (Optional) Text displayed above the red circle. Default: ''
+```
+
+!!! Info "Map Evaluation Order"
+    If the `map` parameter is utilized to rewrite CSV values (e.g., changing `'1'` to `'optimized'`), the validator will evaluate the *rewritten* value. Ensure your `eq` or `neq` arrays match the output of your `map` dictionary.
+
+
+### D. Static Thresholds (`range_validator`)
 Values falling outside explicitly defined boundaries are flagged. Visual threshold lines representing the `min` and `max` configurations are drawn across the plot.
 
 <div class="grid">
@@ -372,6 +394,45 @@ def my_custom_validator(values: List[Union[float, int, None]], params: Dict[str,
     
     return results, layout_additions
 ```
+
+## 7. Role-Based Visibility
+
+Benchmarks can be securely routed and displayed in specific role-based views (User, Project, Mentor, Support). Data is automatically distributed securely on the backend, and UI elements are dynamically filtered based on the authenticated user's access level.
+
+If the `visibility` block is entirely omitted from a benchmark's configuration, the benchmark is exclusively generated for the **Support** view by default.
+
+### Configuration Syntax
+
+To grant access to other views, a `visibility` dictionary is added to the root of the benchmark definition.
+
+```yaml
+MyBenchmark:
+  description: 'General benchmark suite.'
+  host: 'https://git.example.com/project/benchmarks.git'
+  
+  visibility:
+    support: true               # (Optional) Displays in the Support view. Default: true
+    
+    project: ['projA', 'projB'] # Displays in the Project view (for PIs) of the specified projects
+    
+    user:
+      projA: ['user1', 'user2'] # Displays in the User view for specific users belonging to projA
+      projB: ['all']            # Displays in the User view for ALL users belonging to projB
+      
+    mentor: ['mentor1']         # Displays in the Mentor view for specified mentors
+```
+
+### Visibility Options Reference
+
+| Role | Expected Format | Description |
+| :--- | :--- | :--- |
+| **`support`** | Boolean | Controls visibility in the global Support view. Defaults to `true`. |
+| **`project`** | List of strings | Grants access to the Project view for the Principal Investigators (PIs) of the listed projects. |
+| **`user`** | Dictionary | Grants access to the User view. Keys must be project names. Values must be a list of authorized usernames, or the string `['all']` to grant access to every user within that specific project. |
+| **`mentor`** | List of strings | Grants access to the Mentor view for the specified mentor usernames. |
+
+!!! Info "Data Security"
+    When visibility rules are defined, personalized database queries and CSV files are generated specifically for each authorized user or project. This ensures that users cannot manually download or inspect benchmark datasets belonging to other projects, even if they guess the file paths.
 
 ***
 

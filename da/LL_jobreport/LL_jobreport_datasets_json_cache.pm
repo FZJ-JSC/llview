@@ -131,7 +131,8 @@ sub process_data_query_and_save_json_cache {
         push(@skeys,$ref->{$v});
       }
       if(!defined($skeys[0])) {
-        print STDERR "process_data_query_and_save_json_cache ($dataset->{name} $table_cache): ERROR skey undefined\n";
+        my $missing_cols = join(", ", @{$skeylistref});
+        print STDERR "LLmonDB [ERROR]: process_data_query_and_save_json_cache ($dataset->{name}): 'skey' is undefined! This usually happens when using 'column_filemap'. Ensure that the mapped columns ($missing_cols) are explicitly included in the 'columns' string of your dataset configuration.\n";
         next;
       }
       my $skey=join(":",@skeys);
