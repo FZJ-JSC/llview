@@ -758,7 +758,9 @@ def main() -> None:
   with open(args.config) as fh:
     cfg: Dict[str, Any] = yaml.safe_load(fh)
 
-  hostname: str = socket.gethostname()
+  # Getting short hostname (without system suffix)
+  raw_hostname = socket.gethostname()
+  hostname: str = raw_hostname.split('.')[0]
   log.info(f"Running on host: {hostname}\n")
 
   out_cfg: Dict[str, Any] = cfg.get("output", {})
