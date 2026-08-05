@@ -96,24 +96,25 @@ sub read_lml_fast {
       $tag=$ctag;
       $ctag="";
     } else {
+      $ctag.=">";
       next;
     }
     
     # print STDERR "TAG: '$tag'\n";
-    if($tag=~/^<[\/\?](.*)[^\s\>]/) {
+    if($tag=~/^\s*<[\/\?](.*)[^\s\>]/) {
       $tagname=$1;
       $self->lml_end($self->{DATA},$tagname,());
-    } elsif($tag=~/<([^\s]+)\s*$/) {
+    } elsif($tag=~/^\s*<([^\s]+)\s*$/) {
       $tagname=$1;
       # print STDERR "TAG0: '$tagname'\n";
       $self->lml_start($self->{DATA},$tagname,());
-    } elsif($tag=~/<([^\s]+)(\s(.*)[^\/])$/) {
+    } elsif($tag=~/^\s*<([^\s]+)(\s(.*)[^\/])$/) {
       $tagname=$1;
       $rest=$2;$rest=~s/^\s*//gs;$rest=~s/\s*$//gs;$rest=~s/""/"-LML-"/gs;
       # print STDERR "TAG1: '$tagname' rest='$rest'\n";
       @list = $rest =~ /([^\s]+?)="(.*?)"/g;
       $self->lml_start($self->{DATA},$tagname,@list);
-    } elsif($tag=~/<([^\s]+)(\s(.*)\s?)\/$/) {
+    } elsif($tag=~/^\s*<([^\s]+)(\s(.*)\s?)\/$/) {
       $tagname=$1;
       $rest=$2;$rest=~s/^\s*//gs;$rest=~s/\s*$//gs;$rest=~s/""/"-LML-"/gs;
       # print STDERR "TAG2: '$tagname' rest='$rest' closed\n";
