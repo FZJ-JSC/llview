@@ -38,6 +38,7 @@ The dependencies of LLview Server are:
         - Tk::NoteBook
         - Tk::Table
         - Cwd
+        - Text::CSV_XS
 
 - Python (>3.9) (For JuRepTool and plugins for APIs, log files and Git)
     - Packages (install with `pip install <PackageName>`)
