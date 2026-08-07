@@ -467,7 +467,18 @@ sub process_dataset_csv_dat {
     my $starttime2=time();
     $self->{DB}->close_db($dataset->{stat_database});
 
-    $self->process_data_query_and_save_csv_dat($dataset,$filepath_parsed);
+    if(exists($dataset->{FORALL})) {
+      if(exists($dataset->{column_filemap})) {
+        # process data in own query and splitting afterwards data to files
+        $self->process_data_query_and_save_csv_dat($dataset,$varsetref);
+      } else {
+        # run a query for each value of FORALL variable
+        $self->process_FORALL($DB,$dataset,$varsetref,\&process_data_query_and_save_csv_dat,$dataset);
+      }
+    } else {
+      # only one query
+      $self->process_data_query_and_save_csv_dat($dataset,$varsetref);
+    }
     printf("%s process_dataset:    finished second run after %7.4fs on %s\n",$self->{INSTNAME},time()-$starttime2,$dataset->{name});
   } else {
     if(exists($dataset->{FORALL})) {

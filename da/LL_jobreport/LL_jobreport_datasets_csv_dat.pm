@@ -25,7 +25,27 @@ use LML_da_util qw( check_folder );
 
 sub process_data_query_and_save_csv_dat {
   my $self = shift;
-  my($dataset,$filepath_parsed)=@_;
+  my($dataset,$varsetref)=@_;
+
+  # Evaluates the file path by replacing variable substitutions
+  my $filepath_parsed = $dataset->{filepath};
+  if (defined $varsetref) {
+    while ( my ($key, $value) = each(%{$varsetref}) ) {
+      $filepath_parsed =~ s/\$\{$key\}/$value/gs;
+      $filepath_parsed =~ s/\$$key/$value/gs;
+      my $val_clean = $value;
+      $val_clean =~ s/\//:/gs; 
+      $filepath_parsed =~ s/\$\{\{$key\}\}/$val_clean/gs;
+    }
+  }
+  
+  # Extracts the relative file path for database indexing
+  if (defined $filepath_parsed) {
+    $filepath_parsed =~ s/$self->{OUTDIR}\///s;
+    if (exists($self->{DATASETSTAT}->{$dataset->{stat_database}}->{$dataset->{stat_table}}->{"$filepath_parsed.gz"})) {
+      $filepath_parsed = "$filepath_parsed.gz";
+    }
+  }
 
   my $starttime=time();
   my $col=$self->{DATASETSTAT_MAP}->{$dataset->{name}}->{filemap_col};
@@ -37,6 +57,12 @@ sub process_data_query_and_save_csv_dat {
   my $where="";
   if(exists($dataset->{sql_where})) {
     $where.=$self->{DB}->replace_tsvars($dataset->{sql_where},$self->{CURRENTTS});
+    if (defined $varsetref) {
+      while ( my ($key, $value) = each(%{$varsetref}) ) {
+        $where =~ s/\$\{$key\}/$value/gs;
+        $where =~ s/\$$key/$value/gs;
+      }
+    }
   }
 
   if(!exists($self->{TABLES}->{$dataset->{data_database}})) {
