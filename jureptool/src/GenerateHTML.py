@@ -799,6 +799,12 @@ def CreateHTML( config,
         
         element.scrollIntoView({behavior: "instant", block: "start"});
         
+        // Explicitly update the URL fragment now, since a click-triggered
+        // scroll may not fire a further 'scroll' event for updateUrlHash()
+        // to catch (e.g. instant scroll with no further movement).
+        history.replaceState(null, null, "#"+elementid);
+        currentHash = elementid;
+
         // Re-enable Hash updates after a moment
         setTimeout(() => { catch_scroll = true; }, 100);
 
