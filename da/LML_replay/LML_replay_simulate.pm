@@ -133,6 +133,12 @@ sub simulate_timeline {
         $|=$asave;
       }
 
+      # store TS
+      open(TS,"> $tmp_dir/CURRENTTS.dat");
+      print TS &date_to_sec($event->{date});
+      close(TS);
+
+      
       # run workflow
       $stepstarttime=time();
       $cmd=sprintf("%s >> %s/replay_%s_stdout.log 2>> %s/replay_%s_stderr.log",

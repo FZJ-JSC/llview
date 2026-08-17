@@ -53,17 +53,17 @@ my $opt_steps="sync,simulate";
 my $opt_nsteps=1;
 
 usage($0) if( ! GetOptions( 
-                    'verbose'          => \$opt_verbose,
-                    'timings'          => \$opt_timings,
-                    'config=s'         => \$opt_config,
-                    'systemname=s'     => \$opt_systemname,
-                    'steps=s'          => \$opt_steps,
-                    'nsteps=i'         => \$opt_nsteps,
-                    'currentts=i'      => \$opt_currentts,
-                    'currenttsfile=s'  => \$opt_currenttsfile,
-                    'dump'             => \$opt_dump,
-                    'demo'             => \$opt_demo
-                    ) );
+		  'verbose'          => \$opt_verbose,
+		  'timings'          => \$opt_timings,
+		  'config=s'         => \$opt_config,
+		  'systemname=s'     => \$opt_systemname,
+		  'steps=s'          => \$opt_steps,
+		  'nsteps=i'         => \$opt_nsteps,
+		  'currentts=i'      => \$opt_currentts,
+		  'currenttsfile=s'  => \$opt_currenttsfile,
+		  'dump'             => \$opt_dump,
+		  'demo'             => \$opt_demo
+	      ) );
 
 printf("$0: options:\n");
 printf("  verbose:   %d\n",$opt_verbose);
@@ -91,7 +91,7 @@ foreach my $step (split(/\s?,\s?/,$opt_steps))  {
     $msg=sprintf("$instname unknown step $step, exiting...\n"); logmsg($msg,\*STDERR);
     usage($0);
     exit;
-  }
+}
   $steps->{$step}=1;
 }
 
@@ -140,6 +140,31 @@ if(exists $steps->{"updatedb"}) {
   &update_db($configdata,$replay_status,$opt_verbose);
 }
 
+# start monitor
+my $do_monitor=0;
+if( exists( $configdata->{"LML_replay"}->{"monitor"} ) ) {
+  if( exists( $configdata->{"LML_replay"}->{"monitor"}->{"active"} ) ) {
+    $do_monitor=$configdata->{"LML_replay"}->{"monitor"}->{"active"}==0;
+  } else {
+    $do_monitor=1;
+  }
+}
+my $monitor_halt_file="";
+if($do_monitor) {
+  printf("\n");
+  printf("STEP: start monitor\n");
+  $monitor_halt_file=$configdata->{"LML_replay"}->{"monitor"}->{"halt_file"};
+  if(-f $monitor_halt_file) {
+    system("rm -f $monitor_halt_file");
+  }
+  my $log_dir=$configdata->{"LML_replay"}->{"config"}->{"logdir"};
+  my $cmd=sprintf("perl $subvars->{LLVIEW_HOME}/da/monitor/monitor_file.pl --config %s >> %s/replay_monitor_stdout.log 2>> %s/replay_monitor_stderr.log &",$configdata->{"LML_replay"}->{"monitor"}->{"action_file"},$log_dir,$log_dir);
+  print "$cmd\n";
+  system($cmd);
+}
+
+
+
 if((exists $steps->{"sim"}) || ((exists $steps->{"simulate"}))) {
   printf("\n");
   printf("STEP: simulate\n");
@@ -148,6 +173,10 @@ if((exists $steps->{"sim"}) || ((exists $steps->{"simulate"}))) {
 
 my $status_file=$configdata->{"LML_replay"}->{"config"}->{"status_file"};
 YAML::DumpFile($status_file,$replay_status);
+
+if($do_monitor) {
+  system("sleep 2;touch $monitor_halt_file");
+}
 
 sub usage {
   die "Usage: . llview_server_rc; $_[0] <options>
