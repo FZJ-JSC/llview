@@ -239,7 +239,7 @@ sub process_data_query_and_save_csv_dat {
     my $rest_of_tables = @from_multi_list ? ", " . join(", ", @from_multi_list) : "";
 
     # Build the corrected SQL query
-    my $sql=sprintf("SELECT %s FROM %s S INNER JOIN %s ON D1.%s=S.ukey AND D1.%s>S.lastts_saved AND S.\"NAME\"=\"%s\" %s %s ORDER BY S.\"dataset\",D1.%s",
+    my $sql=sprintf("SELECT %s FROM %s S INNER JOIN %s ON D1.%s=S.ukey AND D1.%s>S.lastts_saved WHERE S.\"NAME\"=\"%s\" %s %s ORDER BY S.\"dataset\",D1.%s",
                     join(",",@cols),
                     $stat_tb_sql,         # S  (e.g., datasetstat_user_csv)
                     $d1_string,           # D1 (e.g., jobreport.joblist D1)
@@ -247,7 +247,7 @@ sub process_data_query_and_save_csv_dat {
                     $ts_col_sql,
                     $dataset->{name},
                     $rest_of_tables,      # , D2, D3...
-                    ($where)?"WHERE $where":"",
+                    ($where)?"AND $where":"",
                     $ts_col_sql
                     );
     
