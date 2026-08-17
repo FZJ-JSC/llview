@@ -30,6 +30,7 @@ sub process_LMLdata {
   my $capf=$LMLdata->{CAPABILITIES_FORCED};
 
   printf("$self->{INSTNAME} LLmonDB: start process_LMLdata\n") if($debug>=3);
+  my $starttime=time();
 
   # define order of processing DBs, first DB with (LLgenDB: get_jobnodemap, get_jobtsmap)
   foreach $db (sort(keys(%{$self->{CONFIGDATA}->{databases}}))) {
@@ -81,6 +82,7 @@ sub process_LMLdata {
   #  serial processing of job data DB
   if(defined($self->{DBcontains_map_data}) && $cap->{'jobs'}) {
     $self->process_LMLdata_DB($self->{DBcontains_map_data},$LMLdata,1,$stepnr++);
+    printf("%-29s LLmonDB: step %02d fork for DB %-28s at t=%6.3fs (in par-session) \n",$self->{INSTNAME},$stepnr,$self->{DBcontains_map_data},time());
   }
 
   #  get mapping table from DB if not in LML
@@ -104,11 +106,13 @@ sub process_LMLdata {
   $MAX_PROCESSES=0 if(!$opt_parallel);
   my $pm = Parallel::ForkManager->new($MAX_PROCESSES);
 
-  my $starttime=time();
+  my $par_starttime=time();
   
+  printf("%-29s LLmonDB: start parallel session at t=%6.3fs (maxpar=%d) \n",$self->{INSTNAME},time()-$starttime,$MAX_PROCESSES);
   DB_LOOP:
   foreach $db (@DBs) {
     $stepnr++;
+    printf("%-29s LLmonDB: step %02d fork for DB %-28s at t=%6.3fs (in par-session) \n",$self->{INSTNAME},$stepnr,$db,time()-$par_starttime);
     
     # Forks and returns the pid for the child: # my $pid = 
     $pm->start and next DB_LOOP;
@@ -120,9 +124,9 @@ sub process_LMLdata {
     $self->process_LMLdata_DB($db,$LMLdata,2,$stepnr);
     $pm->finish; # Terminates the child process
   }
-  printf("%-29s LLmonDB: wait for childs (%d) t=%6.3fs\n",$self->{INSTNAME},scalar $pm->running_procs(),time()-$starttime);
+  printf("%-29s LLmonDB: wait for childs       (%2d) t=%6.3fs\n",$self->{INSTNAME},scalar $pm->running_procs(),time()-$starttime);
   $pm->wait_all_children;
-  printf("%-29s LLmonDB: wait for childs ready (%d) t=%6.3fs\n",$self->{INSTNAME},scalar $pm->running_procs(),time()-$starttime);
+  printf("%-29s LLmonDB: wait for childs ready (%2d) t=%6.3fs\n",$self->{INSTNAME},scalar $pm->running_procs(),time()-$starttime);
 
   printf("%-29s LLmonDB: end process_LMLdata \n",$self->{INSTNAME}) if($debug>=3);
   return();
@@ -334,12 +338,13 @@ sub add_to_table {
     }
   }
   
-  my $seq=$dbobj->start_insert_sequence($table,$colsref);
+# my $seq=$dbobj->start_insert_sequence($table,$colsref);
+  my $seq=$dbobj->start_insert_sequence_batch($table,$colsref,1000);
 
   $cnt=0;$numerrors=0;
   foreach my $entry (@{$entries}) {
     foreach my $repentry (@replacelist) {
-      my $data;
+      my $data=[];
       for(my $c=0;$c<=$#{$colsref};$c++) {
         if(defined($LMLcolsref->[$c])) {
           my $from=$LMLcolsref->[$c];
@@ -379,14 +384,16 @@ sub add_to_table {
           $LML_maxlastinsert_vals->{$LMLmaxlastinsert->[$c]}=$data->[$c] if($data->[$c]>$LML_maxlastinsert_vals->{$LMLmaxlastinsert->[$c]});
         }
       }
-      $rc=$dbobj->insert_sequence($seq,$data);
+#      $rc=$dbobj->insert_sequence(#seq,$data);
+      $rc=$dbobj->insert_sequence_batch($seq,$data);
       $cnt++;
       $numerrors++ if(($rc // 0) != 1); # inserted on row
       # print "insert(",join(",",@{$data}),")\n";
     }
   }
   
-  $dbobj->end_insert_sequence($seq);
+#  $dbobj->end_insert_sequence($seq);
+  $dbobj->end_insert_sequence_batch($seq);
   printf("$self->{INSTNAME} LLmonDB: end add_to_table (add $cnt entries to $table, #errors=$numerrors)\n") if($debug>=3);
   
   return($cnt,$LML_minlastinsert_vals);

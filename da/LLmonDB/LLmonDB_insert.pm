@@ -44,7 +44,6 @@ sub insert_sequence {
   return();
 }
 
-
 sub end_insert_sequence {
   my($self) = shift;
   my($db,$table,$seq)=@_;
@@ -56,5 +55,43 @@ sub end_insert_sequence {
 
   return();
 }
+
+sub start_insert_sequence_batch {
+  my($self) = shift;
+  my($db,$table,$colsref,$batch_size)=@_;
+  printf("  LLmonDB: start of start of insert_sequence_batch %s/%s\n",$db,$table) if($debug>=3);
+
+  my $dbobj=$self->get_db_handle($db);
+  my $seq=$dbobj->start_insert_sequence_batch($table,$colsref,$batch_size);
+  printf("  LLmonDB: end of start of insert_sequence_batch\n") if($debug>=3);
+
+  return( $seq );
+}
+
+sub insert_sequence_batch {
+  my($self) = shift;
+  my($db,$table,$seq,$data)=@_;
+  printf("  LLmonDB: start of end insert_sequence_batch %s/%s\n",$db,$table) if($debug>=3);
+
+  my $dbobj=$self->get_db_handle($db);
+  $dbobj->insert_sequence_batch($seq,$data);
+  printf("  LLmonDB: end of end insert_sequence_batch\n") if($debug>=3);
+
+  return();
+}
+
+
+sub end_insert_sequence_batch {
+  my($self) = shift;
+  my($db,$table,$seq)=@_;
+  printf("  LLmonDB: start of end insert_sequence_batch %s/%s\n",$db,$table) if($debug>=3);
+
+  my $dbobj=$self->get_db_handle($db);
+  $dbobj->end_insert_sequence_batch($seq);
+  printf("  LLmonDB: end of end insert_sequence_batch\n") if($debug>=3);
+
+  return();
+}
+
 
 1;

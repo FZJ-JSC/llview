@@ -23,6 +23,7 @@ use Time::HiRes qw ( time );
 use DBI;
 use DBD::SQLite;
 use DBD::SQLite::BundledExtensions;
+use LLmonDB_sqlite_insert;
 
 sub new {
   my $self    = {};
@@ -604,57 +605,6 @@ sub query_index_columns {
   return($retval);
 }
 
-
-# start insert sequence
-sub start_insert_sequence {
-  my($self) = shift;
-  my($table,$colsref) = @_;
-  my @placeholders=map { '?' } 1.. scalar @{$colsref};
-  # First fix quotation of table and column names
-  my $safe_table = $self->{DBH}->quote_identifier($table);
-  my @safe_cols = map {
-      my $col = $_;
-      $col =~ s/^"|"$//g;               # Strip existing external quotes
-      $self->{DBH}->quote_identifier($col); # Let DBI handle the quoting safely
-  } @{$colsref};
-  # Now prepare the SQL command
-  my $sql = sprintf('INSERT INTO %s (%s) VALUES (%s)',
-                    $safe_table,
-                    join(",", @safe_cols),
-                    join(",", @placeholders),
-                    );
-  my $sth = $self->{DBH}->prepare($sql) or die "PREPARE FAILED!\nError: " . $self->{DBH}->errstr . "\nSQL DUMP:\n$sql\n";
-
-  $self->{DBH}->begin_work();
-  printf("\t   LLmonDB_sqlite: start_insert_sequence %s (sql: %s...)\n",$table,substr($sql,0,16)) if($debug>=3);
-  return($sth);
-}
-
-# insert sequence
-sub insert_sequence {
-  my($self) = shift;
-  my($sth,$dataref) = @_;
-  my $rc=$sth->execute( @{$dataref} );
-  $self->LOGREPORT($self->{DBNAME},"E:insert_sequence",caller(),$DBI::errstr) if(!defined($rc));
-  return($rc);
-
-  $self->{A}=0;  #dummy statement to avoid unused warning
-}
-
-
-# end insert sequence
-sub end_insert_sequence {
-  my($self) = shift;
-  my($sth) = @_;
-
-  $sth->finish();
-  $self->{DBH}->commit();
-  # $self->mycommit();
-  print "\t   LLmonDB_sqlite: end_insert_sequence\n" if($debug>=3);
-  return();
-}
-
-
 # remove table contents
 sub remove_contents {
   my($self) = shift;
@@ -674,7 +624,6 @@ sub remove_contents {
   
   return($rc);
 }
-
 
 # execute SQL-commands
 sub execute_sql {
