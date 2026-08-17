@@ -45,7 +45,6 @@ sub read_CSV {
     $tag=~s/\.csv$//s;
   }
   $tag=uc($tag)."_ENTRIES";
-  print "[read_CSV] TMPDEB: tag: $filename -> $tag\n";
   printf("\t [read_CSV] TMPDEB  tag: %s -> %s\n", $filename, $tag);
   my $csv_file=LL_file_csv->new($self->{VERBOSE});
   $csv_file->read_CSV($filename);

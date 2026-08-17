@@ -117,6 +117,11 @@ sub parprocess {
   # start loop over steps
   my $cycles=0;
   my $startgroupnum=0;
+  my $statmsgskipintervall=2;
+  if(exists($globalvarref->{sleepusec})) {
+    $statmsgskipintervall= 2*1000000.0 / $globalvarref->{sleepusec};
+  }
+
   STEPS:
   while($num_notfinished > 0) {
     # initiate call backs for finished steps
@@ -154,11 +159,13 @@ sub parprocess {
     }
     @steplist=(@to_queue);
 
-    $msg=($cycles%10==1) ? sprintf("[$PRIMARKER] CHECK: #not_finished=%d, #proc=%d %s\n",
-                                    $num_notfinished, scalar $pm->running_procs(),
-                                    $self->get_stepstatus_string(\@steplist)) : ""; logmsg($msg);
-    $msg=$self->{VERBOSE} ? sprintf("[$PRIMARKER] CHECK: to execute: %s\n",join(",",@to_execute)) : ""; logmsg($msg);
-    $msg=$self->{VERBOSE} ? sprintf("[$PRIMARKER] CHECK: to requeue: %s\n",join(",",@to_queue)) : ""; logmsg($msg);
+    if($cycles%$statmsgskipintervall==1) {
+      $msg=sprintf("[$PRIMARKER] CHECK: #not_finished=%d, #proc=%d %s\n",
+		   $num_notfinished, scalar $pm->running_procs(),
+		   $self->get_stepstatus_string(\@steplist)); logmsg($msg);
+      $msg=$self->{VERBOSE} ? sprintf("[$PRIMARKER] CHECK: to execute: %s\n",join(",",@to_execute)) : ""; logmsg($msg);
+      $msg=$self->{VERBOSE} ? sprintf("[$PRIMARKER] CHECK: to requeue: %s\n",join(",",@to_queue)) : ""; logmsg($msg);
+    }
     
     if(!@to_execute) {
       # check on consistency
