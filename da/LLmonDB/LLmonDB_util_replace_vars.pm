@@ -29,14 +29,14 @@ sub replace_vars {
     my $system_name=$self->{SYSTEM_NAME};
     $new_sql=~s/SYSTEM_?NAME/$system_name/gs;
   }
-  return($self->replace_tsvars($new_sql,$self->{CURRENTTS}));
+  return($self->replace_tsvars($new_sql,$self->{CURRENTTS},$self->{REALCURRENTTS}));
   #
   $self;
 }
 
 sub replace_tsvars {
   my($self) = shift;
-  my($sql,$nowts)=@_;
+  my($sql,$nowts,$realnowts)=@_;
   my $new_sql=$sql;
 
   if($new_sql=~/TS_STARTOFTODAY/) {
@@ -48,6 +48,11 @@ sub replace_tsvars {
   if($new_sql=~/DATE_NOW/) {
     my $ldate=&sec_to_date_iso($nowts);
     $new_sql=~s/DATE_NOW/$ldate/gs;
+  }
+  if(defined($realnowts)) {
+    if($new_sql=~/REAL_TS_NOW/) {
+      $new_sql=~s/REAL_TS_NOW/$realnowts/gs;
+    }
   }
   if($new_sql=~/TS_NOW/) {
     $new_sql=~s/TS_NOW/$nowts/gs;

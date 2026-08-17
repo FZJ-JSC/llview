@@ -46,6 +46,8 @@ sub new {
   my $verbose = shift;
   my $systemname = shift;
   my $currentts = shift;
+  my $realcurrentts = shift;
+
 
   printf("  LLmonDB: new %s\n",ref($proto)) if($debug>=3);
   $self->{VERBOSE}    = $verbose; 
@@ -68,6 +70,11 @@ sub new {
     $self->{CURRENTTS} = $currentts;
   } else {
     $self->{CURRENTTS} = time(); 
+  }
+  if(defined($realcurrentts)) {
+    $self->{REALCURRENTTS} = $realcurrentts;
+  } else {
+    $self->{REALCURRENTTS} = $self->{CURRENTTS}; 
   }
   
   $self->{SYSTEM_DESC}="system desc";

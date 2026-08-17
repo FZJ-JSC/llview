@@ -77,7 +77,8 @@ if ( ($opt_demo==1) || $ENV{"LML_DBUPDATE_DEMO"} || $ENV{"LLVIEW_DEMO_MODE"} ) {
   $msg=sprintf("$instname DEMO MODE trigger found --> switching to DEMO mode...\n"); logmsg($msg);
 }
 
-my $currentts=time();
+my $real_currentts=time();
+my $currentts=$real_currentts;
 if (defined($opt_currenttsfile)) {
   if(-f $opt_currenttsfile) {
     open(IN,$opt_currenttsfile) or die "cannot open $opt_currenttsfile";
@@ -95,7 +96,7 @@ $msg=sprintf("%s starttime_ts %d\n",$instname,$starttime); logmsg($msg);
 
 &check_folder($opt_dbdir.'/');
 
-$DB = LLmonDB->new($opt_config,$opt_dbdir,undef,$opt_verbose,$opt_systemname,$currentts);
+$DB = LLmonDB->new($opt_config,$opt_dbdir,undef,$opt_verbose,$opt_systemname,$currentts,$real_currentts);
 $DB->init();
 my $fileobj=LML_DBupdate_file->new($opt_verbose, $opt_dbdir, $opt_demo);
 my $endtime=time();
