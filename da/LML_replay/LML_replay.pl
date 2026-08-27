@@ -150,6 +150,7 @@ if( exists( $configdata->{"LML_replay"}->{"monitor"} ) ) {
   }
 }
 my $monitor_halt_file="";
+my $monitor_pid=-1;
 if($do_monitor) {
   printf("\n");
   printf("STEP: start monitor\n");
@@ -158,9 +159,15 @@ if($do_monitor) {
     system("rm -f $monitor_halt_file");
   }
   my $log_dir=$configdata->{"LML_replay"}->{"config"}->{"logdir"};
-  my $cmd=sprintf("perl $subvars->{LLVIEW_HOME}/da/monitor/monitor_file.pl --config %s >> %s/replay_monitor_stdout.log 2>> %s/replay_monitor_stderr.log &",$configdata->{"LML_replay"}->{"monitor"}->{"action_file"},$log_dir,$log_dir);
+  my $cmd=sprintf("perl $subvars->{LLVIEW_HOME}/da/monitor/monitor_file.pl --config %s >> %s/replay_monitor_stdout.log 2>> %s/replay_monitor_stderr.log",$configdata->{"LML_replay"}->{"monitor"}->{"action_file"},$log_dir,$log_dir);
   print "$cmd\n";
-  system($cmd);
+
+  die "could not fork" unless defined(my $pid = fork);
+    unless ($pid) { #child execs
+      system($cmd);
+      exit;
+    }
+  $monitor_pid=$pid;
 }
 
 
@@ -176,6 +183,9 @@ YAML::DumpFile($status_file,$replay_status);
 
 if($do_monitor) {
   system("sleep 2;touch $monitor_halt_file");
+  # wait for all children process to finish
+  printf("WAIT for monitor to finish ...\n");
+  waitpid $monitor_pid, 0;
 }
 
 sub usage {
