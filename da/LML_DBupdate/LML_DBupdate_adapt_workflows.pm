@@ -144,14 +144,14 @@ sub adapt_workflows {
     }
   }
 
-  if(0) {
+  if(1) {
     foreach my $jobid (sort(keys(%{$dep_graph}))) {
       printf("DEP[%s] ",$jobid);
       printf("prev=%s ",join(",",(@{$dep_graph->{$jobid}->{prev}}))) if(exists($dep_graph->{$jobid}->{prev}));
       printf("next=%s ",join(",",(@{$dep_graph->{$jobid}->{nxt}}))) if(exists($dep_graph->{$jobid}->{nxt}));
       printf("\n");
     }
-    return();
+#    return();
   }
   
   # find entry point of job chains and make chains
@@ -177,6 +177,7 @@ sub check_chain_iterative {
   my @queue;
   push(@queue,$jobid);
   while($jobid = shift(@queue)) {
+    print "check_chain_iterative: $jobid @queue\n";
     if(exists($jobid_to_wf->{$jobid})) {
       return($jobid_to_wf->{$jobid}->{wf});
     } else {
@@ -212,6 +213,7 @@ sub enum_chain_iter {
   push(@queue,$jobid);
   while($jobid = shift(@queue)) {
     # add info only to existing jobs, not jobs which are already finished and not in the data base
+    print "enum_chain_iter: $jobid @queue\n";
     if(exists($jobsref->{$jobid})) {
       if(exists($jobid_to_wf->{$jobid})) {
         $jobsref->{$jobid}->{'wf_id'}=sprintf("%06d",$jobid_to_wf->{$jobid}->{wf});

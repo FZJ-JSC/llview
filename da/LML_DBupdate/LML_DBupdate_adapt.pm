@@ -181,7 +181,7 @@ sub adapt_data {
       $ref->{pp_size}  = $r->{pp_size}   if(exists($r->{pp_size}));
     }
   }
-
+  print "WF: adapt_data: after NODE_ENTRIES\n";
   # init new attributes in IONODE ENTRIES
   foreach $ref (@{$data->{IONODE_ENTRIES}} ) {
     $ref->{ts}=$currentts if(!exists($ref->{ts}));
@@ -212,6 +212,7 @@ sub adapt_data {
       $ref->{"fs_dts_all"}=$ref->{"fs_dts_$fs"};
     }
   }
+  print "WF: adapt_data: after IONODE_ENTRIES\n";
 
   
   # init new attributes in GPUNODE ENTRIES
@@ -233,6 +234,7 @@ sub adapt_data {
       $ref->{feat}="IPU" if($ref->{features}=~/ipu/);
     }
   }
+  print "WF: adapt_data: after GPUNODE_ENTRIES\n";
   # SCAN RUNNING JOBS
   # - update used_cores in node_entries
   #
@@ -276,6 +278,7 @@ sub adapt_data {
     $jobref->{NODES}    = join(" ",(sort(keys(%{$jobnodes}))));
     $jobref->{GPUNODES} = join(" ",(sort(keys(%{$jobgpunodes}))));
   }
+  print "WF: adapt_data: after JOBS_RUNNING_ENTRIES\n";
 
   # job information
   
@@ -345,6 +348,7 @@ sub adapt_data {
       }
     }
   }
+  print "WF: adapt_data: after JOBS_ENTRIES\n";
 
   # Update pos in queue
   foreach my $queue (keys(%{$jstatref->{prioqueue}})) {
@@ -356,6 +360,7 @@ sub adapt_data {
       }
     }
   }
+  print "WF: adapt_data: after prioqueue\n";
 
   foreach $jobref (@{$data->{JOBRC_ENTRIES}}) {
     #  TS Start,End 
@@ -375,6 +380,7 @@ sub adapt_data {
       }
     }
   }
+  print "WF: adapt_data: after JOBRC_ENTRIES\n";
 
   foreach $jobref (@{$data->{JOBSTEP_ENTRIES}}) {
     #  TS
@@ -399,7 +405,10 @@ sub adapt_data {
       }
     }
   }
+  print "WF: adapt_data: after JOBSTEP_ENTRIES\n";
+
   $self->adapt_workflows($currentts);
+  print "WF: adapt_data: after workflows\n";
 
   #  add reason_nr, timetostart_real
   my @reason_pattern_array=("None", "Priority", "Dependency",
@@ -417,6 +426,8 @@ sub adapt_data {
     
     $jobref->{reason_nr} = $reason_pattern_hash{$jobref->{reason}} // 13;
   }
+  print "WF: adapt_data: after reason\n";
+
   foreach my $resref (@{$data->{RESERVATION_ENTRIES}}) {
     if (exists($resref->{starttime})) {
       $resref->{startts}=LML_da_util::date_to_secj($resref->{starttime});
@@ -429,6 +440,7 @@ sub adapt_data {
       $resref->{endts}=-1;
     }
   }
+  print "WF: adapt_data: after reservation_entries\n";
 
   foreach my $stref (@{$data->{STEPTIME_ENTRIES}}) {
     if (exists($stref->{wf_name}) && exists($stref->{name})) {
@@ -451,6 +463,7 @@ sub adapt_data {
       }
     }
   }
+  print "WF: adapt_data: after NODEERR_ENTRIES\n";
 
   #  add ts to class info
   foreach my $clsref (@{$data->{CLASSES_ENTRIES}}) {
