@@ -25,8 +25,15 @@ use LL_jobreport_datasets_constants;
 #    insert into datasetstat_node_dat (dataset,name,ukey,lastts_saved,status,checksum) SELECT dataset,name,ukey,lastts_saved,status,checksum from datasetstat where(name='fabric_node_dat') ;  
 sub solve_datasets {
   my $self = shift;
-  my ($DB, $force) = @_;
+  my ($DB, $force, $dblist) = @_;
   my $basename = $self->{BASENAME};
+  my %dblist;
+  my $cnt_filestate;
+  for my $c ("not_in_FS","not_in_DB","fn_inconsistence", "bad_status") {
+    $cnt_filestate->{$c}=0;
+  }
+       
+  %dblist = map { $_ => 1 } split(/[,\s]+/, $dblist) if(defined($dblist));
 
   my $config_ref = $DB->get_config();
 
@@ -41,28 +48,40 @@ sub solve_datasets {
 
   foreach my $datasetref (@{$config_ref->{$basename}->{datafiles}}) {
     my $dataset = $datasetref->{dataset};
-    
-    next if($dataset->{name} !~ /(chippower|fabric|loadmem|GPU|fsusage)_/);
+
+    next if (!exists($dataset->{stat_database}));
     next if (!exists($dataset->{stat_table}));
+    if(defined($dblist)) {
+      next if(!exists($dblist{$dataset->{stat_database}}));
+    }
 
     my $filepath = $dataset->{filepath};
-    my $pattern = ".*";
     my $filepath_fn = $filepath;
     $filepath_fn =~ s/.*\///gs;
-    if ($filepath_fn =~ /\$\{J\}/) {
-      $pattern = $filepath_fn;
-      $pattern =~ s/\$\{J\}/\(\.\*\)/s;
-      $pattern .= "(.gz)?";
-    }
+    my $pattern = $filepath;
+    my $idrep="\[a-zA-Z\]";
+    $pattern =~ s/\$\{\{[JPUSQTDMIN]\}\}/\(\.\*\)/gs;    $pattern =~ s/\$\{[JPUSQTDMIN]\}/\(\.\*\)/gs;    $pattern =~ s/\$[JPUSQTDMIN]/\(\.\*\)/gs;
+    $pattern =~ s/\$[F]/\($idrep\)/gs;                    $pattern =~ s/\$\{[F]\}/\($idrep\)/gs;    $pattern =~ s/\$[F]/\($idrep\)/gs;
+    $pattern =~ s/\$outputdir\//\^/s;
+    $pattern =~ s/\$\{systemname\}/$self->{SYSTEM_NAME}/s;
+    $pattern =~ s/\$systemname/$self->{SYSTEM_NAME}/s;
+    $pattern .= "(.gz)?" if($pattern!~/\.gz/);
     
-    printf("%s work now on dataset %s (%s)\n", $self->{INSTNAME}, $dataset->{name}, $filepath);
+    
+    printf("%s work now on dataset %-30s stdb=%s/%s pattern='%s' -> '%s'\n", $self->{INSTNAME},
+	   $dataset->{name}, $dataset->{stat_database},$dataset->{stat_table}, $filepath, $pattern);
+    if($pattern=~/\$/) {
+      printf("%s              WARNING pattern contains vars pattern=%s \n", $self->{INSTNAME}, $pattern);
+    }
+
     
     $self->get_datasetstat_from_DB($dataset->{stat_database}, $dataset->{stat_table});
     my $ds = $self->{DATASETSTAT}->{$dataset->{stat_database}}->{$dataset->{stat_table}};
     
-    my $cnt_not_on_FS = 0;
-    my $cnt_fn_inconsistence = 0;
-    my $cnt_bad_status = 0;
+    my $cnt_local_filestate;
+    for my $c ("not_in_FS","not_in_DB","fn_inconsistence", "bad_status") {
+      $cnt_local_filestate->{$c}=0;
+    }
     my $needs_save = 0;
     
     # Check existent states in DB vs File System
@@ -74,16 +93,16 @@ sub solve_datasets {
         my $actual_dataset_name = defined($ref->{dataset}) ? $ref->{dataset} : $file;
 
         if ($file ne $actual_dataset_name) {
-          $cnt_fn_inconsistence++;
+          $cnt_local_filestate->{"fn_inconsistence"}++;
           printf("%s[%05d] fn inconsistence: [st=%d] %s vs %s\n", $self->{INSTNAME},
-                  $cnt_fn_inconsistence, $ref->{status}, $file, $actual_dataset_name);
+                  $cnt_local_filestate->{"fn_inconsistence"}, $ref->{status}, $file, $actual_dataset_name);
         }
         
         # Fix leftover files from the .gz.gz bug using $file
         if ($file =~ /\.gz$/ && $ref->{status} == FSTATUS_EXISTS) {
-          $cnt_bad_status++;
+          $cnt_local_filestate->{"bad_status"}++;
           printf("%s[%05d] bad status fixed: %s was %d, now %d (FSTATUS_COMPRESSED)\n", 
-                 $self->{INSTNAME}, $cnt_bad_status, $file, $ref->{status}, FSTATUS_COMPRESSED);
+                 $self->{INSTNAME}, $cnt_local_filestate->{"bad_status"}, $file, $ref->{status}, FSTATUS_COMPRESSED);
           
           $ref->{status} = FSTATUS_COMPRESSED;
           $ref->{dataset} = $file; # Populate this so save_datasetstat_in_DB doesn't crash
@@ -94,12 +113,13 @@ sub solve_datasets {
         
         my $realfile = sprintf("%s/%s", $self->{OUTDIR}, $file);
         if (!exists($fl->{$realfile})) {
-          $cnt_not_on_FS++;
+          $cnt_local_filestate->{"not_on_FS"}++;
           # printf("%s[%05d] not_on_FS: [st=%d] %s\n", $self->{INSTNAME}, $cnt_not_on_FS, $ref->{status}, $realfile);
         }
       }
     }
-    
+
+    my $rmcalls;
     my $cnt_not_in_DB = 0;
     if (1) {
       while ( my ($fn, $val) = each(%{$fl}) ) {
@@ -109,7 +129,7 @@ sub solve_datasets {
           $shortfile =~ s/$self->{OUTDIR}\///s;
           
           if (!exists($ds->{$shortfile})) {
-            $cnt_not_in_DB++;
+	    $cnt_local_filestate->{"not_in_DB"}++;
             my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size, $atime,$mtime,$ctime,$blksize,$blocks) = stat($fn);
             
             $ds->{$shortfile}->{dataset} = $shortfile;
@@ -126,15 +146,22 @@ sub solve_datasets {
             $ds->{$shortfile}->{ukey} = $ukey;
             $needs_save = 1;
 
-            printf("%s[%05d] not_in_DB: [%s,%s,%s,%s] %s %s\n", $self->{INSTNAME}, $cnt_not_in_DB,
-                    $ds->{$shortfile}->{status},
-                    $ds->{$shortfile}->{lastts_saved},
-                    (defined($ds->{$shortfile}->{checksum}) ? $ds->{$shortfile}->{checksum} : "?"),
-                    (defined($ds->{$shortfile}->{ukey}) ? $ds->{$shortfile}->{ukey} : "?"),
-                    &sec_to_date($ds->{$shortfile}->{lastts_saved}),
-                    $shortfile);
+	    $rmcalls.="rm $shortfile\n";
+            printf("%s[%05d] not_in_DB: [%s,%s,%s,%s] %s %s\n", $self->{INSTNAME},
+		   $cnt_local_filestate->{"not_in_DB"},
+		   $ds->{$shortfile}->{status},
+		   $ds->{$shortfile}->{lastts_saved},
+		   (defined($ds->{$shortfile}->{checksum}) ? $ds->{$shortfile}->{checksum} : "?"),
+		   (defined($ds->{$shortfile}->{ukey}) ? $ds->{$shortfile}->{ukey} : "?"),
+		   &sec_to_date($ds->{$shortfile}->{lastts_saved}),
+		   $shortfile);
           }
         }
+      }
+      if(defined($rmcalls)) {
+	open(RM,">solvestat_rm_$dataset->{name}.rm_list.sh");
+	print RM $rmcalls;
+	close(RM);
       }
     }
     
@@ -147,12 +174,25 @@ sub solve_datasets {
         }
 
         $self->save_datasetstat_in_DB($dataset->{stat_database}, $dataset->{stat_table});
-        printf("%s saved datasetstat for %s (fixed %d bad statuses, inserted %d new)\n", 
-               $self->{INSTNAME}, $dataset->{name}, $cnt_bad_status, $cnt_not_in_DB);
+        printf("%s saved datasetstat for %s \n",  $self->{INSTNAME}, $dataset->{name});
       }
     }
-  }
+    if($cnt_local_filestate->{"not_in_FS"}+$cnt_local_filestate->{"not_in_DB"}+$cnt_local_filestate->{"fn_inconsistence"}+$cnt_local_filestate->{"bad_status"}>0) {
+      printf("[STAT] Statistic for %-30s    not_in_FS: %5d  not_in_DB: %5d fn_inconsistence: %5d  bad_status: %5d\n",$dataset->{name},
+	     $cnt_local_filestate->{"not_in_FS"},$cnt_local_filestate->{"not_in_DB"},$cnt_local_filestate->{"fn_inconsistence"}, $cnt_local_filestate->{"bad_status"}
+	  );
+      for my $c ("not_in_FS","not_in_DB","fn_inconsistence", "bad_status") {
+	$cnt_filestate->{$c}+=$cnt_local_filestate->{$c};
+      }
+    }
 
+  }
+  
+  printf("[STAT] Overall Statistic: not_in_FS: %5d  not_in_DB: %5d fn_inconsistence: %5d  bad_status: %5d\n",
+	 $cnt_filestate->{"not_in_FS"},$cnt_filestate->{"not_in_DB"},$cnt_filestate->{"fn_inconsistence"}, $cnt_filestate->{"bad_status"}
+      );
+  
+  
   return();
 }
 
