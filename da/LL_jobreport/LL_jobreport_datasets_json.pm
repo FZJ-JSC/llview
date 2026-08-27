@@ -232,11 +232,13 @@ sub write_data_to_file_json {
   my $self = shift;
   my ($file,$ds,$json_single_entry,$dataset)=@_;
 
-  my $openparm;
+  my ($openparm,$writestate);
   if($file=~/\.gz$/) {
     $openparm="| gzip -c > $self->{OUTDIR}/$file";
+    $writestate=FSTATUS_COMPRESSED;
   } else {
     $openparm="> $self->{OUTDIR}/$file";
+    $writestate=FSTATUS_EXISTS;
   }
   &check_folder("$self->{OUTDIR}/$file");
   if (!($self->{SAVE_LASTFH}->open($openparm))) {
@@ -262,7 +264,7 @@ sub write_data_to_file_json {
 
   # update last ts stored to file
   $ds->{$file}->{dataset}=$file;
-  $ds->{$file}->{status}=FSTATUS_EXISTS;
+  $ds->{$file}->{status}=$writestate;
   $ds->{$file}->{name}=$dataset->{name} if(!exists($ds->{$file}->{name}));
   $ds->{$file}->{ukey}=-1 if(!exists($ds->{$file}->{ukey}));
   $ds->{$file}->{checksum}=0 if(!exists($ds->{$file}->{checksum}));

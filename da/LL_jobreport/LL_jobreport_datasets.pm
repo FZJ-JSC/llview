@@ -806,7 +806,11 @@ sub check_fileregister {
   }
   if( -f $file ) {
     my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size, $atime,$mtime,$ctime,$blksize,$blocks) = stat($file);
-    $ds->{$shortfile}->{status}=FSTATUS_EXISTS;
+    if($file=~/\.gz$/) {
+      $ds->{$shortfile}->{status}=FSTATUS_COMPRESSED;
+    } else {
+      $ds->{$shortfile}->{status}=FSTATUS_EXISTS;
+    }
     $ds->{$shortfile}->{lastts_saved}=$mtime;
     $ds->{$shortfile}->{mts}=$self->{CURRENTTS}; # last change ts
     $ds->{$shortfile}->{checksum}=0;

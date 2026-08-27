@@ -377,7 +377,11 @@ sub register_data_for_file_json_cache {
 
   if ($process_file) {
     $ds->{$shortfile}->{dataset} = $shortfile;
-    $ds->{$shortfile}->{status} = FSTATUS_EXISTS;
+    if($file=~/\.gz$/) {
+      $ds->{$shortfile}->{status} = FSTATUS_COMPRESSED;
+    } else {
+      $ds->{$shortfile}->{status} = FSTATUS_EXISTS;
+    }
     $ds->{$shortfile}->{name} = $dataset->{name} if (!exists($ds->{$shortfile}->{name}));
     $ds->{$shortfile}->{lastts_saved} = $self->{CURRENTTS}; 
     $ds->{$shortfile}->{mts} = $self->{CURRENTTS}; 
