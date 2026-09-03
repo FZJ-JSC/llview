@@ -362,71 +362,81 @@ def collect_processes(cfg: Dict[str, Any], hostname: str) -> List[Dict[str, Any]
 
 def collect_tmp(cfg: Dict[str, Any], hostname: str) -> Dict[str, Any]:
   """
-  Disk usage statistics for a directory (typically /tmp) are collected.
-
-  Overall usage is obtained via df(1). Per-user breakdown is estimated
-  via a low-depth find(1) traversal. Entries inside directories that are
-  not readable are silently skipped, so per-user figures represent a lower
-  bound rather than exact totals. The overall used_mb figure from df is
-  always accurate.
+  Disk usage statistics for one or more temporary directories are collected.
+  Overall filesystem capacity is evaluated via df(1), while per-user storage 
+  consumption is estimated via a bounded find(1) directory traversal.
 
   Args:
     cfg:      The 'tmp' section of the loaded YAML configuration.
     hostname: The hostname of the current node, embedded in the result.
 
   Returns:
-    A dict containing overall storage metrics and a per-user breakdown.
+    A dict containing parsed filesystem metrics and per-user storage distributions.
   """
-  log  = logging.getLogger("logger")
-  path: str = cfg.get("path", "/tmp")
+  log = logging.getLogger("logger")
   depth: int = int(cfg.get("per_user_find_depth", 4))
-  result: Dict[str, Any] = {"hostname": hostname, "path": path}
-
-  log.info(f"Collecting /tmp usage for {path}...\n")
-
-  stdout, _, rc = run("df -B1 --output=size,used,avail,pcent {}".format(path))
-  if rc == 0:
-    lines = stdout.strip().splitlines()
-    if len(lines) >= 2:
-      parts = lines[1].split()
-      if len(parts) >= 4:
-        def to_mb(raw: str) -> Optional[float]:
-          """A byte count string is converted to megabytes."""
-          try:    return round(int(raw) / 1_048_576, 1)
-          except: return None
-        result["total_mb"] = to_mb(parts[0])
-        result["used_mb"]  = to_mb(parts[1])
-        result["avail_mb"] = to_mb(parts[2])
-        result["used_pct"] = parts[3]
-        log.debug(
-          f"/tmp: total={result['total_mb']} MB used={result['used_mb']} MB "
-          f"({result['used_pct']})\n"
-        )
+  
+  # Target paths are extracted from the configuration, maintaining backward compatibility
+  raw_targets = cfg.get("targets")
+  if raw_targets and isinstance(raw_targets, list):
+    targets = raw_targets
   else:
-    log.error(f"df failed for {path}\n")
+    targets = [{"path": cfg.get("path", "/tmp"), "prefix": "tmp"}]
 
-  log.info(f"Running find for per-user /tmp breakdown (maxdepth={depth})...\n")
-  per_user_bytes: Dict[str, int] = defaultdict(int)
-  stdout, _, _ = run(
-    "find {} -maxdepth {} -printf '%u %s\n'".format(path, depth),
-    timeout=30,
-  )
-  for line in stdout.splitlines():
-    parts = line.split(None, 1)
-    if len(parts) == 2:
-      try:
-        per_user_bytes[parts[0]] += int(parts[1])
-      except ValueError:
-        pass
+  result: Dict[str, Any] = {"hostname": hostname, "filesystems": {}}
 
-  if per_user_bytes:
-    result["per_user_mb"] = {
-      user: round(size / 1_048_576, 1)
-      for user, size in sorted(
-        per_user_bytes.items(), key=lambda kv: kv[1], reverse=True
-      )
-    }
-    log.debug(f"Per-user /tmp entries found: {list(result['per_user_mb'].keys())}\n")
+  for target in targets:
+    path: str = target.get("path", "/tmp")
+    prefix: str = target.get("prefix", "tmp")
+    
+    fs_data: Dict[str, Any] = {"path": path}
+    log.info(f"Collecting temporary filesystem usage for {path} (prefix: {prefix})...\n")
+
+    stdout, _, rc = run("df -B1 --output=size,used,avail,pcent {}".format(path))
+    if rc == 0:
+      lines = stdout.strip().splitlines()
+      if len(lines) >= 2:
+        parts = lines[1].split()
+        if len(parts) >= 4:
+          def to_mb(raw: str) -> Optional[float]:
+            """A byte count string is converted to megabytes."""
+            try:    return round(int(raw) / 1_048_576, 1)
+            except: return None
+          fs_data["total_mb"] = to_mb(parts[0])
+          fs_data["used_mb"]  = to_mb(parts[1])
+          fs_data["avail_mb"] = to_mb(parts[2])
+          fs_data["used_pct"] = parts[3]
+          log.debug(
+            f"{path}: total={fs_data['total_mb']} MB used={fs_data['used_mb']} MB "
+            f"({fs_data['used_pct']})\n"
+          )
+    else:
+      log.error(f"df failed for {path}\n")
+
+    log.info(f"Running find for per-user breakdown on {path} (maxdepth={depth})...\n")
+    per_user_bytes: Dict[str, int] = defaultdict(int)
+    stdout, _, _ = run(
+      "find {} -maxdepth {} -printf '%u %s\n'".format(path, depth),
+      timeout=30,
+    )
+    for line in stdout.splitlines():
+      parts = line.split(None, 1)
+      if len(parts) == 2:
+        try:
+          per_user_bytes[parts[0]] += int(parts[1])
+        except ValueError:
+          pass
+
+    if per_user_bytes:
+      fs_data["per_user_mb"] = {
+        user: round(size / 1_048_576, 1)
+        for user, size in sorted(
+          per_user_bytes.items(), key=lambda kv: kv[1], reverse=True
+        )
+      }
+      log.debug(f"Per-user entries found on {path}: {list(fs_data['per_user_mb'].keys())}\n")
+
+    result["filesystems"][prefix] = fs_data
 
   return result
 
@@ -830,10 +840,12 @@ def main() -> None:
       if k != "hostname":
         node_info._dict[node_obj_name][f"mem_{k}"] = v
         
-  if "tmp" in snapshot:
-    for k, v in snapshot["tmp"].items():
-      if k not in ["hostname", "path", "per_user_mb"]:
-        node_info._dict[node_obj_name][f"tmp_{k}"] = v
+  # Temporary filesystem metrics are appended directly to the node object using their respective prefixes
+  if "tmp" in snapshot and "filesystems" in snapshot["tmp"]:
+    for fs_prefix, fs_data in snapshot["tmp"]["filesystems"].items():
+      for k in ["total_mb", "used_mb", "avail_mb", "used_pct"]:
+        if k in fs_data and fs_data[k] is not None:
+          node_info._dict[node_obj_name][f"{fs_prefix}_{k}"] = fs_data[k]
 
   # Individual processes are registered as distinct objects, inheriting the node's spatial and temporal context
   if "processes" in snapshot:
@@ -848,19 +860,22 @@ def main() -> None:
           proc_dict[k] = v
       node_info._dict[proc_obj_name] = proc_dict
 
-  # Localized storage boundaries (/tmp) are isolated into independent entities
-  if "tmp" in snapshot and "per_user_mb" in snapshot["tmp"]:
-    for u, mb in snapshot["tmp"]["per_user_mb"].items():
-      u_obj_name = f"{hostname}_storage_{u}"
-      u_obj_id = f"{args.prefix}{u_obj_name}"
-      node_info._dict[u_obj_name] = {
-        "__type": "user_storage",
-        "__id": u_obj_id,
-        "hostname": hostname,
-        "username": u,
-        "ts": unix_ts,
-        "tmp_used_mb": mb
-      }
+  # Localized storage boundaries across all configured temporary filesystems are registered as distinct entities
+  if "tmp" in snapshot and "filesystems" in snapshot["tmp"]:
+    for fs_prefix, fs_data in snapshot["tmp"]["filesystems"].items():
+      target_path = fs_data.get("path", "")
+      for u, mb in fs_data.get("per_user_mb", {}).items():
+        u_obj_name = f"{hostname}_storage_{fs_prefix}_{u}"
+        u_obj_id = f"{args.prefix}{u_obj_name}"
+        node_info._dict[u_obj_name] = {
+          "__type": "user_storage",
+          "__id": u_obj_id,
+          "hostname": hostname,
+          "username": u,
+          "target_path": target_path,
+          "ts": unix_ts,
+          "used_mb": mb
+        }
 
   # Active terminal sessions are isolated into independent entities to prevent 
   # pollution from background storage consumers

@@ -201,11 +201,6 @@ processes:
 
 # ── /tmp table ────────────────────────────────────────────────────────────────
 tmp:
-  enabled: true
-
-  # Filesystem path to monitor.
-  path: /tmp
-
   # Overall usage is collected with:
   #   df -B1 --output=size,used,avail,pcent /tmp
   #
@@ -219,8 +214,16 @@ tmp:
   #
   # A larger depth produces more accurate per-user totals at the cost
   # of a slower traversal on large /tmp filesystems.
-  per_user_find_depth: 4
 
+  enabled: true
+  per_user_find_depth: 4
+  
+  targets:
+    # Filesystem path to monitor.
+    - path: /tmp
+      prefix: tmp
+    - path: /dev/shm
+      prefix: dev_shm
 
 # ── Load average ──────────────────────────────────────────────────────────────
 #
