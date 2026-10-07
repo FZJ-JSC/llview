@@ -542,26 +542,31 @@ sub query_columns {
   $self->LOGREPORT($self->{DBNAME},"E:query_columns",caller(),$DBI::errstr) if(!defined($rc));
 
   if(@data = $sth->fetchrow_array()) {
-    if($data[0]=~/^[^\(]+\((.*)\)$/) {
-      my $cols=$1;
-      foreach $coldef (split(/\s*,\s*/,$cols) ) {
-        if($coldef=~/^\s*([^\s]+)\s(.+)\s*$/) {
-          my ($name,$sql)=($1,$2);
+    # Added /s modifier so '.' matches across newlines!
+    if($data[0] =~ /^[^\(]+\((.*)\)\s*$/s) {
+      my $cols = $1;
+      
+      foreach $coldef (split(/\s*,\s*/, $cols)) {
+        # Normalize newlines and whitespace within each column definition
+        $coldef =~ s/\s+/ /g;
+        $coldef =~ s/^\s+|\s+$//g;
+        
+        if($coldef =~ /^([^\s]+)\s+(.+)$/) {
+          my ($name, $sql) = ($1, $2);
           
           # Strip quotes from the extracted column name.
           # If SQL is: "runtime-total" VARCHAR... -> $name becomes: runtime-total
           $name =~ s/^"|"$//g;
 
-          push(@{$retval->{collist}},$name);
-          $retval->{coldata}->{$name}->{name}=$name;
-          $retval->{coldata}->{$name}->{sql}=$sql;
+          push(@{$retval->{collist}}, $name);
+          $retval->{coldata}->{$name}->{name} = $name;
+          $retval->{coldata}->{$name}->{sql}  = $sql;
         }
       }
     }
   }
   return($retval);
 }
-
 
 # return pointer to array of table names
 sub query_index_tables {

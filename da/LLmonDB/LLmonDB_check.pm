@@ -130,13 +130,23 @@ sub checkDB {
 
         # Query columns using the REAL name so the DB driver finds it
         my $dbcoldefs=$dbobj->query_columns($real_db_table_name);
-        
+
+        # Build normalized lookup map for DB columns (strip quotes and lowercase for case-insensitivity)
+        my %clean_db_col_lookup;
+        if ($dbcoldefs && exists($dbcoldefs->{coldata})) {
+          foreach my $k (keys %{$dbcoldefs->{coldata}}) {
+            my $ck = $k;
+            $ck =~ s/^"|"$//g;
+            $clean_db_col_lookup{lc($ck)} = $k;
+          }
+        }
+
         # Create a normalized lookup for config columns
         my %clean_config_lookup;
         foreach my $k (keys %{$configcoldefs->{coldata}}) {
           my $ck = $k; 
           $ck =~ s/^"|"$//g;
-          $clean_config_lookup{$ck} = $k;
+          $clean_config_lookup{lc($ck)} = $k;
         }
 
         # first, check cols from config file
@@ -144,11 +154,21 @@ sub checkDB {
           my $clean_col = $col;
           $clean_col =~ s/^"|"$//g;
           
-          if(exists($dbcoldefs->{coldata}->{$clean_col})) {
-            if($configcoldefs->{coldata}->{$col}->{sql} ne $dbcoldefs->{coldata}->{$clean_col}->{sql}) {
+          # Match using the normalized lowercase key
+          my $db_col_key = $clean_db_col_lookup{lc($clean_col)};
+          
+          if(defined($db_col_key) && exists($dbcoldefs->{coldata}->{$db_col_key})) {
+            
+            # Clean SQL strings before comparing to prevent false-positive alterations due to spacing
+            my $cfg_sql = $configcoldefs->{coldata}->{$col}->{sql};
+            my $db_sql  = $dbcoldefs->{coldata}->{$db_col_key}->{sql};
+            $cfg_sql =~ s/\s+/ /g; $cfg_sql =~ s/^\s+|\s+$//g;
+            $db_sql  =~ s/\s+/ /g; $db_sql  =~ s/^\s+|\s+$//g;
+
+            if($cfg_sql ne $db_sql) {
               $found++;
               $table_diffs++; # Track specific difference for this table
-              printf("  LLmonDB:     CHECK: table column $col changed ('$dbcoldefs->{coldata}->{$clean_col}->{sql}' to '$configcoldefs->{coldata}->{$col}->{sql}')]\n");
+              printf("  LLmonDB:     CHECK: table column $col changed ('$db_sql' to '$cfg_sql')\n");
               printf("  LLmonDB:     [DRY: alter table column $col ]\n");
               if(!$dryrun) {
                 $do_recreate_table=1;
@@ -176,7 +196,11 @@ sub checkDB {
 
         # second, check cols from db file
         foreach my $col (@{$dbcoldefs->{collist}}) {
-          if(!exists($clean_config_lookup{$col})) {
+          my $clean_col = $col;
+          $clean_col =~ s/^"|"$//g;
+          
+          # Check against lowercase config map
+          if(!exists($clean_config_lookup{lc($clean_col)})) {
             $found++;$dataloss++;
             $table_diffs++;
             printf("  LLmonDB:     CHECK: table column $col only in DB ('$dbcoldefs->{coldata}->{$col}->{sql}'), column will be removed\n");

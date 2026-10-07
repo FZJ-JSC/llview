@@ -259,7 +259,7 @@ def _ProcessReport(njob,total_jobs,job,config):
   for section,graphs in sections.items():
     config_section = config['plots'][section]
     # Checking if a section contains GPU data
-    if num_gpus > 0 or ('_gpu' in config_section and config_section['_gpu']): gpus = True
+    if num_gpus > 0 and ('_gpu' in config_section and config_section['_gpu']): gpus = True
 
     # For user defined sections:
     if not graphs:
