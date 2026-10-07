@@ -604,6 +604,10 @@ def collect_extra(commands_cfg: List[Dict[str, Any]]) -> Dict[str, Any]:
   log = logging.getLogger("logger")
   results: Dict[str, Any] = {}
 
+
+
+
+
   for entry in (commands_cfg or []):
     name:    Optional[str] = entry.get("name")
     cmd:     Optional[str] = entry.get("cmd")
@@ -611,6 +615,51 @@ def collect_extra(commands_cfg: List[Dict[str, Any]]) -> Dict[str, Any]:
 
     if not name or not cmd or not enabled:
       continue
+
+    # Conditional execution rules are evaluated prior to running the primary command.
+    # Single strings and lists default to logical AND. Dictionaries with 'any' or 'all'
+    # provide explicit OR / AND evaluation across multiple shell commands.
+    condition_cfg = entry.get("condition_cmd") or entry.get("conditions")
+    if condition_cfg:
+      def evaluate_condition(cond: Union[str, List[str], Dict[str, Any]]) -> bool:
+        if isinstance(cond, str):
+          _, _, rc = run(cond, timeout=5)
+          return rc == 0
+
+        if isinstance(cond, list):
+          # Lists default to logical AND (all commands must exit with 0)
+          for c in cond:
+            _, _, rc = run(str(c), timeout=5)
+            if rc != 0:
+              return False
+          return True
+
+        if isinstance(cond, dict):
+          # Logical OR: at least one command must exit with 0
+          if "any" in cond or "or" in cond:
+            cmds = cond.get("any") or cond.get("or") or []
+            cmd_list = cmds if isinstance(cmds, list) else [cmds]
+            for c in cmd_list:
+              _, _, rc = run(str(c), timeout=5)
+              if rc == 0:
+                return True
+            return False
+
+          # Logical AND: all commands must exit with 0
+          if "all" in cond or "and" in cond:
+            cmds = cond.get("all") or cond.get("and") or []
+            cmd_list = cmds if isinstance(cmds, list) else [cmds]
+            for c in cmd_list:
+              _, _, rc = run(str(c), timeout=5)
+              if rc != 0:
+                return False
+            return True
+
+        return True
+
+      if not evaluate_condition(condition_cfg):
+        log.debug(f"Conditions for extra command '{name}' were not satisfied. Skipping execution.\n")
+        continue
 
     parse:   str = entry.get("parse", "raw")
     timeout: int = int(entry.get("timeout", 15))
