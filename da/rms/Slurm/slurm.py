@@ -23,7 +23,7 @@ import csv
 from copy import deepcopy
 import pwd
 import subprocess
-from typing import Dict, Any
+from typing import Dict, List, Any, Optional
 
 def expand_NodeList(nodelist: str) -> str:
   r"""
