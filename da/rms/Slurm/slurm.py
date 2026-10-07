@@ -21,7 +21,8 @@ import sys
 import math
 import csv
 from copy import deepcopy
-from subprocess import check_output
+import pwd
+import subprocess
 from typing import Dict, Any
 
 def expand_NodeList(nodelist: str) -> str:
@@ -127,11 +128,17 @@ def to_seconds(time: str) -> int:
     log.error(f"[to_seconds] Could not convert '{ret}' to int. Skipping conversion...\n")
   return ret
 
-def to_hours(time: str) -> (float|str):
-  if not time: return time
-  comp = [float(_) for _ in re.split('[-:]',time)]
-  ret = comp[-4]*24 if len(comp)==4 else 0 + comp[-3] + comp[-2]/60 + comp[-1]/60/60
-  return ret
+def to_hours(time_str: str) -> float | str:
+    if not time_str:
+        return time_str
+    parts = [float(x) for x in re.split('[-:]', time_str)]
+    if len(parts) == 4:
+        return parts[0] * 24 + parts[1] + parts[2] / 60 + parts[3] / 3600
+    elif len(parts) == 3:
+        return parts[0] + parts[1] / 60 + parts[2] / 3600
+    elif len(parts) == 2:
+        return parts[0] / 60 + parts[1] / 3600
+    return parts[0] / 3600
 
 def get_state(job_state: str, reason: str) -> tuple[str, str]:
   """
@@ -212,20 +219,56 @@ def modify_load(load: str) -> str:
 
 def id_to_username(state: str) -> str:
   """
-  Convert user id to username (must be run in the computer where the information is obtainable by `id <uid>`)
+  Convert user id to username (must be run on a system where user resolution is available).
+  Uses native Python pwd module first, falling back to 'id <uid>' subprocess.
   """
   log = logging.getLogger('logger')
-
   ret = state
-  # Getting the username for "CANCELLED by id" messages
-  if match := re.match('^CANCELLED by (.+)$',state):
-    id = match.group(1)
-    rawoutput = check_output(f"id {id}", shell=True, text=True)
-    if match := re.match(fr'^uid={id}\((.+?)\).*$',rawoutput):
-        ret = f"CANCELLED by {match.group(1)}";  
-    else: 
-      log.error(f"Error getting username of uid {id}\n")
+
+  # Match patterns like "CANCELLED by 1001" or "CANCELLED by 1001 at ..."
+  match = re.match(r'^CANCELLED by (\d+)(.*)$', state)
+  if match:
+    uid_str = match.group(1)
+    rest = match.group(2)  # preserve any trailing text if present
+    username = None
+
+    # Native Python resolution
+    try:
+      username = pwd.getpwuid(int(uid_str)).pw_name
+    except (KeyError, ValueError):
+      # KeyError: UID not found in passwd database
+      # ValueError: uid_str is not an integer
+      log.debug(f"[id_to_username] Native pwd lookup failed for UID {uid_str}, trying CLI fallback...\n")
+
+    # Fallback to CLI command `id <uid>` without shell=True
+    if not username:
+      try:
+        rawoutput = subprocess.check_output(["id", uid_str], stderr=subprocess.DEVNULL, text=True)
+        m = re.match(r'^uid=\d+\(([^)]+)\)', rawoutput)
+        if m:
+          username = m.group(1)
+      except (subprocess.CalledProcessError, FileNotFoundError):
+        pass
+
+    # Update return value if a username was found
+    if username:
+      ret = f"CANCELLED by {username}{rest}"
+    else:
+      log.error(f"Error getting username of uid {uid_str}\n")
+
   return ret
+
+def add_ts(options: dict[str, Any], slurm_info: 'SlurmInfo') -> dict[str, dict[str, int]]:
+  """
+  Adds Unix epoch timestamp to all entries in the parsed data.
+  """
+  current_ts = int(time.time())
+  ts_extra = {}
+
+  for unit_name, unit_data in slurm_info.items():
+    ts_extra[unit_name] = {"ts": current_ts}
+
+  return ts_extra
 
 def sysinfo(options: dict, slurm_info) -> dict:
   """
@@ -396,12 +439,26 @@ def nodeinfo(options: dict, nodes_info) -> dict:
         nodeextra[node].setdefault('classes','')
         # Getting total number of CPUs/Threads in each partition, in this priority
         # From nodes_info,'CPUTot' -> nodes_info,'ThreadsPerCore'*'CoresPerSocket'*'Sockets' -> from partition,'TotalCPUs'/'TotalNodes'
-        if ('CPUTot' in nodes_info_dict[node]):
-          nodeextra[node]['classes']+=f"[{partname}:{nodes_info_dict[node]['CPUTot']}]"
-        elif ('ThreadsPerCore' in nodes_info_dict[node] and 'CoresPerSocket' in nodes_info_dict[node] and 'Sockets' in nodes_info_dict[node]):          
-          nodeextra[node]['classes']+=f"[{partname}:{nodes_info_dict[node]['ThreadsPerCore']*nodes_info_dict[node]['CoresPerSocket']*nodes_info_dict[node]['Sockets']}]"
-        else:
-          nodeextra[node]['classes']+=f"[{partname}:{partition['TotalCPUs']/partition['TotalNodes']}]"
+        if 'CPUTot' in nodes_info_dict[node]:
+          nodeextra[node]['classes'] += f"[{partname}:{nodes_info_dict[node]['CPUTot']}]"
+        elif ('ThreadsPerCore' in nodes_info_dict[node] and 
+              'CoresPerSocket' in nodes_info_dict[node] and 
+              'Sockets' in nodes_info_dict[node]):
+          try:
+            threads = int(nodes_info_dict[node]['ThreadsPerCore'])
+            cores   = int(nodes_info_dict[node]['CoresPerSocket'])
+            sockets = int(nodes_info_dict[node]['Sockets'])
+            nodeextra[node]['classes'] += f"[{partname}:{threads * cores * sockets}]"
+          except ValueError:
+            log.warning(f"Failed to calculate CPU count from topology on node {node}\n")
+        elif 'TotalCPUs' in partition and 'TotalNodes' in partition:
+          try:
+            total_cpus  = int(partition['TotalCPUs'])
+            total_nodes = int(partition['TotalNodes'])
+            cpus_per_node = total_cpus // total_nodes if total_nodes > 0 else 0
+            nodeextra[node]['classes'] += f"[{partname}:{cpus_per_node}]"
+          except (ValueError, ZeroDivisionError):
+            log.warning(f"Could not calculate CPU average from partition {partname}\n")
       # else:
       #   log.debug(f"Unknown node {node} in partition {partname}!\n")
 
@@ -522,8 +579,20 @@ def stepinfo(options: dict, steps_info) -> dict:
 
 class SlurmInfo:
   """
-  Class that stores and processes information from Slurm output  
+  Storage and processing container for Slurm command outputs.
   """
+  # Output cache and remaining-use tracker for repeated commands
+  _cmd_cache: dict[str, str] = {}
+  _cmd_remaining: dict[str, int] = {}
+
+  @classmethod
+  def set_cacheable_commands(cls, counts: dict[str, int]) -> None:
+    """
+    Commands eligible for caching and their expected usage counts are registered.
+    """
+    cls._cmd_cache.clear()
+    cls._cmd_remaining = counts.copy()
+
   def __init__(self):
     self._raw = {}  # Dictionary with parsed raw information
     self._dict = {} # Dictionary with modified information (which is outputted to LML)
@@ -644,11 +713,21 @@ class SlurmInfo:
     # Using function of name 'key' (current key being processed, e.g.: nodeinfo, jobinfo, etc.), when defined,
     # to modify that particular group/dictionary and items
     if 'apply_function' in options:
-      if options['apply_function'] in globals():
-        func = globals()[options['apply_function']]
-        self.add(func(options,self))
-      else:
-        self.log.error(f"Function '{options['apply_function']}' is not defined in the program! Skipping...")
+      apply_funcs = options['apply_function']
+      if isinstance(apply_funcs, str):
+        apply_funcs = [func.strip() for func in apply_funcs.split(',') if func.strip()]
+      elif not isinstance(apply_funcs, list):
+        apply_funcs = []
+
+      for funcname in apply_funcs:
+        if funcname in globals():
+          func = globals()[funcname]
+          res = func(options, self)
+          # Dictionary outputs returned by the hook are merged into the main data structure
+          if isinstance(res, dict):
+            self.add(res)
+        else:
+          self.log.error(f"Function '{funcname}' is not defined in the program! Skipping...")
 
     # Modifying SLURM output with functions
     if 'modify_before_mapping' in options:
@@ -667,11 +746,32 @@ class SlurmInfo:
 
     return
 
-  def parse_input(self, initial_cmd, foreach=[None], timestamp={}, prefix="", stype="", delimiter="|"):
+  def parse_input(
+    self,
+    initial_cmd: str,
+    foreach: Optional[List[Optional[Dict[str, str]]]] = None,
+    timestamp: Optional[Dict[str, Any]] = None,
+    prefix: str = "",
+    stype: str = "",
+    delimiter: str = "|"
+  ) -> None:
     """
-    This function parses the output of Slurm commands
-    and returns them in a dictionary
+    Output from Slurm commands is parsed and stored into internal dictionaries.
+    Pipes and shell syntax are supported via shell execution. Command failures
+    are captured and logged without halting execution.
+
+    Args:
+      initial_cmd: Base command template to be executed.
+      foreach: List of substitution mappings for parameterized queries.
+      timestamp: Settings containing query time-window constraints and tracking files.
+      prefix: Identifier prefix assigned to parsed entities.
+      stype: Entity type assigned to parsed entries.
+      delimiter: Separator character utilized for delimited output parsing.
     """
+    if foreach is None:
+      foreach = [None]
+    if timestamp is None:
+      timestamp = {}
     # Looping over a given quantity 
     # (this can only happen when adding extra information to a given block via 'add' keyword)
     # Each entry in foreach must be a dictionary with {"key_to_be_substituted_in_cmd": "value"}
@@ -690,13 +790,13 @@ class SlurmInfo:
             with open(timestamp['file'], 'r') as f:
               # Subtract 300 seconds (5 minutes) to create an overlapping window.
               # This guarantees job completions delayed by slurmdbd flushes are caught
-              last_ts = max(0, float(f.readline()) - 300)
-          except ValueError:
+              last_ts = max(0.0, float(f.readline()) - 300)
+          except (ValueError, OSError):
             self.log.error(f"Error reading timestamp from {timestamp['file']}! Check if file is correct or delete it.\n")
             return
           self.log.debug(f"Last timestamp from {timestamp['file']}: {last_ts}\n")
         else:
-          last_ts = end_ts-1*24*60*60
+          last_ts = end_ts - 1 * 24 * 60 * 60
           self.log.debug(f"Timestamp file {timestamp['file']} does not exist. Getting information from the last day...\n")
         last_date = datetime.fromtimestamp(last_ts).strftime('%m/%d/%y-%H:%M:%S')
         end_date = datetime.fromtimestamp(end_ts).strftime('%m/%d/%y-%H:%M:%S')
@@ -704,34 +804,63 @@ class SlurmInfo:
         cmd = f"{cmd} -S {last_date} -E {end_date}"
 
         # Write timestamp of last query to file
-        with open(timestamp['file'], 'w') as f:
-          f.write(f'{end_ts}')
+        try:
+          with open(timestamp['file'], 'w') as f:
+            f.write(f'{end_ts}')
+        except OSError as err:
+          self.log.error(f"Failed to write timestamp file {timestamp['file']}: {err}\n")
 
       # If there's a loop to be done, substitute the desired key in the command
       if loop_entry:
-        for key,value in loop_entry.items():
-          cmd = cmd.replace(f"$${key}$$",value)
+        for key, value in loop_entry.items():
+          cmd = cmd.replace(f"$${key}$$", str(value))
 
       # Getting Slurm raw output
-      rawoutput = check_output(cmd, shell=True, text=True)
+      if cmd in SlurmInfo._cmd_cache:
+        self.log.debug(f"Cached output reused for command: {cmd}\n")
+        rawoutput = SlurmInfo._cmd_cache[cmd]
+
+        # Usage counter is decremented and evicted if no longer required
+        SlurmInfo._cmd_remaining[cmd] -= 1
+        if SlurmInfo._cmd_remaining[cmd] <= 0:
+          del SlurmInfo._cmd_cache[cmd]
+          del SlurmInfo._cmd_remaining[cmd]
+      else:
+        try:
+          rawoutput = subprocess.check_output(
+            cmd,
+            shell=True,
+            text=True,
+            stderr=subprocess.PIPE
+          )
+        except subprocess.CalledProcessError as exc:
+          error_message = exc.stderr.strip() if exc.stderr else "No error output provided"
+          self.log.error(f"Command '{cmd}' failed with return code {exc.returncode}: {error_message}\n")
+          continue
+
+        # Output is cached only if the command is scheduled for multiple uses
+        if cmd in SlurmInfo._cmd_remaining:
+          SlurmInfo._cmd_cache[cmd] = rawoutput
+          SlurmInfo._cmd_remaining[cmd] -= 1
+
       # 'scontrol' has an output that is different from
       # 'sacct' and 'sacctmgr' (the latter are csv-like)
-      if("scontrol" in cmd):
+      if "scontrol" in cmd:
         # Parsing 'scontrol' command
         # If result is empty, return
-        if (re.match("No (.*) in the system",rawoutput)):
-          self.log.warning(rawoutput.split("\n")[0]+"\n")
+        if re.match(r"No (.*) in the system", rawoutput):
+          self.log.warning(rawoutput.split("\n")[0] + "\n")
           continue
         # Getting unit to be parsed from first keyword
         # Match 'unitname' from the rawoutput string
-        name_match = re.match(r"(\w+)",rawoutput)
+        name_match = re.match(r"(\w+)", rawoutput)
         # Check if the match was successful before accessing groups
         if not name_match:
           self.log.error(f"Could not match unitname in output: {rawoutput}. Skipping...\n")
           continue
         unitname = name_match.group(1)
         self.log.debug(f"Parsing units of {unitname}...\n")
-        units = re.findall(fr"({unitname}[\s\S]+?)\n\n",rawoutput)
+        units = re.findall(fr"({unitname}[\s\S]+?)\n\n", rawoutput)
         for unit in units:
           self.parse_unit_block(unit, unitname, prefix, stype)
       else:
@@ -742,7 +871,7 @@ class SlurmInfo:
           continue
         # Getting unit to be parsed from first keyword
         # Match 'unitname' from the rawoutput string
-        name_match = re.match(r"(\w+)",rawoutput)
+        name_match = re.match(r"(\w+)", rawoutput)
         # Check if the match was successful before accessing groups
         if not name_match:
           self.log.error(f"Could not match unitname in output: {rawoutput}. Skipping...\n")
@@ -751,7 +880,7 @@ class SlurmInfo:
         self.log.debug(f"Parsing units of {unitname} in output of '{cmd}'...\n")
         for unit in units:
           current_unit = unit[unitname]
-          self._raw.setdefault(current_unit,{})
+          self._raw.setdefault(current_unit, {})
           # Adding prefix and type of the unit, when given in the input
           if "__prefix" not in self._raw[current_unit] and prefix:
             self._raw[current_unit]["__prefix"] = prefix
@@ -1077,6 +1206,34 @@ def log_continue(log,message):
   return
 
 
+def get_command_counts(config: dict[str, Any]) -> dict[str, int]:
+  """
+  Command occurrences are counted across all configuration sections and
+  nested 'add' blocks to determine caching eligibility.
+
+  Args:
+    config: Parsed configuration dictionary.
+
+  Returns:
+    Dictionary mapping command strings to their total occurrence counts.
+  """
+  counts: dict[str, int] = {}
+
+  for section in config.values():
+    if not isinstance(section, dict):
+      continue
+    if 'cmd' in section:
+      cmd = section['cmd']
+      counts[cmd] = counts.get(cmd, 0) + 1
+    if 'add' in section and isinstance(section['add'], list):
+      for extra_entry in section['add']:
+        if isinstance(extra_entry, dict) and 'cmd' in extra_entry:
+          cmd = extra_entry['cmd']
+          counts[cmd] = counts.get(cmd, 0) + 1
+
+  # Only commands occurring more than once are retained
+  return {cmd: count for cmd, count in counts.items() if count > 1}
+
 def get_system_name(options: dict) -> str:
   """
   Get system name from systemname key of options
@@ -1248,6 +1405,10 @@ def main():
     log.critical("Config file not given!\n")
     parser.print_help()
     exit(1)
+
+  # Repeat commands are identified and registered for selective caching
+  repeat_counts = get_command_counts(config)
+  SlurmInfo.set_cacheable_commands(repeat_counts)
 
   unique = SlurmInfo()
 
