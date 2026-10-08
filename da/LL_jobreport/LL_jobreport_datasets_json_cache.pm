@@ -323,9 +323,14 @@ sub process_data_query_cache_table_json {
 sub process_data_query_drop_table_json {
   my $self = shift;
   my($table_cache,$dataset,$varsetref)=@_;
+  
+  my $starttime=time();
 
   # delete data structure
   delete($self->{TABLECACHE}->{$table_cache});
+  #$self->{TABLECACHE}->{$table_cache}=undef;
+  
+  printf("%s process_data_query_drop_table_json: drop table in %7.4fs\n", $self->{INSTNAME},time()-$starttime);
 }
 
 # The JSON file operation is queued into the caching engine for parallel execution.
