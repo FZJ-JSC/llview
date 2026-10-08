@@ -221,15 +221,29 @@ sub process_collectDB_update_from_other_DB {
     $db_opened->{$qdb}++;
     # get new data from other DBs
     my $qstarttime=time();
-    my $qdata=$self->query($qdb,$qtab,
-              {
-              type => 'hash_values',
-              hash_keys => $ukey,
-              hash_value => join(",",@{$DBqueries->{$dbspec}->{qcols}}),
-              where => exists($DBqueries->{$dbspec}->{where})?
-                join(" AND ",@{$DBqueries->{$dbspec}->{where}}):undef
-              });
-    
+    my $qdata;
+    if(!exists($DBqueries->{$dbspec}->{lasttscol})) {
+      # query on all values per ukey, table should have only one entry per ukey
+      $qdata=$self->query($qdb,$qtab,
+                          {
+                            type => 'hash_values',
+                            hash_keys => $ukey,
+                            hash_value => join(",",@{$DBqueries->{$dbspec}->{qcols}}),
+                            where => exists($DBqueries->{$dbspec}->{where})?
+                                join(" AND ",@{$DBqueries->{$dbspec}->{where}}):undef
+                          });
+    } else {
+      # query on max value per ukey, table should have only one entry per ukey
+      $qdata=$self->query($qdb,$qtab,
+                          {
+                            type => 'hash_values_max',
+                            hash_keys => $ukey,
+                            hash_value => join(",",@{$DBqueries->{$dbspec}->{qcols}}),
+                            max_key => $DBqueries->{$dbspec}->{lasttscol},
+                            where => exists($DBqueries->{$dbspec}->{where})?
+                                join(" AND ",@{$DBqueries->{$dbspec}->{where}}):undef
+                          });
+    }
     $DBqueries->{$dbspec}->{data}=$qdata;
     $DBqueries->{$dbspec}->{colmap}->{$ukey}=$ukey;
 

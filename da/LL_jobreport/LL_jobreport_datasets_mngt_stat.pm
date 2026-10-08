@@ -21,7 +21,9 @@ use LL_jobreport_datasets_constants;
 #  /home/llstat/llview_package/da/LL_jobreport/LL_jobreport_dataset_mngt.pl -v -dbdir ~/s1/perm/db -config ~/c1/server/LLgenDB/LLgenDB.yaml --statstat --systemname JUPITER_DEMO --tmpdir =~/s1/tmp -archdir ~/s1/arch -outdir ~/s1/tmp/
 sub stat_datasets {
   my $self = shift;
-  my ($DB, $force) = @_;
+  my ($DB, $force, $dblist) = @_;
+  my %dblist = map { $_ => 1 } split(/[,\s]+/, $dblist);
+  printf("WF: $dblist -> %s\n",join(',',keys(%dblist)));
   my $basename = $self->{BASENAME};
 
   my $config_ref = $DB->get_config();
@@ -42,6 +44,10 @@ sub stat_datasets {
     next if (!exists($dataset->{stat_table}));
 
     my ($sdb,$stab)=($dataset->{stat_database}, $dataset->{stat_table});
+    if(defined($dblist)) {
+      next if(!exists($dblist{$sdb}));
+    }
+    
     my $set="NOTDEF";  
     $set=$dataset->{set} if(exists($dataset->{set}));
     $sets->{$set}->{datasets}->{$name}++;

@@ -79,11 +79,22 @@ sub mngt_datasets {
       print STDERR "LLmonDB:    WARNING: no type defined for action $action, skipping...\n";
       next;
     }
-    $self->mngt_datasets_check($DB, $action_ref, $varsetref) if($action_def->{type} eq "archive");
-    $self->mngt_datasets_check($DB, $action_ref, $varsetref) if($action_def->{type} eq "remove");
-    $self->mngt_datasets_check_gz_gz($DB, $action_ref, $varsetref) if($action_def->{type} eq "compress");
+    if($action_def->{type} eq "archive") {
+      printf("\n%s check dataset %-20s: archive \n", $self->{INSTNAME}, $action);
+      $self->mngt_datasets_check($DB, $action_ref, $varsetref);
+    }
+    if($action_def->{type} eq "remove") {
+      printf("\n%s check dataset %-20s: remove \n", $self->{INSTNAME}, $action);
+      $self->mngt_datasets_check($DB, $action_ref, $varsetref);
+    }
+      
+    if($action_def->{type} eq "compress") {
+      printf("\n%s check dataset %-20s: compress gz.gz \n", $self->{INSTNAME}, $action);
+      $self->mngt_datasets_check_gz_gz($DB, $action_ref, $varsetref);
+    }
     
     if(exists($action_ref->{datasets})) {
+      printf("\n%s exec. type %-20s: %s \n", $self->{INSTNAME}, $action,$action_def->{type});
       $self->mngt_datasets_execute($DB, $action_ref, $varsetref, FACTION_COMPRESS) if($action_def->{type} eq "compress");
       $self->mngt_datasets_execute($DB, $action_ref, $varsetref, FACTION_ARCHIVE) if($action_def->{type} eq "archive");
       $self->mngt_datasets_execute($DB, $action_ref, $varsetref, FACTION_REMOVE) if($action_def->{type} eq "remove");
@@ -147,7 +158,7 @@ sub mngt_datasets_execute {
       $where.=" OR (dataset like '%$pat%' AND lastts_saved <= $l_ts)";
     }
   }
-  print "TMPDEB: where=$where\n";
+#  print "TMPDEB: where=$where\n";
   
   if($action_type==1) { 	# compress
     $where.=" AND (status = ".FSTATUS_EXISTS.")"; # file exists and is created, but not compressed
@@ -155,7 +166,9 @@ sub mngt_datasets_execute {
   if($action_type==2) {
     $where.=" AND ( (status = ".FSTATUS_EXISTS.") OR (status = ".FSTATUS_COMPRESSED.") )"; # all files which exists, compressed or not
   }
-  
+
+  printf("%s mngt_datasets_execute: $where \n",$self->{INSTNAME});
+
   foreach my $dataset (@{$action_ref->{datasets}}) {
     # read info about files into memory
     if(!exists($self->{DATASETSTAT}->{$dataset->{stat_database}}->{$dataset->{stat_table}})) {
@@ -253,7 +266,9 @@ sub mngt_datasets_check {
   my $num_stat_tables=0;
   my $num_files_found=0;
   my $starttime=time();
-  
+
+  printf("%s check dataset for files: (lastts_saved <= $limit_ts) AND (status = ".FSTATUS_NOT_EXISTS.") \n",$self->{INSTNAME});
+
   my $total_count_fixed=0;
   foreach my $dataset (@{$action_ref->{datasets}}) {
     next if($dataset->{format} eq "registerfile");
@@ -274,11 +289,11 @@ sub mngt_datasets_check {
 
       if( -f $realfile ) {
         my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size, $atime,$mtime,$ctime,$blksize,$blocks) = stat($realfile);
-        print "check: $realfile -> ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size, $atime,$mtime,$ctime,$blksize,$blocks)\n";
+        # print "check: $realfile -> ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size, $atime,$mtime,$ctime,$blksize,$blocks)\n";
         $ref->{status}=FSTATUS_EXISTS;
         $ref->{lastts_saved}=$mtime;
         $ref->{checksum}=0;
-        printf("%s check_file_state_with_file_system: check status=$ref->{status} lastts=$ref->{lastts_saved} -> $realfile --> exists\n",$self->{INSTNAME});
+        # printf("%s check_file_state_with_file_system: check status=$ref->{status} lastts=$ref->{lastts_saved} -> $realfile --> exists\n",$self->{INSTNAME});
         $count_fixed_exists++;
       } else {
         push(@removed_files,$file);
@@ -297,8 +312,8 @@ sub mngt_datasets_check {
     if($count_fixed>0) {
       my $tstarttime=time();
       $self->save_datasetstat_in_DB($dataset->{stat_database},$dataset->{stat_table},$where);
-      printf("%s check dataset for files: saved datasetstat for $dataset->{name} #%d files exists not on fs, removed from DB, %d files exists, status adapted\n",
-              $self->{INSTNAME},$count_fixed-$count_fixed_exists,$count_fixed_exists);
+      printf("%s check dataset for files: saved datasetstat for %-30s #%6d files exists not on fs, removed from DB, %6d files exists, status adapted\n",
+              $self->{INSTNAME},$dataset->{name},$count_fixed-$count_fixed_exists,$count_fixed_exists);
     }
     delete($self->{DATASETSTAT}->{$dataset->{stat_database}}->{$dataset->{stat_table}});
   }
@@ -324,7 +339,9 @@ sub mngt_datasets_check_gz_gz {
   my $num_stat_tables=0;
   my $num_files_found=0;
   my $starttime=time();
-  
+
+  printf("%s check dataset for files .gz.gz: (lastts_saved <= $limit_ts) \n",$self->{INSTNAME});
+
   my $total_count_fixed=0;
   foreach my $dataset (@{$action_ref->{datasets}}) {
     next if($dataset->{format} eq "registerfile");
@@ -366,7 +383,7 @@ sub mngt_datasets_check_gz_gz {
     delete($self->{DATASETSTAT}->{$dataset->{stat_database}}->{$dataset->{stat_table}});
   }
 
-  printf("%s check dataset for files .gz.gz: %d file changed\n", $self->{INSTNAME}, $total_count_fixed);
+  printf("%s check dataset for files .gz.gz: %d file found\n", $self->{INSTNAME}, $total_count_fixed);
 }
 
 # Retrieves and filters datasets that are eligible for a specific management action (like compress or archive)
@@ -734,6 +751,8 @@ sub mngt_scan_datasets {
     }
   }
 
+  printf("\n%s scan for new files\n", $self->{INSTNAME});
+
   # find datasets which could have updated files
   my $ds;
   foreach my $datasetref (@{$config_ref->{$basename}->{datafiles}}) {
@@ -770,7 +789,7 @@ sub mngt_scan_datasets {
   my $changed_files;
   my $stat;
   my $where="(mts >= ($limit_ts) OR (status=".FSTATUS_TOBEDELETED.") OR (status=".FSTATUS_TOBECOMPRESSED.") OR (status=".FSTATUS_DELETED."))";
-  print "WFwhere: $where\n";
+  printf("%s scan for new files: where: %s\n", $self->{INSTNAME},$where);
   foreach my $ds_db (sort(keys(%{$ds}))) {
     foreach my $ds_tab (sort(keys(%{$ds->{$ds_db}}))) {
       my $subconfig_ref=$ds->{$ds_db}->{$ds_tab};
@@ -791,11 +810,11 @@ sub mngt_scan_datasets {
         if($ref->{status}==FSTATUS_EXISTS) {
           # updated of regular files
           $changed_files->{$ref->{dataset}}++;
-          printf ("%s/%s: [%d] changed %s\n",$ds_db,$ds_tab,$ref->{status},$ref->{dataset}) if($self->{VERBOSE}>=1);
+          printf ("  %s/%s: [%d] changed %s\n",$ds_db,$ds_tab,$ref->{status},$ref->{dataset}) if($self->{VERBOSE}>=2);
         } elsif($ref->{status}==FSTATUS_COMPRESSED) {
           # updated of regular files
           $changed_files->{$ref->{dataset}}++;
-          printf ("%s/%s: [%d] changedCMP %s\n",$ds_db,$ds_tab,$ref->{status},$ref->{dataset}) if($self->{VERBOSE}>=1);
+          printf ("  %s/%s: [%d] changedCMP %s\n",$ds_db,$ds_tab,$ref->{status},$ref->{dataset}) if($self->{VERBOSE}>=2);
         } elsif($ref->{status}==FSTATUS_TOBECOMPRESSED) {
           my $realfile=sprintf("%s/%s",$self->{OUTDIR},$ref->{dataset});
           if( -f $realfile ) {
@@ -805,7 +824,7 @@ sub mngt_scan_datasets {
             # mark dataset with and w/o suffix as changed
             my $help=$ref->{dataset}; $changed_files->{$help}++;
             $help=~s/\.(gz|xz)$//gs;  $changed_files->{$help}++;
-            printf ("%s/%s: [%d] compressed %s\n",$ds_db,$ds_tab,$ref->{status},$ref->{dataset}) if($self->{VERBOSE}>=1);
+            printf ("  %s/%s: [%d] compressed %s\n",$ds_db,$ds_tab,$ref->{status},$ref->{dataset}) if($self->{VERBOSE}>=2);
           }
         } elsif($ref->{status}==FSTATUS_TOBEDELETED) {
           my $realfile=sprintf("%s/%s",$self->{OUTDIR},$ref->{dataset});
@@ -814,20 +833,29 @@ sub mngt_scan_datasets {
             $count_ds_changed++;
             $ref->{status}=FSTATUS_DELETED;
             $changed_files->{$ref->{dataset}}++;
-            printf ("%s/%s: [%d] deleted %s\n",$ds_db,$ds_tab,$ref->{status},$ref->{dataset}) if($self->{VERBOSE}>=1);
+            printf ("  %s/%s: [%d] deleted %s\n",$ds_db,$ds_tab,$ref->{status},$ref->{dataset}) if($self->{VERBOSE}>=2);
           }
+        } elsif($ref->{status}==FSTATUS_NOT_EXISTS) {
+          my $realfile=sprintf("%s/%s",$self->{OUTDIR},$ref->{dataset});
+	  printf ("  %s/%s: [%d] not exists %s\n",$ds_db,$ds_tab,$ref->{status},$ref->{dataset}) if($self->{VERBOSE}>=1);
         }
       }
 
       if($count_ds_changed>0) {
         $self->cleanup_datasetstat($ds_db,$ds_tab);
+	
+	if($ds_db eq "jobreport_stat_cpuusage" && $ds_tab eq "datasetstat_csv") {
+	  my $lfn="dsdiff/".$ds_db."_".$ds_tab."_".$self->{CURRENTTS}."_jobreportnmgt.log";
+	  print "diff_datasetstat_with_DB: write to $lfn\n";
+	  $self->diff_datasetstat_with_DB($ds_db,$ds_tab,$where,$lfn);
+	} 
         $self->save_datasetstat_in_DB($ds_db,$ds_tab,$where);
       }
       delete($self->{DATASETSTAT}->{$ds_db}->{$ds_tab}); # remove in-memory version
     }
   }
   foreach my $st (sort(keys(%{$stat}))) {
-    printf("mngt_scan_datasets: status=%d -> %6d files\n",$st,$stat->{$st});
+    printf("mngt_scan_datasets: status=%d -> %6d files %s\n",$st,$stat->{$st},&get_status_desc($st));
   }
 
   return($changed_files);
@@ -845,7 +873,7 @@ sub cleanup_datasetstat {
       $cnt++;
     }
   }
-  printf ("%s/%s: deleted %d entries\n",$stat_db,$stat_table, $cnt) if($self->{VERBOSE}>=1);
+  printf ("  %s/%s: deleted %d entries\n",$stat_db,$stat_table, $cnt) if($self->{VERBOSE}>=2);
 }
 
 sub mysystem {

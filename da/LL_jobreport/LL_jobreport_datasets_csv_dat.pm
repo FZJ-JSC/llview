@@ -929,17 +929,54 @@ sub write_data_to_file_csv_dat_cache {
 
   my $starttime = time();
   
-  # Files are sorted by the number of rows they contain (descending).
+  # 0. sort files according rows descening
   # Array sizes are safely evaluated to 0 if the dataset is completely empty, preventing undefined reference exceptions.
   my @filelist = sort { 
     my $count_a = defined($self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$a}) ? scalar(@{$self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$a}}) : 0;
     my $count_b = defined($self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$b}) ? scalar(@{$self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$b}}) : 0;
-    $count_b <=> $count_a 
+    $count_b <=> $count_a || $a cmp $b
   } keys(%{$self->{TABLECACHE}->{$table_cache}->{csv_fileop}});
   
   my $numfiles  = scalar @filelist;
+
+  # 1. count rows for each file in the sorted list
+  my $score_add_per_file=2000;
+  my ($score_per_file, $total_score);
+  for my $f (@filelist) {
+    my $score = defined $self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$f} ? scalar(@{$self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$f}}) : 0;
+    $score_per_file->{$f} = $score + $score_add_per_file;
+    $total_score    += $score_per_file->{$f};
+  }
+
+  
+   # 3. split files into chunks respecting the target
+  my @remaining    = @filelist;               # copy that we will shrink
+  my @chunks       = map { [] } 0..$parlevel; # one chunk per process
+  my @sum_score    = (0) x ($parlevel+1);
+  my $target_score = int($total_score/($parlevel+1));
+  my @active       = 0..$parlevel;
+  while (@remaining && @active) {
+    my $idx  = shift @active;               # next active chunk (round‑robin)
+    my $file = $remaining[0];               # always take the first (largest) remaining file
+    push @{$chunks[$idx]}, $file;
+    $sum_score[$idx] += $score_per_file->{$file};
+    # remove the assigned file from the pool
+    splice @remaining, 0, 1;
+    # keep the chunk in rotation only if it hasn't reached the target
+    push @active, $idx if $sum_score[$idx] < $target_score;
+  }
+  # any leftovers (if all chunks hit the target) go to the last chunk
+  push @{$chunks[-1]}, @remaining if @remaining;
+  
+  
   my $fcount    = 0;
   my $lcount    = 0;
+  my $gt_extract = 0.0;
+  my $gt_convert = 0.0;
+  my $gt_format  = 0.0;
+  my $gt_io      = 0.0;
+  my $gt_preloop = 0.0;
+  my $gt_postloop= 0.0;
 
   # The availability of the compiled C library is verified.
   my $has_csv_xs = 0;
@@ -952,11 +989,19 @@ sub write_data_to_file_csv_dat_cache {
     printf(STDERR "%s WARNING: Text::CSV_XS module is missing. CSV generation is falling back to native Perl.\n", $self->{INSTNAME});
   }
 
-  for (my $fnum = 0; $fnum < $numfiles; $fnum++) {
-    next if (($fnum % $parlevel) != $part);
+  for my $file (@{$chunks[$part]}) {
     $fcount++;
+    my $ts = time();
 
-    my $file         = $filelist[$fnum];
+    my $numentries = 0;
+    
+    # Execution timers are initialized for profiling analysis.
+    my $t_extract = 0.0;
+    my $t_convert = 0.0;
+    my $t_format  = 0.0;
+    my $t_io      = 0.0;
+
+
     # The dataset row reference is safely initialized to an empty array if undefined.
     my $dataset_rows = $self->{TABLECACHE}->{$table_cache}->{csv_fileop}->{$file} || [];
     my $raw_cols     = $self->{TABLECACHE}->{$table_cache}->{csv_raw_cols}->{$file};
@@ -985,15 +1030,9 @@ sub write_data_to_file_csv_dat_cache {
       });
     }
 
-    my @file_lines;
-    my $numentries = 0;
-    
-    # Execution timers are initialized for profiling analysis.
-    my $t_extract = 0.0;
-    my $t_convert = 0.0;
-    my $t_format  = 0.0;
-    my $t_io      = 0.0;
+    my $t_preloop = time()-$ts;
 
+    my @file_lines;
     foreach my $row_ref (@{$dataset_rows}) {
       last if ($numentries >= $max_entries);
       $numentries++;
@@ -1032,6 +1071,7 @@ sub write_data_to_file_csv_dat_cache {
       my $t3 = time();
       $t_format += ($t3 - $t2);
     }
+    my $te = time();
     
     $lcount += $numentries;
 
@@ -1042,33 +1082,51 @@ sub write_data_to_file_csv_dat_cache {
     my $openparm;
 
     if ($file =~ /\.gz$/) {
-      $openparm = "| gzip -c > $file";
+      $openparm = "| gzip --fast -c > $file";
     } else {
       $openparm = "$openop $file";
     }
 
     &check_folder($file);
+    my $t_postloop = time()-$te;
+
+    # I/O phase is timed.
+    my $t_io_start = time();
     if (!($fh->open($openparm))) {
       printf(STDERR "%s write_data_to_file_csv_dat_cache: WARNING: cannot open %s, skipping...\n",
               $self->{INSTNAME}, $file);
       next;
     }
-
-    # I/O phase is timed.
-    my $t_io_start = time();
     $fh->print($csv_data);
     $fh->close();
     $t_io = time() - $t_io_start;
+
+    $gt_extract+=$t_extract;
+    $gt_convert+=$t_convert;
+    $gt_format+=$t_format;
+    $gt_io+=$t_io;
+    $gt_preloop+=$t_preloop;
+    $gt_postloop+=$t_postloop;
     
-    # A diagnostic profile is printed for files requiring significant processing time.
-    # if ($numentries > 5000) {
-    #   printf(STDERR "%s [DEBUG] %s (%d rows) -> Extract: %.3fs, Convert: %.3fs, Format: %.3fs, I/O: %.3fs\n",
-    #          $self->{INSTNAME}, $file, $numentries, $t_extract, $t_convert, $t_format, $t_io);
-    # }
+    # A diagnostic profile for a specific dataset
+#    if ($file=~/jobbyday/) {
+#      printf("%s [WF55555 by day] (%5d rows) (%2d cols, %2d conv) -> Extract: %.3fs, Convert: %.3fs, Format: %.3fs, I/O: %.3fs -> %s\n",
+#             $self->{INSTNAME}, $numentries, scalar @{$raw_cols}, scalar @conversions,
+#             $t_extract, $t_convert, $t_format, $t_io, $file);
+#    }
+
+#    if ($numentries > 5000) {
+#       printf("%s [WF55555 gt5000] (%5d rows) -> Extract: %.3fs, Convert: %.3fs, Format: %.3fs, I/O: %.3fs -> %s\n",
+#              $self->{INSTNAME}, $numentries, $t_extract, $t_convert, $t_format, $t_io, $file);
+#    }
+#    if (    $part == 0) {
+#       printf("%s [WF55555 part0] (%5d rows) at %6.3fs -> Pre: %.3fs Extract: %.3fs, Convert: %.3fs, Format: %.3fs, Post: %.3fs, I/O: %.3fs -> %s\n",
+#              $self->{INSTNAME}, $numentries, time()-$starttime, $t_preloop, $t_extract, $t_convert, $t_format, $t_postloop, $t_io, $file);
+#    }
   }
 
-  printf("%s write_data_to_file_csv_dat_cache: %10s  write files %3d of %4d in %7.4fs (%5d lines)\n",
-          $self->{INSTNAME}, $table_cache, $fcount, $numfiles, time()-$starttime, $lcount
+  printf("%s write_data_to_file_csv_dat_cache [WF55555]: %10s  write files %3d of %4d in %7.4fs (%5d lines) (Pre: %.3fs, Extract: %.3fs, Convert: %.3fs, Format: %.3fs, Post: %.3fs, I/O: %.3fs)\n",
+          $self->{INSTNAME}, $table_cache, $fcount, $numfiles, time()-$starttime, $lcount, $gt_preloop, $gt_extract, $gt_convert, $gt_format, $gt_postloop, $gt_io
         );
 }
 

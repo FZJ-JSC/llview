@@ -666,6 +666,14 @@ sub query {
                               $optsref->{where},
                               $optsref->{sql}
                             );
+  } elsif($type eq "hash_values_max") {
+    $retval=$self->query_hash_values_table_max($table,
+                              $optsref->{hash_keys},
+                              $optsref->{hash_value},
+                              $optsref->{where},
+                              $optsref->{max_key},
+                              $optsref->{sql}
+                            );
   } elsif($type eq "get_arrayref_of_arrayref") {
     $retval=$self->query_arrayref_of_arrayref_table($table,
                                         $optsref->{where},
@@ -768,6 +776,67 @@ sub query_hash_values_table {
   return($retval);
 }
 
+
+sub query_hash_values_table_max {
+  my($self) = shift;
+  my($table,$nkeys,$nvalue,$where,$maxkey,$qsql) = @_;
+  my ($retval,$ukey);
+
+  if(ref(\$nkeys) eq "SCALAR") {
+    $ukey=$nkeys;
+  } else {
+    printf(STDERR "[query_hash_values_table_max] \t LLmonDB_sqlite: ERROR - multiple ukeys not supported\n");
+    return(undef);
+  } 
+  #  print "query_hash_values_table_max: $nkeys (".ref(\$nkeys).") -> $ukey\n";
+  my $sql;
+  if(!defined($qsql)) {
+    if(!defined($table)) {
+      printf(STDERR "[query_hash_values_table_max] \t LLmonDB_sqlite: ERROR - 'table' argument is undefined.\n");
+      printf(STDERR "  Database: %s\n", $self->{DBNAME});
+      printf(STDERR "  Caller: %s line %s\n", caller());
+      return(undef);
+    }
+    $sql = "SELECT t.$ukey,$nvalue FROM $table t";
+    $sql.=" JOIN ( SELECT $ukey,MAX($maxkey) AS max_val FROM $table ";
+    $sql.=" WHERE $where" if($where);
+    $sql.=" GROUP BY $ukey ) m";
+    $sql.=" ON t.$ukey=m.$ukey AND t.$maxkey=m.max_val";
+    $sql.=" WHERE $where" if($where);
+  } else {
+    $sql=$qsql;
+  }
+  # print "query_hash_values_table_max: $sql\n";
+  
+  my $sth = $self->{DBH}->prepare($sql);
+  if(!$sth) {
+    my $db_error = $self->{DBH}->errstr;
+    printf(STDERR "[query_hash_values_table] \t LLmonDB_sqlite: ERROR - Cannot prepare SQL statement.\n");
+    printf(STDERR "  Database: %s\n", $self->{DBNAME});
+    printf(STDERR "  Table (if provided): %s\n", defined($table) ? $table : 'N/A');
+    printf(STDERR "  Database Error: %s\n", $db_error);
+    printf(STDERR "  Full SQL Dump:\n---\n%s\n---\n", $sql);
+    return(undef);
+  }
+  
+  if (!$sth->execute()) {
+    my $db_error = $self->{DBH}->errstr;
+    printf(STDERR "[query_hash_values_table] \t LLmonDB_sqlite: ERROR - Cannot execute SQL statement.\n");
+    printf(STDERR "  Database: %s\n", $self->{DBNAME});
+    printf(STDERR "  Database Error: %s\n", $db_error);
+    printf(STDERR "  Full SQL Dump:\n---\n%s\n---\n", $sql);
+    return(undef);
+  }
+
+  $retval = $sth->fetchall_hashref($nkeys);
+
+  print "\t   LLmonDB_sqlite: query_hash_single_table $sql\n" if($debug>=3);
+  # print Dumper($retval);
+  return($retval);
+}
+
+
+  
 
 sub query_arrayref_of_arrayref_table {
   my($self) = shift;

@@ -135,6 +135,11 @@ close(IN);
 #print Dumper($stat);
 #exit;
 
+# check attributes
+foreach my $step ( keys(%{$stat})) {
+  $stat->{$step}->{start}=-1 if(!exists($stat->{$step}->{start}));
+}
+
 # define order
 my $num=0;
 foreach my $step ( sort {&my_sort($a,$b)} (keys(%{$stat}))) {

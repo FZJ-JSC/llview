@@ -104,6 +104,7 @@ if ($opt_verbose) {
   printf("%s  demo               = %d\n",$instname,$opt_demo);
   printf("%s  config             = %s\n",$instname,$opt_config);
   printf("%s  db-dir             = %s\n",$instname,$opt_dbdir);
+  printf("%s  db-list            = %s\n",$instname,$opt_dblist) if(defined($opt_dblist));
   printf("%s  outdir             = %s\n",$instname,$opt_outdir);
   printf("%s  solvestat          = %s\n",$instname,$opt_solvestat);
   printf("%s  tmpdir             = %s\n",$instname,$opt_tmpdir);
@@ -133,14 +134,14 @@ printf("%s open DB                                         in %7.4fs\n",$instnam
 my $done=0;
 if($opt_solvestat) {
     $starttime=time();
-    $jobreport->solve_datasets($DB,$opt_force);  
+    $jobreport->solve_datasets($DB,$opt_force,$opt_dblist);  
     printf("%s solve datasets                                  in %7.4fs\n",$jobreport->{INSTNAME},time()-$starttime);
     $done=1;
 }
 
 if($opt_statstat) {
     $starttime=time();
-    $jobreport->stat_datasets($DB,$opt_force);  
+    $jobreport->stat_datasets($DB,$opt_force,$opt_dblist);  
     printf("%s stat datasets                                  in %7.4fs\n",$jobreport->{INSTNAME},time()-$starttime);
     $done=1;
 }

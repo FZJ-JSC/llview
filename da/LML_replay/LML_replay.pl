@@ -87,7 +87,7 @@ if((!defined $opt_config)||(! -f $opt_config)) {
 
 my $steps;
 foreach my $step (split(/\s?,\s?/,$opt_steps))  {
-  if($step !~ /(sync|initdb|updatedb|sim|simulate)/) {
+  if($step !~ /(sync|initdb|checkdb|updatedb|sim|simulate)/) {
     $msg=sprintf("$instname unknown step $step, exiting...\n"); logmsg($msg,\*STDERR);
     usage($0);
     exit;
@@ -134,7 +134,7 @@ if(exists $steps->{"initdb"}) {
   printf("STEP: initdb\n");
   &init_db($configdata,$replay_status,$opt_verbose);
 }
-if(exists $steps->{"updatedb"}) {
+if(exists $steps->{"updatedb"} || exists $steps->{"checkdb"}) {
   printf("\n");
   printf("STEP: updatedb\n");
   &update_db($configdata,$replay_status,$opt_verbose);
@@ -150,6 +150,7 @@ if( exists( $configdata->{"LML_replay"}->{"monitor"} ) ) {
   }
 }
 my $monitor_halt_file="";
+my $monitor_pid=-1;
 if($do_monitor) {
   printf("\n");
   printf("STEP: start monitor\n");
@@ -158,9 +159,15 @@ if($do_monitor) {
     system("rm -f $monitor_halt_file");
   }
   my $log_dir=$configdata->{"LML_replay"}->{"config"}->{"logdir"};
-  my $cmd=sprintf("perl $subvars->{LLVIEW_HOME}/da/monitor/monitor_file.pl --config %s >> %s/replay_monitor_stdout.log 2>> %s/replay_monitor_stderr.log &",$configdata->{"LML_replay"}->{"monitor"}->{"action_file"},$log_dir,$log_dir);
+  my $cmd=sprintf("perl $subvars->{LLVIEW_HOME}/da/monitor/monitor_file.pl --config %s >> %s/replay_monitor_stdout.log 2>> %s/replay_monitor_stderr.log",$configdata->{"LML_replay"}->{"monitor"}->{"action_file"},$log_dir,$log_dir);
   print "$cmd\n";
-  system($cmd);
+
+  die "could not fork" unless defined(my $pid = fork);
+    unless ($pid) { #child execs
+      system($cmd);
+      exit;
+    }
+  $monitor_pid=$pid;
 }
 
 
@@ -176,6 +183,9 @@ YAML::DumpFile($status_file,$replay_status);
 
 if($do_monitor) {
   system("sleep 2;touch $monitor_halt_file");
+  # wait for all children process to finish
+  printf("WAIT for monitor to finish ...\n");
+  waitpid $monitor_pid, 0;
 }
 
 sub usage {

@@ -487,6 +487,11 @@ sub adapt_data {
     $wfmref->{ts}=$currentts;
   }
 
+  foreach my $pref (@{$data->{PROCESS_ENTRIES}}) {
+    $pref->{'state'}="-" if(!$pref->{'state'});
+    $pref->{'cmd'}="-" if(!$pref->{'cmd'});
+  }
+
   printf("\t LML_DBupdate_file: adapt_data\n") if($debug>=3);
 }
 

@@ -89,14 +89,14 @@ sub create_datasets {
   $step_starttime=time();
   my $actions; 
 
-  #  1st schedule all datasets of sets without a table_cache
+  #  schedule all datasets of sets without a table_cache
   foreach my $set (keys(%{$sets->{"-none-"}})) {
     my $action;
     $action->{type}="fork";	$action->{table_cache}="-none-"; $action->{set}=$set;
     push(@{$actions},$action);
   }
 
-  #  2nd schedule all datasets of sets with table_cache
+  #  schedule all datasets of sets with table_cache
   foreach my $table_cache (@tc_order) {
     next if($table_cache eq "-none-");
 
@@ -131,7 +131,8 @@ sub create_datasets {
       push(@{$actions},$action);
     }
 
-    #  drop cached table in PRIMARY process
+    #  drop cached table in PRIMARY process, TEST: don't drop table (we have enough memory)
+    if(0) 
     {
       my $action;
       $action->{type}="drop_table";	$action->{table_cache}=$table_cache;
@@ -140,6 +141,7 @@ sub create_datasets {
       push(@{$actions},$action);
     }
   }
+
 
   # DEBUG report on actions
   if($debug) {
@@ -194,6 +196,7 @@ sub create_datasets {
     
     if ($action->{type} eq "cache_table") {
       # Cache tables in PRIMARY process
+      my $startcachets=time();
       if ($action->{format} eq "json") {
         $self->process_data_query_cache_table_json($action->{table_cache},
                                                    $table_cache_first_set->{$action->{table_cache}}->{dataset},
@@ -207,9 +210,13 @@ sub create_datasets {
                                                      $table_cache_first_set->{$action->{table_cache}}->{dataset},
                                                      $varsetref);
       }
+      my $endtime=time();
+      printf("%s process_table_cache: cache_table %-20s in %7.4fs (ts=%.5f,%.5f,l=%d,nr=%d)\n",
+              $self->{INSTNAME}, $action->{table_cache}, $endtime-$startcachets,$startcachets,$endtime,2,$action_count);
       next DATA_LOOP;
     } elsif ($action->{type} eq "scan_table") {
       # Scan tables in PRIMARY process
+      my $startscants=time();
       foreach my $dataset (@{$sets->{$action->{table_cache}}->{$action->{set}}}) {
         if ($dataset->{format} =~ /^(json)$/) {
           $self->process_dataset_json($DB, $dataset, $varsetref);
@@ -219,9 +226,13 @@ sub create_datasets {
           $self->process_dataset_access($DB, $dataset, $varsetref);
         }
       }
+      my $endtime=time();
+      printf("%s process_table_cache: scan_table %-20s in %7.4fs (ts=%.5f,%.5f,l=%d,nr=%d)\n",
+              $self->{INSTNAME}, $action->{table_cache}, $endtime-$startscants,$startscants,$endtime,2,$action_count);
       next DATA_LOOP;
     } elsif ($action->{type} eq "drop_table") {
       # Drop cached tables in PRIMARY process
+      my $startdropts=time();
       if ($action->{format} eq "json" || $action->{format} eq "csv") {
         $self->process_data_query_drop_table_json($action->{table_cache},
                                                   $table_cache_first_set->{$action->{table_cache}}->{dataset},
@@ -231,6 +242,10 @@ sub create_datasets {
                                                     $table_cache_first_set->{$action->{table_cache}}->{dataset},
                                                     $varsetref);
       }
+      my $endtime=time();
+      printf("%s process_table_cache: drop_table %-20s in %7.4fs (ts=%.5f,%.5f,l=%d,nr=%d)\n",
+              $self->{INSTNAME}, $action->{table_cache}, $endtime-$startdropts,$startdropts,$endtime,2,$action_count);
+      
       next DATA_LOOP;
     }
     
@@ -806,7 +821,11 @@ sub check_fileregister {
   }
   if( -f $file ) {
     my ($dev,$ino,$mode,$nlink,$uid,$gid,$rdev,$size, $atime,$mtime,$ctime,$blksize,$blocks) = stat($file);
-    $ds->{$shortfile}->{status}=FSTATUS_EXISTS;
+    if($file=~/\.gz$/) {
+      $ds->{$shortfile}->{status}=FSTATUS_COMPRESSED;
+    } else {
+      $ds->{$shortfile}->{status}=FSTATUS_EXISTS;
+    }
     $ds->{$shortfile}->{lastts_saved}=$mtime;
     $ds->{$shortfile}->{mts}=$self->{CURRENTTS}; # last change ts
     $ds->{$shortfile}->{checksum}=0;

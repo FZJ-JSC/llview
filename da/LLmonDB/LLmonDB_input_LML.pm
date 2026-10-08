@@ -280,13 +280,13 @@ sub process_LMLdata_LLgenDB {
     my $dbobj=$self->get_db_handle($db);
     $starttime=time();
     my $cnt=$self->add_to_jobtsmap($dbobj,$table);
-    printf("%-29s LLmonDB:     upd.     %6d entries in table %15s/%-35s in %8.5fs\n",$self->{INSTNAME},$cnt,$db,$table,time()-$starttime);
+    printf("%-29s LLmonDB:     upd.     %7d entries in table %15s/%-45s in %8.5fs\n",$self->{INSTNAME},$cnt,$db,$table,time()-$starttime);
   }
   if( ($what =~ "add_jobnodemap") ) {
     my $dbobj=$self->get_db_handle($db);
     $starttime=time();
     my $cnt=$self->add_to_jobnodemap($dbobj,$table);
-    printf("%-29s LLmonDB:     upd.     %6d entries in table %15s/%-35s in %8.5fs\n",$self->{INSTNAME},$cnt,$db,$table,time()-$starttime);
+    printf("%-29s LLmonDB:     upd.     %7d entries in table %15s/%-45s in %8.5fs\n",$self->{INSTNAME},$cnt,$db,$table,time()-$starttime);
   }
   
   return();
@@ -473,7 +473,7 @@ sub update_table {
             push(@trig_tables,$up_table);
           }
         }
-        printf("%-29s LLmonDB:     trg_upd. %6d entries in table %15s/%-35s in %8.5fs\n",$self->{INSTNAME},$cnt,$db,$table,time()-$starttime);
+        printf("%-29s LLmonDB:     trg_upd. %7d entries in table %15s/%-45s in %8.5fs\n",$self->{INSTNAME},$cnt,$db,$table,time()-$starttime);
       }
     }
   }
