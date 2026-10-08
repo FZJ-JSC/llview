@@ -87,7 +87,7 @@ if((!defined $opt_config)||(! -f $opt_config)) {
 
 my $steps;
 foreach my $step (split(/\s?,\s?/,$opt_steps))  {
-  if($step !~ /(sync|initdb|updatedb|sim|simulate)/) {
+  if($step !~ /(sync|initdb|checkdb|updatedb|sim|simulate)/) {
     $msg=sprintf("$instname unknown step $step, exiting...\n"); logmsg($msg,\*STDERR);
     usage($0);
     exit;
@@ -134,7 +134,7 @@ if(exists $steps->{"initdb"}) {
   printf("STEP: initdb\n");
   &init_db($configdata,$replay_status,$opt_verbose);
 }
-if(exists $steps->{"updatedb"}) {
+if(exists $steps->{"updatedb"} || exists $steps->{"checkdb"}) {
   printf("\n");
   printf("STEP: updatedb\n");
   &update_db($configdata,$replay_status,$opt_verbose);
