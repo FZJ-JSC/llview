@@ -153,6 +153,22 @@ while(my $line=<IN>) {
     next;
   }
 
+  if($line=~/\[LL_create_jobreports.pl\]\[$patwrd\s*\]\s+process_table_cache: $patwrd\s*$patwrd\s+in\s+$patfp[s] \(ts=$patfp,$patfp,l=$patint,nr=$patint\)/) {
+    my($a,$b,$c,$d,$e,$f,$g,$h)=($1,$2,$3,$4,$5,$6,$7,$8);
+    # print "TMPDEBdrop: $line";
+    # print "         (a=$a,b=$b,c=$c,d=$d,e=$e,f=$f,g=$g,h=$h)\n";
+    my $name=sprintf("%s_%s",lc($b),lc($c));
+    $stat->{$name}->{start}=$e;
+    $stat->{$name}->{end}=$f;
+    $stat->{$name}->{startgroupnum}=2;
+    $stat->{$name}->{nr}=$h;
+    $collected_cmplx+=0;
+    $stat->{$name}->{level}=2;
+    push(@{$collecteditems_per_level->[2]},$name);
+    next;
+  }
+
+  
   if($line=~/\[LL_create_jobreports.pl\]\[$patwrd\s*\] process_dataset_[a-zA-Z0-9_]+\s*:\s+end work \(\#files created:\s*$patint, \#files appended:\s*$patint: #lines=\s*$patint\)\s+in\s+$patfp[s] \(ts=$patfp,$patfp,l=$patint,nr=$patint\) on $patwrd/) {
     my($a,$b,$c,$d,$e,$f,$g,$h,$i,$j)=($1,$2,$3,$4,$5,$6,$7,$8,$9,$10);
     # print "TMPDEB5: $line";
