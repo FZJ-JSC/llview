@@ -105,7 +105,7 @@ sub update_var_from_DB {
     $vardataref->{data}=$dataref;
     # printf("$varname: $vartype $db $table $columns '$where' --> %d\n",scalar keys(%{$dataref}));
   } else {
-    my $sql=$varref->{sql};
+    my $sql=$self->{DB}->replace_tsvars($varref->{sql},$self->{CURRENTTS});
     my @cols=split(",",$columns);
     my $lastcol=$cols[$#cols];
     my $dataref=$DB->query($db,$table,
@@ -116,7 +116,11 @@ sub update_var_from_DB {
                               sql => $sql
                             });
     $vardataref->{data}=$dataref;
-    # printf("$varname: $vartype $db $table $columns '$sql' --> %d\n",scalar keys(%{$dataref}));
+    if(scalar keys(%{$dataref}) > 0) {
+      printf("$varname: $vartype $db $table $columns '%s' --> %d\n",$sql,scalar keys(%{$dataref}));
+    } else {
+      printf("$varname: $vartype $db $table $columns '%s' --> EMPTY\n",$sql);
+    }
     # print Dumper($dataref);
   }
   printf("update_var_from_DB: %-20s end\n",$varname) if($debug);
