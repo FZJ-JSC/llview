@@ -284,9 +284,20 @@ sub process_collectDB_update_from_other_DB {
     foreach my $col (keys(%{$mapDBs->{$dbspec}})) {
       my $qref=$mapDBs->{$dbspec}->{$col};
       my $qstarttime=time();
+      
+      # An explicit SQL statement is defined to prevent the overwriting of multiple mapped values.
+      # The DISTINCT aggregation is utilized alongside REPLACE to ensure a comma-and-space separated list is generated.
+      my $sql = sprintf("SELECT %s, REPLACE(GROUP_CONCAT(DISTINCT %s), ',', ', ') AS %s FROM %s GROUP BY %s",
+                        $qref->{qcmpcol},
+                        $qref->{qcol},
+                        $qref->{qcol},
+                        $qtab,
+                        $qref->{qcmpcol});
+
       my $qdata=$self->query($qdb,$qtab,
                 {
                   type => 'hash_values',
+                  sql => $sql,
                   hash_keys => $qref->{qcmpcol},
                   hash_value => $qref->{qcol},
                   where => undef

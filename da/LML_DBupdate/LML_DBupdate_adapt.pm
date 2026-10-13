@@ -188,7 +188,7 @@ sub adapt_data {
 
     #  file system info
     $ref->{"fs_bw_all"}=$ref->{"fs_br_all"}=$ref->{"fs_ooc_all"}=0;
-    foreach my $fs ("home", "scratch", "project1", "data1", "exa_home", "exa_scratch", "exa_project1", "exa_data1") {
+    foreach my $fs ("home", "scratch", "fscratch", "project1", "data1", "exa_home", "exa_scratch", "exa_project1", "exa_data1") {
       next if(!exists($ref->{"fs_ts_$fs"}));
       $ref->{"fs_ts_$fs"}  = $currentts if(!exists($ref->{"fs_ts_$fs"}));
       $ref->{"fs_dts_$fs"} = 60         if(!exists($ref->{"fs_dts_$fs"}));
@@ -403,6 +403,12 @@ sub adapt_data {
           $jobref->{ts_end}=LML_DBupdate::date_to_sec($jobref->{end});
         }
       }
+    }
+  }
+  foreach $jobref (@{$data->{PRIO_ENTRIES}}) {
+    #  TS
+    if(!exists($jobref->{ts})) {
+      $jobref->{ts}=$currentts;
     }
   }
   print "WF: adapt_data: after JOBSTEP_ENTRIES\n";
