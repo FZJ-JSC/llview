@@ -74,23 +74,30 @@ sub mngt_datasets {
     
     my $action_ref=$actions->{$action};
     my $action_def=$action_ref->{definition};
-    
+
+
     if(!exists($action_def->{type})) {
       print STDERR "LLmonDB:    WARNING: no type defined for action $action, skipping...\n";
       next;
     }
+
+    my $starttime=time();
     if($action_def->{type} eq "archive") {
       printf("\n%s check dataset %-20s: archive \n", $self->{INSTNAME}, $action);
+      my $t1=time();
       $self->mngt_datasets_check($DB, $action_ref, $varsetref);
+      printf("%s mngt_datasets_check [%s/%s] in %4.3fs\n",$self->{INSTNAME}, $action_def->{type}, $action,time()-$t1);
     }
     if($action_def->{type} eq "remove") {
-      printf("\n%s check dataset %-20s: remove \n", $self->{INSTNAME}, $action);
+      my $t1=time();
       $self->mngt_datasets_check($DB, $action_ref, $varsetref);
+      printf("%s mngt_datasets_check [%s/%s] in %4.3fs\n",$self->{INSTNAME}, $action_def->{type}, $action,time()-$t1);
     }
       
     if($action_def->{type} eq "compress") {
-      printf("\n%s check dataset %-20s: compress gz.gz \n", $self->{INSTNAME}, $action);
+      my $t1=time();
       $self->mngt_datasets_check_gz_gz($DB, $action_ref, $varsetref);
+      printf("%s mngt_datasets_check_gz_gz [%s/%s] in %4.3fs\n",$self->{INSTNAME}, $action_def->{type}, $action,time()-$t1);
     }
     
     if(exists($action_ref->{datasets})) {
@@ -99,6 +106,8 @@ sub mngt_datasets {
       $self->mngt_datasets_execute($DB, $action_ref, $varsetref, FACTION_ARCHIVE) if($action_def->{type} eq "archive");
       $self->mngt_datasets_execute($DB, $action_ref, $varsetref, FACTION_REMOVE) if($action_def->{type} eq "remove");
     }
+    printf("%s execute action [%s/%s] in %4.3fs\n",$self->{INSTNAME}, $action_def->{type}, $action,time()-$starttime);
+    
   }
   
   return();
@@ -116,6 +125,7 @@ sub mngt_datasets_execute {
   my $files_to_process;
   my $tmptardir="/tmp/jobreport/dir";
   my $tarfileprefix="job_";
+  my $pstarttime=time();
   
   if(exists($action_def->{options})) {
     if(exists($action_def->{options}->{limit})) {
@@ -151,7 +161,6 @@ sub mngt_datasets_execute {
   my $stat_tables;
   my $num_stat_tables=0;
   my $num_files_found=0;
-  my $starttime=time();
   my $where="(lastts_saved <= $limit_ts)";
   if(defined($limit_pattern_ts)) {
     while ( my ($pat, $l_ts) = each(%{$limit_pattern_ts}) ) {
@@ -169,11 +178,14 @@ sub mngt_datasets_execute {
 
   printf("%s mngt_datasets_execute: $where \n",$self->{INSTNAME});
 
+  my $starttime=time();
   foreach my $dataset (@{$action_ref->{datasets}}) {
+    my $dsstarttime=time();
     # read info about files into memory
     if(!exists($self->{DATASETSTAT}->{$dataset->{stat_database}}->{$dataset->{stat_table}})) {
       $self->get_datasetstat_from_DB($dataset->{stat_database},$dataset->{stat_table},$where);
     }
+    my $loadtime=time()-$dsstarttime;
     # print Dumper($self->{DATASETSTAT}->{$dataset->{stat_database}}->{$dataset->{stat_table}}) if($dataset->{name} eq "loadmem_csv");
     
     # manage pointer to memory table
@@ -187,26 +199,30 @@ sub mngt_datasets_execute {
 
     # scan for matching files
     my $count;
+    $dsstarttime=time();
     ($files_to_process,$count)= $self->scan_for_files_by_name_limit($st,
                                                                     $files_to_process,$dataset->{name},
                                                                     $limit_ts,$limit_pattern_ts,
                                                                     $action_type);
+    my $scantime=time()-$dsstarttime;
     $num_files_found+=$count;
 
-    printf("%s scan datasetstat(%s,%s) for files older than %5.2fh (%s,%s) found %d [%s]\n",$self->{INSTNAME},
-            $dataset->{stat_database},$dataset->{stat_table},($limit_sec)/3600.0,
-            &sec_to_date($self->{CURRENTTS}),&sec_to_date($limit_ts),
-            $count,$dataset->{name});
+    printf("%s scan datasetstat for files older than %5.2fh (%s,%s) found %10d in %4.3fs,%4.3fs: [%s/%s][%s]\n",$self->{INSTNAME},
+           ($limit_sec)/3600.0,
+           &sec_to_date($self->{CURRENTTS}),&sec_to_date($limit_ts),
+           $count,
+           $loadtime,$scantime,
+           $dataset->{stat_database},$dataset->{stat_table},$dataset->{name});
   }
 
-  # printf("%s get  datasetstat [%s] in %4.3fs\n",$self->{INSTNAME}, $action_type,time()-$starttime);
+  printf("%s get  datasetstat [%s] in %4.3fs\n",$self->{INSTNAME}, $action_type,time()-$starttime);
 
   # scan for oldest files (limited by option max_files)
   $starttime=time();
   my ($count_ukey_tbc,$count_tbc)=$self->scan_for_files_to_be_processed($files_to_process,
                                                                         $action_def->{options}->{max_files},
                                                                         $action_type);
-  # printf("%s scan datasetstat [%s] in %4.3fs\n",$self->{INSTNAME}, $action_type,time()-$starttime);
+  printf("%s scan datasetstat [%s] in %4.3fs\n",$self->{INSTNAME}, $action_type,time()-$starttime);
 
   # process files
   $starttime=time();
@@ -221,7 +237,7 @@ sub mngt_datasets_execute {
   $count_processed=$self->remove_files($files_to_process,$parallel_level,
                                         $compress_tool) if($action_type==FACTION_REMOVE);
 
-  # printf("%s process files    [%s] in %4.3fs\n",$self->{INSTNAME}, $action_type,time()-$starttime);
+  printf("%s process files    [%s] in %4.3fs\n",$self->{INSTNAME}, $action_type,time()-$starttime);
 
   $starttime=time();
   while ( my ($num, $st) = each(%{$stat_tables}) ) {
@@ -236,10 +252,10 @@ sub mngt_datasets_execute {
     }
     delete($self->{DATASETSTAT}->{$st->{stat_database}}->{$st->{stat_table}}); # remove in-memory version
   }
-  # printf("%s save datasetstat [%s] in %4.3fs\n",$self->{INSTNAME}, $action_type,time()-$starttime);
+  printf("%s save datasetstat [%s] in %4.3fs\n",$self->{INSTNAME}, $action_type,time()-$starttime);
   
-  printf("%s scan dataset for files older than %6.2fh found in total %d files (%d ukeys (%d files) to be processed)  (%d processed)\n",
-          $self->{INSTNAME}, ($limit_sec)/3600.0, $num_files_found,$count_ukey_tbc,$count_tbc,$count_processed);
+  printf("%s scan dataset for files older than %6.2fh, in %4.3fs found in total %d files (%d ukeys (%d files) to be processed)  (%d processed)\n",
+          $self->{INSTNAME}, ($limit_sec)/3600.0, time()-$pstarttime,$num_files_found,$count_ukey_tbc,$count_tbc,$count_processed);
 }
 
 sub mngt_datasets_check {
@@ -347,7 +363,7 @@ sub mngt_datasets_check_gz_gz {
     next if($dataset->{format} eq "registerfile");
     # printf("%s check_file_state_with_file_system: check dataset $dataset->{name}\n",$self->{INSTNAME});
     
-    my $where="(lastts_saved <= $limit_ts) and (name = \"$dataset->{name}\")";
+    my $where="(lastts_saved <= $limit_ts) and (name = \"$dataset->{name}\") and (dataset like \"*.gz.gz\")";
 
     # read info about files into memory
     if(!exists($self->{DATASETSTAT}->{$dataset->{stat_database}}->{$dataset->{stat_table}})) {
@@ -597,7 +613,7 @@ sub archive_files {
       } else {
         $dsentry->{status}=FSTATUS_TOBEDELETED; # mark also to delete from DB after archiving it
       }
-      printf("archive_files: %s -> %s\n",$ukey,$dsentry->{dataset});
+#      printf("archive_files: %s -> %s\n",$ukey,$dsentry->{dataset});
     }
     while ( my ($name, $st) = each(%{$ref->{datasets}}) ) {
       $st->{modified}=1;
@@ -680,7 +696,7 @@ sub remove_files {
         push(@files,$realfile);
         $dsentry->{status}=FSTATUS_TOBEDELETED;
         $count++;
-        printf("remove_files: %s -> %s\n",$ukey,$dsentry->{dataset});
+#        printf("remove_files: %s -> %s\n",$ukey,$dsentry->{dataset});
       } else {
         $dsentry->{status}=FSTATUS_NOT_EXISTS;
       }
@@ -837,18 +853,19 @@ sub mngt_scan_datasets {
           }
         } elsif($ref->{status}==FSTATUS_NOT_EXISTS) {
           my $realfile=sprintf("%s/%s",$self->{OUTDIR},$ref->{dataset});
-	  printf ("  %s/%s: [%d] not exists %s\n",$ds_db,$ds_tab,$ref->{status},$ref->{dataset}) if($self->{VERBOSE}>=1);
+	  printf ("  %s/%s: [%d] not exists %s\n",$ds_db,$ds_tab,$ref->{status},$ref->{dataset}) if($self->{VERBOSE}>=2);
         }
       }
 
       if($count_ds_changed>0) {
         $self->cleanup_datasetstat($ds_db,$ds_tab);
-	
-	if($ds_db eq "jobreport_stat_cpuusage" && $ds_tab eq "datasetstat_csv") {
-	  my $lfn="dsdiff/".$ds_db."_".$ds_tab."_".$self->{CURRENTTS}."_jobreportnmgt.log";
-	  print "diff_datasetstat_with_DB: write to $lfn\n";
-	  $self->diff_datasetstat_with_DB($ds_db,$ds_tab,$where,$lfn);
-	} 
+	if(0) {
+          if($ds_db eq "jobreport_stat_cpuusage" && $ds_tab eq "datasetstat_csv") {
+            my $lfn="dsdiff/".$ds_db."_".$ds_tab."_".$self->{CURRENTTS}."_jobreportnmgt.log";
+            print "diff_datasetstat_with_DB: write to $lfn\n";
+            $self->diff_datasetstat_with_DB($ds_db,$ds_tab,$where,$lfn);
+          }
+        }
         $self->save_datasetstat_in_DB($ds_db,$ds_tab,$where);
       }
       delete($self->{DATASETSTAT}->{$ds_db}->{$ds_tab}); # remove in-memory version
