@@ -1,2 +1,0 @@
-columns:        'wf_id, wf_type,firstts, lastts, owner, account, mentor, numnodes_avg, load_avg, wf_jid_list, jobid_list'
-column_convert: 'firstts->todate_std_hhmm,lastts->todate_std_hhmm,jobid_list->wrapword10'

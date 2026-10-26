@@ -1,4 +1,0 @@
-AVG(gpu_util),
-AVG(gpu_memu),   
-AVG(gpu_sclk),
-AVG(gpu_temp)
