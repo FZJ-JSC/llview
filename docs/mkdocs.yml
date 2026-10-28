@@ -15,6 +15,7 @@ nav:
     - Overview: index.md
     - Public Releases: releases/public.md
     - JURI Releases: releases/juri.md
+    - Config Releases: releases/config.md
     - Internal Releases: releases/index.md
   - Live: 
     - Live View: live/index.md

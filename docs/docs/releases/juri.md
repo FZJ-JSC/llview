@@ -2,6 +2,51 @@
 
 Since the JURI (Jülich Reporting Interface) module is the same for the internal and the public versions, a single and separated page describe its changelog.
 
+### 2.4.6-base (October 29, 2026)
+
+<h4> Added </h4>
+
+- Added new version of CorePattern fonts including squares without SMT (single squares)
+- Download ag-grid table as PDF button added next to download CSV button
+- Added safeguard before plotly listener removal
+- Added logging of internal errors (currently from git plugin) on the console, when they exist
+- Added helper function to add link to a tab
+- Improved filter GUI
+- Added 'does not equal' to datetime filter
+
+<h4> Changed </h4>
+
+- Extended function 'cell_status' to add tooltip with metadata from benchmark status
+- Chatbot button is now disabled/enabled based on if there are msgs in the chatbox or not
+- Improvements on heatmap plots (automatic ticks and fillNA option)
+- Extended helper function to support multiple mentors
+- Improved hovertemplate for histograms
+- Improved cancellation of footer graphs when changing tabs
+- Added `percent_or_null` helper function to ag-grid
+- Made default background colors on cells from colored columns to be transparent instead of white (for heatmap, it makes more sense)
+- Changed default sorting order when clicking on columns, now to desc, asc, null
+- Changed buttons on grid quickfilter to be configurable instead of hardcoded
+- Changed max conditions to 4 (to accomodate queue filters for pending, running, failed and completed)
+- Now all column groups are shown by default when `default_columns` is not given
+- Documentation: Improved installation instructions ([See here for more details](../install/juri_install.md))
+
+<h4> Fixed </h4>
+
+- Fixed page freezing when refreshing using filters on two custom columns
+- Fixed saving the sort in the URL
+- Fixed plots to proceed even when some files are missing (which would abort getting other existing files)
+- Fixed calculations of min and max to avoid reaching max call stack size
+- Fixed sorting error when column does not exist 
+- Fixed saving of grid state to take into account subpages
+- Fixed missing link to user/owner column in Project view
+- Fixed missing pdfmake .map file
+- Fixed multiple filters being applied (e.g., from pre-set options) to custom filters
+- Fixed 'unknown' showing on filters
+- Removed tooltips on job report grid columns (they are already added by ag-grid)
+- Fixed plotly tickts for empty plots (avoid too many ticks)
+- Fixed small issues on login.php
+
+
 ### 2.4.5 (June 19, 2026)
 
 AI functionalities added! It's now possible to include a sidebar with a configurable AI chatbot that you can connect with your preferred service provider or your customised end points!

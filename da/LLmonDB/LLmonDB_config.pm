@@ -90,12 +90,14 @@ sub read_configfile_from_file {
   my $fh = IO::File->new();
   &check_folder("$filename");
   if ($fh->open("< $filename")) {
+    my $lineno = 0;
     while(my $line=<$fh>) {
+      $lineno++;
       push(@{$self->{FILECACHE}->{$filename}},$line) if($depth>1);
       if($line=~/^(\s*)%include /) {
-        $data.=$self->process_include($filename,$orig_filename,$line,$depth,$prespace);
+        $data.=$self->process_include($filename,$orig_filename,$line,$depth,$prespace,$lineno);
       } elsif($line=~/^(\s*)%includedir /) {
-        $self->process_includedir($filename,$orig_filename,$line);
+        $self->process_includedir($filename,$orig_filename,$line,$lineno);
       } else {
         $data.=$prespace.$line;
       }
@@ -115,11 +117,13 @@ sub read_configfile_from_cache {
   printf("LLmonDB_config: %s reading %s from cache\n"," "x($depth*3),$filename) if($debug);
 
   my $data="";
+  my $lineno = 0;
   foreach my $line (@{$self->{FILECACHE}->{$filename}}) {
+    $lineno++;
     if($line=~/^(\s*)%include /) {
-      $data.=$self->process_include($filename,$orig_filename,$line,$depth,$prespace);
+      $data.=$self->process_include($filename,$orig_filename,$line,$depth,$prespace,$lineno);
     } elsif($line=~/^(\s*)%includedir /) {
-      $self->process_includedir($filename,$orig_filename,$line);
+      $self->process_includedir($filename,$orig_filename,$line,$lineno);
     } else {
       $data.=$prespace.$line;
     }
@@ -128,9 +132,24 @@ sub read_configfile_from_cache {
   return($data);
 }
 
+sub expand_env {
+  my ($self, $str, $filename, $lineno) = @_;
+  return $str unless defined $str;
+
+  # Matches both ${VAR} and $VAR
+  $str =~ s/\$\{?([A-Za-z_][A-Za-z0-9_]*)\}?/
+    if (!exists $ENV{$1}) {
+      die "LLmonDB_config: ERROR: Undefined environment variable '\$$1' at $filename line $lineno\n";
+    }
+    $ENV{$1};
+  /ge;
+
+  return $str;
+}
+
 sub process_include {
   my($self) = shift;
-  my($filename,$orig_filename,$line,$depth,$prespace) = @_;
+  my($filename,$orig_filename,$line,$depth,$prespace,$lineno) = @_;
   my $data="";
 
   chomp($line);
@@ -138,6 +157,9 @@ sub process_include {
   
   my $prespaceinc=$1;
   my $ifn=$2;
+  
+  # Expand env variables with filename and line number
+  $ifn = $self->expand_env($ifn, $filename, $lineno);
   
   # get location of file in orig location, needed for includes
   my(undef,$orig_configpath,undef)=File::Spec->splitpath($orig_filename);
@@ -174,7 +196,7 @@ sub process_include {
 
 sub process_includedir {
   my($self) = shift;
-  my($filename,$orig_filename,$line) = @_;
+  my($filename,$orig_filename,$line,$lineno) = @_;
   my $data="";
   
   chomp($line);
@@ -185,6 +207,10 @@ sub process_includedir {
   return($data) if($line!~/^\s*%includedir \"([^\"]+)\"/);
   
   my $idir=$1;
+  
+  # Expand env variables with filename and line number
+  $idir = $self->expand_env($idir, $filename, $lineno);
+  
   my $indir=File::Spec->rel2abs( $idir, $configpath );
   $indir.="/" if($indir!~/\/$/);
   my($ref);

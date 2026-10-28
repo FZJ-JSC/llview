@@ -1,40 +1,89 @@
 # LLview
 
-The public version of LLview can be downloaded from [GitHub](https://github.com/FZJ-JSC/LLview).
-It currently contains a simplified workload including all the necessary
-scripts and plugins for a basic functioning. This version includes
+The public release of LLview is available on [GitHub](https://github.com/FZJ-JSC/LLview).
+It provides a streamlined distribution containing all the core scripts, databases, and plugins required for a fully functional HPC monitoring environment.
 
-- Core structure to process the configurations, create SQLite databases and process data for presentation on the web portal
-- JuRepTool to create PDF and interactive HTML reports
+This version includes:
+
+- Core framework to process configurations, manage SQLite databases, and prepare data for web presentation
+- JuRepTool to generate detailed PDF and interactive HTML job reports
 - Plugins for:
-    - Slurm
-    - Generic API (http requests, REST-API, Prometheus, etc.)
-    - Flat log files (via regex)
-    - Git repos
+  - Slurm workload manager (also works for the flux workload manager)
+  - Generic APIs (HTTP requests, REST APIs, Prometheus, etc.)
+  - Flat log files (via regular expressions)
+  - Git repositories
 
-It still does not cover:
+Planned for future updates:
 
-- Client and live view (the schematic view of the jobs on the nodes)
-- JuFo (Jülich Forecast) (Queue Prediction)
-- Other plugins
-- Logger (module that collects LLview's access metrics)
+- Client and live view (schematic cluster node view of running jobs)
+- JuFo (Jülich Forecast / queue wait-time prediction)
+- Additional workload manager and hardware metric plugins
+- Access Logger (monitoring LLview portal traffic and usage metrics)
 
-These features will be added in future updates.
+---
 
 ## Software Structure
 
-As an HPC monitoring tool, LLview needs to (1) collect and (2) process the data from the system, and then (3) present them to the end-user.
-These three components are usually done in three separate places:
+As an HPC monitoring system, LLview operates in three distinct phases: **(1) collecting** raw metrics, **(2) processing and storing** them, and **(3) presenting** the results to users. 
 
-- Collection of data: This is done (partly) on the HPC system to be monitored, where the user running LLview must have permissions to information of all jobs. This part is called [Remote](remote_about.md) on LLview.
-- Processing of data: Data is processed (and extra metrics may be also collected) every minute for all running jobs. To avoid perturbing the nodes of the HPC system, this is usually done in a separate server. This part is called [Server](server_about.md) on LLview.
-- Presentation of data: The information is presented to the end-user as a web portal. Therefore, a separate Web Server is recommended. The portal is based on the Jülich Reporting Interface [JURI](juri_about.md).
+To minimize overhead on compute resources, these tasks are typically distributed across three separate environments:
+
+- **Data Collection ([Remote](remote_about.md)):** Runs directly on the monitored HPC system (e.g., on a login or management node) where the LLview service account has permissions to inspect system-wide job data.
+- **Data Processing ([Server](server_about.md)):** Runs on an independent server outside the HPC cluster. It collects additional external metrics, aggregates data every minute, updates SQLite databases, and formats output tables and plots without placing load on compute nodes.
+- **Presentation ([JURI Web Server](juri_about.md)):** Hosts the user-facing web portal using the Jülich Reporting Interface (JURI).
+
+---
 
 ## Installation Instructions
 
-The three components mentioned above need to be installed in that order, as each depends on data from the previous one.
-The installation instructions are then separated for each of the parts:
+Because each stage depends on output from the previous one, components should be set up in the following order:
 
-1. [Remote](remote_install.md)
-2. [Server](server_install.md)
-3. [JURI](juri_install.md)
+1. [Remote Installation](remote_install.md)
+2. [Server Installation](server_install.md)
+3. [JURI Web Portal Installation](juri_install.md)
+
+---
+
+## Configuration
+
+Both the **Remote** and **Server** components require configuration files to orchestrate their workflows:
+
+- **Remote:** Minimal workflow configuration to execute the workload manager plugin (e.g., Slurm) and stage generated files for the Server.
+- **Server:** Comprehensive configuration covering:
+  - Workflow orchestrations (`collect`, `dbupdate`, `jobreport`)
+  - Secondary data collection plugins
+  - Database definitions, schemas, and web export templates (`LLgenDB`)
+  - Detailed report templates (PDF and HTML via JuRepTool)
+
+### The `llview-config` Repository
+
+Ready-to-use template configurations are maintained in the [llview-config](https://github.com/FZJ-JSC/llview-config) repository. The repository contains two top-level directories:
+
+- `common/`: Base templates and default definitions used across systems.
+- `example_system/`: A practical, working cluster configuration demonstrating how to override base defaults.
+
+Both directories share a standardized subfolder structure:
+
+- `jureptool/`: Settings, system limits, and styling for PDF/HTML reports.
+- `plugins/`: Configuration files for data collection plugins.
+- `remote/`: The `.llview_remote_rc` environment file and Remote workflow definitions.
+- `server/`: The `.llview_server_rc` environment file, `icmap`, Server workflows, and the `LLgenDB/` directory (database definitions and web export configurations).
+
+### Configuration Inheritance (Defaults vs. Overrides)
+
+The key difference between `common/` and a system-specific directory (such as `example_system/`) lies in `server/LLgenDB/`.
+
+In `example_system/server/LLgenDB/LLgenDB.yaml`, the configuration imports `common/server/LLgenDB/LLgenDB_common.yaml` by reference. This treats the files in `common/` as the default baseline—meaning your system folder only needs to define files that **extend or override** those defaults.
+
+### Setup Strategies
+
+To keep your deployment maintainable, we recommend keeping your active configuration directory **outside** of the cloned `llview-config` git repository:
+
+1. **Inheritance Method (Recommended):**  
+   Clone `llview-config` to a reference location, then copy `example_system/` to your own dedicated configuration directory (e.g., `~/my_cluster_config/`). Keep the references pointing to `common/` in the cloned repo.  
+   *Why this is recommended:* When new metric definitions or bug fixes are published to `llview-config`, you can simply run `git pull` in the repository to receive updates in `common/` automatically, without merge conflicts in your custom configuration.
+
+2. **Standalone Method:**  
+   Copy the entire `common/` directory out of the repository to your custom folder and modify all files locally. Upstream updates must then be merged manually.
+
+> Step-by-step setup guides for each component are provided in the [Remote Installation](remote_install.md) and [Server Installation](server_install.md) documentation.

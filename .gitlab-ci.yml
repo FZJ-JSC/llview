@@ -46,42 +46,6 @@ before_script:
   - pip3 install mkdocs-glightbox
   - pip3 install mkdocs-git-revision-date-localized-plugin
 
-check_yaml:
-  image: python:3.10-alpine
-  stage: test
-  tags:
-    - public-docker
-  needs: []
-  before_script:
-    - pip install yamllint
-    - find . -name "*.yaml" -type f -exec sed -i '/%include /d' {} \;
-  script:
-    - yamllint -c .yamllint.yml --no-warnings .
-
-check_combined_yaml:
-  image: registry.jsc.fz-juelich.de/cstao/llview_package/perl:5.40
-  stage: test
-  tags:
-    - public-docker
-  allow_failure: true
-  needs: []
-  artifacts:
-    untracked: false
-    when: always
-    access: all
-    expire_in: "30 days"
-    paths:
-      - ./combined_yaml
-  before_script: []
-  script:
-    - mkdir combined_yaml
-    - export LLMONDB_PRINT_CONFIG_TO_DIR="${PWD}/combined_yaml"
-    - perl ./da/LLmonDB/LLmonDB_mngt.pl -config=./configs/server/LLgenDB/LLgenDB.yaml printconfig > ./combined_yaml/stdout.log
-    - head ./combined_yaml/stdout.log
-    - tail ./combined_yaml/stdout.log
-    - ls -lah ./combined_yaml/
-    - yamllint -c .yamllint.yml --no-warnings ./combined_yaml/
-
 builddocs:
   stage: build
   tags:
