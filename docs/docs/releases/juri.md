@@ -2,7 +2,7 @@
 
 Since the JURI (Jülich Reporting Interface) module is the same for the internal and the public versions, a single and separated page describe its changelog.
 
-### 2.4.6-base (October 29, 2026)
+### 2.4.6 (October 29, 2026)
 
 <h4> Added </h4>
 
