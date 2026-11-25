@@ -500,6 +500,52 @@ def nodeinfo(options: dict, nodes_info) -> dict:
 
   return nodeextra
 
+def count_array_tasks(array_task_id):
+    """
+    Count individual tasks represented by a Slurm array task expression.
+
+    Supports single task IDs, comma-separated lists, ranges, and
+    ranges with step values. The concurrency limit (%N) is ignored
+    because it restricts simultaneous execution, not the total
+    number of tasks.
+
+    Non-array jobs (empty, N/A, or NO_VAL) are counted as one task.
+
+    Examples:
+        "5"          -> 1
+        "1-100"      -> 100
+        "1-100%10"   -> 100
+        "1-100:2"    -> 50
+        "1-5,10-20"  -> 16
+
+    Returns:
+        int: Total number of individual tasks.
+
+    Raises:
+        ValueError: If a range or step value is invalid.
+    """
+    if not array_task_id or str(array_task_id) in ("N/A", "NO_VAL"):
+        return 1
+
+    expression = str(array_task_id).split("%", 1)[0]
+    total = 0
+
+    for part in expression.split(","):
+        part = part.strip()
+        if not part:
+            continue
+
+        if "-" in part:
+            range_part, _, step_part = part.partition(":")
+            start, end = map(int, range_part.split("-", 1))
+            step = int(step_part) if step_part else 1
+            if step <= 0 or end < start:
+                raise ValueError(f"Invalid array range: {part}")
+            total += (end - start) // step + 1
+        else:
+            total += 1
+
+    return total
 
 def jobinfo(options: dict, jobs_info) -> dict:
   """
@@ -523,6 +569,12 @@ def jobinfo(options: dict, jobs_info) -> dict:
       jobinfo['NodeList'] = add_CPUs_to_nodelist(jobinfo['NodeList'],jobinfo['MinCPUsNode'])
     if 'SchedNodeList' in jobinfo and jobinfo['SchedNodeList']:
       jobinfo['SchedNodeList'] = add_CPUs_to_nodelist(jobinfo['SchedNodeList'],jobinfo['MinCPUsNode'])
+    # Count individual tasks represented by the Slurm array expression.
+    # Non-array jobs and individual array tasks are counted as one.
+    # This ensures accurate job statistics for grouped array tasks.
+    jobinfo['array_task_count'] = count_array_tasks(
+       jobinfo.get('ArrayTaskId', '')
+    )
     
     # jobinfo['totaltasks'] = jobinfo['NumCPUs'] 'totaltasks' $jobs{"$jobid"}{NumCPUs} if (!exists($jobs{"$jobid"}{totaltasks}))
 
