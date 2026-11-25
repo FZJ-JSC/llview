@@ -155,6 +155,9 @@ def wait_for_file(filepath, log, max_attempts=5, wait=2):
     bool: True if the file is free to read, False if all attempts were exhausted.
   """
   for attempt in range(1, max_attempts + 1):
+    if not os.path.isfile(filepath):
+      log.warning(f"File {filepath} does not exist. Skipping...")
+      return False
     if not is_file_being_written(filepath):
       return True
     if attempt < max_attempts:
