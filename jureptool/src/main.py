@@ -814,7 +814,12 @@ def _ProcessReport(njob,total_jobs,job,config):
   error_lines = []
   # Separating all the steps (if present)
   if ('rc' in data) and ('stepspec' in data['rc']):
-    steps = re.findall(r'\((.*?)\)', data['rc']['stepspec'])
+    # Split steps only at actual step boundaries                
+    steps = re.findall( 
+        r'\((batch|extern|job|interactive|\d+(?:\.\d+)?)(::.*?)\)(?=\(|$)',
+        data['rc']['stepspec']
+    )
+    steps = [step_type + details for step_type, details in steps]
   else:
     steps = []
 
@@ -843,8 +848,15 @@ def _ProcessReport(njob,total_jobs,job,config):
   nsteps_last = 0
   # If data for steps is present
   if rows:
-    timeline_df = pd.DataFrame(rows).fillna(0)
+    # Preserve missing text fields instead of replacing them with numeric zeros, 
+    #  which causes timeline rendering errors.
+    timeline_df = pd.DataFrame(rows)
     timeline_df[['beg','end','nnodes','ntasks','ncpus']] = timeline_df[['beg','end','nnodes','ntasks','ncpus']].apply(pd.to_numeric)
+    # Remove timeline entries without valid start timestamps
+    invalid_steps = timeline_df['beg'].isna().sum()
+    if invalid_steps:
+         log.warning(f"Skipping {invalid_steps} timeline steps with missing start timestamps")
+    timeline_df = timeline_df.dropna(subset=['beg']).copy()
     if 'ntasks' in timeline_df:
       timeline_df['ntasks'] = timeline_df['ntasks'].fillna(0).astype('int')
     # Getting only the first 'max_steps_in_timeline' rows of dataframe (defined in the config file)
@@ -861,6 +873,11 @@ def _ProcessReport(njob,total_jobs,job,config):
     timeline_df['start_time'] = timeline_df['beg'].apply(lambda x: datetime.datetime.fromtimestamp(int(x+config['appearance']['timezonegap']),datetime.timezone.utc))
     timeline_df['end_time'] = timeline_df['end'].apply(lambda x: datetime.datetime.fromtimestamp(int(x+config['appearance']['timezonegap']),datetime.timezone.utc))
     timeline_df['duration'] = timeline_df['end_time']-timeline_df['start_time']
+    # Normalize timeline text fields to prevent type errors
+    # when numeric values are returned for job states or node lists.
+    for col in ['st', 'nodelist', 'name', 'step']:
+        if col in timeline_df.columns:
+            timeline_df[col] = timeline_df[col].fillna('').astype(str)
     timeline_df[['color','edgecolor','colorhtml','edgecolorhtml']] = timeline_df['st'].apply(lambda x: add_color(x))
     # Escaping job names
     timeline_df['name'] = timeline_df['name'].apply(lambda x: re.escape(str(x)))
